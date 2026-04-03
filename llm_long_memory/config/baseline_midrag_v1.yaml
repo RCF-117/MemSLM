@@ -1,0 +1,327 @@
+memory:
+  short_memory_size: 10
+  mid_memory:
+    max_size: 2000
+    min_chunk_size: 2
+    max_chunk_size: 5
+    message_chunk_max_chars: 900
+    message_chunk_overlap_chars: 120
+    message_chunk_min_chars: 80
+    message_chunk_boundary_window_chars: 80
+    chunk_similarity_threshold: 0.55
+    embedding_min_length: 20
+    topic_similarity_threshold: 0.72
+    topic_multi_assign_top_k: 2
+    topic_inactive_steps: 10
+    topic_merge_threshold: 0.97
+    enable_topic_merge: false
+    topic_min_chunks_before_merge: 3
+    summary_update_every: 10
+    summary_min_chunk_count: 6
+    summary_cooldown_steps: 60
+    summary_on_new_topic: false
+    summary_enabled: false
+    database_file: data/processed/mid_memory.db
+    sqlite_busy_timeout_ms: 5000
+    sqlite_journal_mode: WAL
+    sqlite_synchronous: NORMAL
+    role:
+      enable: true
+      user_weight: 1.0
+      assistant_weight: 0.7
+      system_weight: 0.5
+      centroid_roles:
+        - user
+        - assistant
+      centroid_role_weights:
+        user: 1.0
+        assistant: 0.5
+        system: 0.3
+      non_user_threshold_multiplier: 1.1
+    chunking:
+      role_boundary_flush: true
+      use_buffer_centroid_similarity: true
+    stopwords:
+      - a
+      - an
+      - and
+      - are
+      - as
+      - at
+      - be
+      - by
+      - for
+      - from
+      - in
+      - is
+      - it
+      - of
+      - on
+      - or
+      - that
+      - the
+      - to
+      - was
+      - with
+
+retrieval:
+  top_k: 5
+  chunks_per_topic: 5
+  hybrid_alpha: 0.6
+  keyword_weight: 0.25
+  summary_weight: 0.0
+  recent_topic_weight: 1.2
+  recent_topic_apply_margin: 0.08
+  chunk_topic_weight: 0.2
+  time_weight: 0.2
+  temporal_boost_max: 0.25
+  lexical_search:
+    enabled: true
+    bm25_top_n: 40
+  fusion:
+    rrf_k: 60
+    dense_weight: 1.0
+    lexical_weight: 1.0
+    topic_weight: 0.15
+  diversity:
+    enabled: true
+    similarity_threshold: 0.82
+  global_chunk_retrieval:
+    enabled: true
+    top_n: 32
+    rrf_k: 60
+    dense_weight: 1.2
+    lexical_weight: 1.0
+    keyword_weight: 0.1
+    topic_prior_weight: 0.15
+    prefilter_enabled: true
+    prefilter_top_n: 256
+    lexical_prefilter_top_n: 256
+    prefilter_topic_top_k: 8
+    recent_fallback_n: 64
+    dedup_by_text: true
+  topic_expansion:
+    enabled: true
+    per_topic_limit: 1
+  answering:
+    evidence_top_n_chunks: 10
+    evidence_top_n_sentences: 8
+    evidence_sentence_max_chars: 220
+    candidate_top_n: 3
+    short_circuit_enabled: false
+    short_circuit_min_sentence_score: 0.55
+    context_only: true
+    log_decision_details: true
+    llm_fallback_to_top_candidate: true
+    fallback_min_score: 0.75
+    response_evidence_min_token_overlap: 0.6
+    response_evidence_min_shared_tokens: 2
+    not_found_top_evidence_score_threshold: 0.35
+    second_pass_llm_enabled: true
+    second_pass_use_evidence_candidate: true
+    span_min_tokens: 1
+    span_max_tokens: 5
+    span_top_n_per_sentence: 8
+    evidence_candidate:
+      enabled: true
+      min_score: 0.45
+      max_tokens: 8
+    candidate_filter:
+      enabled: true
+      min_token_count: 2
+      role_prefixes:
+        - user
+        - assistant
+        - system
+      reject_prefixes:
+        - i
+        - i'm
+        - i am
+        - my
+        - we
+        - we're
+        - we are
+        - you
+        - your
+      reject_contains:
+        - thank
+        - sorry
+        - maybe
+        - i think
+        - i guess
+        - let me
+        - how can i
+    intent_extraction:
+      enabled: true
+      time_keywords:
+        - when
+        - date
+        - time
+        - year
+        - month
+        - day
+        - long
+        - duration
+      number_keywords:
+        - many
+        - much
+        - number
+        - amount
+        - percent
+        - age
+        - price
+      location_keywords:
+        - where
+        - location
+        - city
+        - country
+        - place
+      name_keywords:
+        - name
+        - called
+        - titled
+      time_regexes:
+        - "\\b\\d{1,2}:\\d{2}\\s?(?:am|pm)?\\b"
+        - "\\b\\d+\\s?(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\\b"
+        - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
+      number_regexes:
+        - "\\b\\d+(?:\\.\\d+)?\\b"
+        - "\\b\\d+(?:\\.\\d+)?\\s?(?:%|percent|km|kilometer|kilometers|miles?|hours?|minutes?|days?|years?)\\b"
+      capitalized_phrase_max_tokens: 4
+    candidate_scoring:
+      min_score: 0.35
+      reject_tokens:
+        - also
+        - and
+        - or
+        - but
+        - then
+        - inbox
+    decision:
+      temporal_choice_enabled: true
+      temporal_min_confidence_gap: 0.08
+      temporal_require_both_options: true
+    counting:
+      enabled: true
+      count_query_keywords:
+        - how many
+        - number of
+        - count
+        - total
+      day_count_keywords:
+        - how many days
+        - days before
+        - days after
+      date_regexes:
+        - "\\b\\d{4}[/-]\\d{1,2}[/-]\\d{1,2}\\b"
+        - "\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b"
+        - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
+      list_count_enabled: true
+      list_count_query_keywords:
+        - how many things
+        - how many items
+        - how many names
+        - how many products
+        - how many books
+        - how many songs
+        - how many places
+        - how many did i mention
+        - number of things
+        - number of items
+      list_count_min_unique_entities: 2
+      list_count_max_entity_tokens: 4
+      list_count_stopwords:
+        - thing
+        - things
+        - item
+        - items
+        - name
+        - names
+        - mention
+        - mentioned
+        - list
+        - listed
+        - ones
+        - one
+
+embedding:
+  dim: 512
+  model: nomic-embed-text
+  cache_size: 2048
+  truncate_or_pad: true
+
+time_extraction:
+  regexes:
+    - "\\b\\d{4}[/-]\\d{1,2}[/-]\\d{1,2}\\b"
+    - "\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b"
+    - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
+
+llm:
+  default_model: qwen3:8b
+  supported_models:
+    - qwen3:8b
+    - deepseek-r1:8b
+  summary_model: qwen3:4b
+  embedding_timeout_sec: 60
+  host: http://127.0.0.1:11434
+  temperature: 0.2
+  request_timeout_sec: 360
+
+logging:
+  log_file: logs/system.log
+  level: INFO
+  console_enabled: true
+
+dataset:
+  stream_mode: true
+  stream_read_size: 4096
+  eval_max_instances: 0
+  eval_print_prediction_chars: 160
+
+evaluation:
+  isolated_per_instance: true
+  group_by_question_type: true
+  report_abstention_separately: true
+  use_short_context_in_eval: false
+  eval_answer_style: "Answer with only the final answer. No explanation."
+  compute_evidence_recall: true
+  compute_answer_span_hit: true
+  compute_support_sentence_hit: true
+  save_to_db: true
+  run_table: eval_runs
+  result_table: eval_results
+  group_table: eval_group_results
+  oracle_temporal:
+    disable_temporal_weight: true
+    dataset_keyword: oracle
+  matching:
+    mode: em_or_f1
+    f1_threshold: 0.6
+    substring_match: false
+    numeric_tolerance: 0.0
+    numeric_match:
+      enabled: true
+      reference_regex: "^\\s*[-+]?\\d*\\.?\\d+(\\s*[a-z]+)?\\s*$"
+    normalize:
+      lowercase: true
+      strip_punctuation: true
+      strip_articles: true
+      article_tokens:
+        - a
+        - an
+        - the
+      collapse_whitespace: true
+    answer_split:
+      enabled: true
+      delimiters:
+        - "\n"
+        - "also acceptable"
+        - "acceptable answer"
+      regex_separators:
+        - "\\.\\s+"
+        - "\\s+or\\s+"
+        - ";"
+      max_candidates: 8
+    support_hit:
+      min_overlap_ratio: 0.5
+      min_overlap_tokens: 2
