@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from llm_long_memory.memory.counting_resolver import CountingResolver
+from llm_long_memory.memory.answering_temporal import choose_temporal_option
 from llm_long_memory.utils.logger import logger
 
 
@@ -564,130 +564,6 @@ class AnsweringPipeline:
             f"Question: {input_text}"
         )
 
-    @staticmethod
-    def _extract_quoted_options(query: str) -> List[str]:
-        return [
-            x.strip()
-            for x in re.findall(r"'([^']{2,120})'|\"([^\"]{2,120})\"", query)
-            for x in x
-            if x.strip()
-        ]
-
-    @staticmethod
-    def _extract_or_options(query: str) -> List[str]:
-        # Match common patterns like: "the bike or the car"
-        m = re.search(
-            r"(?:the\s+)?([a-z0-9][a-z0-9\\s\\-]{1,50}?)\\s+or\\s+(?:the\\s+)?([a-z0-9][a-z0-9\\s\\-]{1,50}?)\\??$",
-            query.strip().lower(),
-            flags=re.IGNORECASE,
-        )
-        if not m:
-            return []
-        left = " ".join(m.group(1).split()).strip(" .,;:!?")
-        right = " ".join(m.group(2).split()).strip(" .,;:!?")
-        if not left or not right:
-            return []
-        if len(left.split()) > 8 or len(right.split()) > 8:
-            return []
-        return [left, right]
-
-    @staticmethod
-    def _parse_date_token(token: str) -> Optional[datetime]:
-        clean = token.strip().lower().replace(",", "")
-        clean = re.sub(r"(\\d)(st|nd|rd|th)\\b", r"\\1", clean)
-        formats = [
-            "%Y/%m/%d",
-            "%Y-%m-%d",
-            "%m/%d/%Y",
-            "%m/%d/%y",
-            "%m/%d",
-            "%b %d %Y",
-            "%b %d",
-            "%B %d %Y",
-            "%B %d",
-        ]
-        for fmt in formats:
-            try:
-                parsed = datetime.strptime(clean, fmt)
-                if fmt in {"%m/%d", "%b %d", "%B %d"}:
-                    parsed = parsed.replace(year=2000)
-                return parsed
-            except ValueError:
-                continue
-        return None
-
-    def _extract_dates_from_text(self, text: str) -> List[datetime]:
-        out: List[datetime] = []
-        # Reuse existing time regexes for extraction, then parse tokens.
-        for pat in self.intent_time_patterns:
-            for token in pat.findall(text):
-                dt = self._parse_date_token(str(token))
-                if dt is not None:
-                    out.append(dt)
-        return out
-
-    def _choose_temporal_option(
-        self,
-        query: str,
-        evidence_sentences: List[Dict[str, object]],
-    ) -> Optional[Dict[str, str]]:
-        if not self.decision_temporal_choice_enabled:
-            return None
-        q = query.lower()
-        if (" first" not in q) and (" earlier" not in q) and (" before " not in q):
-            if (" last" not in q) and (" later" not in q) and (" after " not in q):
-                return None
-        prefer_earliest = (" first" in q) or (" earlier" in q) or (" before " in q)
-        prefer_latest = (" last" in q) or (" later" in q) or (" after " in q)
-        options = self._extract_quoted_options(query)
-        if len(options) < 2:
-            options = self._extract_or_options(query)
-        if len(options) < 2:
-            return None
-        left, right = options[0], options[1]
-        left_hits = 0.0
-        right_hits = 0.0
-        left_dates: List[datetime] = []
-        right_dates: List[datetime] = []
-        left_mentions = 0
-        right_mentions = 0
-        for item in evidence_sentences:
-            text = str(item.get("text", ""))
-            score = float(item.get("score", 0.0))
-            low = text.lower()
-            if left.lower() in low:
-                left_hits += score
-                left_mentions += 1
-                left_dates.extend(self._extract_dates_from_text(text))
-            if right.lower() in low:
-                right_hits += score
-                right_mentions += 1
-                right_dates.extend(self._extract_dates_from_text(text))
-
-        if self.decision_temporal_require_both_options and (
-            left_mentions == 0 or right_mentions == 0
-        ):
-            return None
-        if left_hits <= 0.0 and right_hits <= 0.0:
-            return None
-
-        # Prefer explicit date comparison when both options have date evidence.
-        if left_dates and right_dates:
-            left_anchor = min(left_dates) if prefer_earliest or (not prefer_latest) else max(left_dates)
-            right_anchor = min(right_dates) if prefer_earliest or (not prefer_latest) else max(right_dates)
-            if left_anchor != right_anchor:
-                if prefer_latest:
-                    answer = left if left_anchor > right_anchor else right
-                else:
-                    answer = left if left_anchor < right_anchor else right
-                return {"answer": answer, "reason": "temporal_choice_by_date"}
-
-        gap = abs(left_hits - right_hits)
-        if gap < self.decision_temporal_min_confidence_gap:
-            return None
-        answer = left if left_hits > right_hits else right
-        return {"answer": answer, "reason": "temporal_choice_by_score"}
-
     def decide_answer(
         self,
         query: str,
@@ -700,7 +576,14 @@ class AnsweringPipeline:
         if counted is not None:
             return counted
 
-        temporal = self._choose_temporal_option(query, evidence_sentences)
+        temporal = choose_temporal_option(
+            query=query,
+            evidence_sentences=evidence_sentences,
+            enabled=self.decision_temporal_choice_enabled,
+            min_confidence_gap=self.decision_temporal_min_confidence_gap,
+            require_both_options=self.decision_temporal_require_both_options,
+            time_patterns=self.intent_time_patterns,
+        )
         if temporal is not None:
             return temporal
 
