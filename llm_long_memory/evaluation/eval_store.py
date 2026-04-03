@@ -39,7 +39,8 @@ class EvalStore:
               retrieval_answer_span_hit_rate REAL,
               retrieval_support_sentence_hit_rate REAL,
               retrieval_evidence_hit_rate REAL,
-              graph_retrieval_hit_rate REAL,
+              graph_answer_span_hit_rate REAL,
+              graph_support_sentence_hit_rate REAL,
               graph_ingest_accept_rate REAL,
               isolated INTEGER
             )
@@ -60,7 +61,8 @@ class EvalStore:
               evidence_recall REAL,
               answer_span_hit INTEGER,
               support_sentence_hit INTEGER,
-              graph_retrieval_hit INTEGER,
+              graph_answer_span_hit INTEGER,
+              graph_support_sentence_hit INTEGER,
               retrieved_session_ids TEXT
             )
             """
@@ -96,8 +98,12 @@ class EvalStore:
             )
         if "final_answer_acc" not in run_names:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN final_answer_acc REAL")
-        if "graph_retrieval_hit_rate" not in run_names:
-            self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN graph_retrieval_hit_rate REAL")
+        if "graph_answer_span_hit_rate" not in run_names:
+            self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN graph_answer_span_hit_rate REAL")
+        if "graph_support_sentence_hit_rate" not in run_names:
+            self.conn.execute(
+                f"ALTER TABLE {self.run_table} ADD COLUMN graph_support_sentence_hit_rate REAL"
+            )
         if "graph_ingest_accept_rate" not in run_names:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN graph_ingest_accept_rate REAL")
 
@@ -113,8 +119,12 @@ class EvalStore:
             self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN support_sentence_hit INTEGER")
         if "retrieved_session_ids" not in names:
             self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN retrieved_session_ids TEXT")
-        if "graph_retrieval_hit" not in names:
-            self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN graph_retrieval_hit INTEGER")
+        if "graph_answer_span_hit" not in names:
+            self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN graph_answer_span_hit INTEGER")
+        if "graph_support_sentence_hit" not in names:
+            self.conn.execute(
+                f"ALTER TABLE {self.result_table} ADD COLUMN graph_support_sentence_hit INTEGER"
+            )
         self.conn.commit()
 
     def log_eval_run_start(
@@ -128,9 +138,10 @@ class EvalStore:
             (run_id, dataset_path, started_at, finished_at, total, matched, accuracy,
              final_answer_acc,
              retrieval_answer_span_hit_rate, retrieval_support_sentence_hit_rate, retrieval_evidence_hit_rate,
-             graph_retrieval_hit_rate, graph_ingest_accept_rate,
+             graph_answer_span_hit_rate, graph_support_sentence_hit_rate,
+             graph_ingest_accept_rate,
              isolated)
-            VALUES(?, ?, datetime('now'), NULL, 0, 0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+            VALUES(?, ?, datetime('now'), NULL, 0, 0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
             """,
             (run_id, dataset_path, int(isolated)),
         )
@@ -150,7 +161,8 @@ class EvalStore:
         evidence_recall: float | None = None,
         answer_span_hit: bool | None = None,
         support_sentence_hit: bool | None = None,
-        graph_retrieval_hit: bool | None = None,
+        graph_answer_span_hit: bool | None = None,
+        graph_support_sentence_hit: bool | None = None,
         retrieved_session_ids: Sequence[str] | None = None,
         commit: bool = True,
     ) -> None:
@@ -163,9 +175,11 @@ class EvalStore:
             (
               run_id, question_id, question_type, question,
               expected_answer, prediction, is_match,
-              evidence_hit, evidence_recall, answer_span_hit, support_sentence_hit, graph_retrieval_hit, retrieved_session_ids
+              evidence_hit, evidence_recall, answer_span_hit, support_sentence_hit,
+              graph_answer_span_hit, graph_support_sentence_hit,
+              retrieved_session_ids
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -179,7 +193,12 @@ class EvalStore:
                 (float(evidence_recall) if evidence_recall is not None else None),
                 (int(bool(answer_span_hit)) if answer_span_hit is not None else None),
                 (int(bool(support_sentence_hit)) if support_sentence_hit is not None else None),
-                (int(bool(graph_retrieval_hit)) if graph_retrieval_hit is not None else None),
+                (int(bool(graph_answer_span_hit)) if graph_answer_span_hit is not None else None),
+                (
+                    int(bool(graph_support_sentence_hit))
+                    if graph_support_sentence_hit is not None
+                    else None
+                ),
                 session_ids_json,
             ),
         )
@@ -217,7 +236,8 @@ class EvalStore:
         retrieval_answer_span_hit_rate: float | None = None,
         retrieval_support_sentence_hit_rate: float | None = None,
         retrieval_evidence_hit_rate: float | None = None,
-        graph_retrieval_hit_rate: float | None = None,
+        graph_answer_span_hit_rate: float | None = None,
+        graph_support_sentence_hit_rate: float | None = None,
         graph_ingest_accept_rate: float | None = None,
         commit: bool = True,
     ) -> None:
@@ -234,7 +254,8 @@ class EvalStore:
                 retrieval_answer_span_hit_rate = ?,
                 retrieval_support_sentence_hit_rate = ?,
                 retrieval_evidence_hit_rate = ?,
-                graph_retrieval_hit_rate = ?,
+                graph_answer_span_hit_rate = ?,
+                graph_support_sentence_hit_rate = ?,
                 graph_ingest_accept_rate = ?
             WHERE run_id = ?
             """,
@@ -250,7 +271,12 @@ class EvalStore:
                     else None
                 ),
                 (float(retrieval_evidence_hit_rate) if retrieval_evidence_hit_rate is not None else None),
-                (float(graph_retrieval_hit_rate) if graph_retrieval_hit_rate is not None else None),
+                (float(graph_answer_span_hit_rate) if graph_answer_span_hit_rate is not None else None),
+                (
+                    float(graph_support_sentence_hit_rate)
+                    if graph_support_sentence_hit_rate is not None
+                    else None
+                ),
                 (float(graph_ingest_accept_rate) if graph_ingest_accept_rate is not None else None),
                 run_id,
             ),

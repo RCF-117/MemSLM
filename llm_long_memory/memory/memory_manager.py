@@ -9,6 +9,10 @@ from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
 from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.mid_memory import MidMemory
+from llm_long_memory.memory.prompt_context import (
+    PromptContextLimits,
+    build_generation_context,
+)
 from llm_long_memory.memory.short_memory import ShortMemory
 from llm_long_memory.utils.helpers import load_config
 from llm_long_memory.utils.logger import logger
@@ -28,7 +32,13 @@ class MemoryManager:
         self.short_memory = ShortMemory(max_turns=short_size, config=self.config)
         self.mid_memory = MidMemory(config=self.config)
         self.long_memory = LongMemory(config=self.config)
-        self.answering = AnsweringPipeline(self.config["retrieval"]["answering"])
+        answering_cfg = dict(self.config["retrieval"]["answering"])
+        self.answering = AnsweringPipeline(answering_cfg)
+        self.prompt_context_max_chunks = int(answering_cfg["prompt_context_max_chunks"])
+        self.prompt_context_max_chars_per_chunk = int(answering_cfg["prompt_context_max_chars_per_chunk"])
+        self.prompt_context_max_total_chars = int(answering_cfg["prompt_context_max_total_chars"])
+        self.prompt_recent_max_messages = int(answering_cfg["prompt_recent_max_messages"])
+        self.last_prompt_eval_chunks: List[Dict[str, str]] = []
         logger.info("MemoryManager initialized.")
 
     def _rewrite_query_for_long_memory(self, query: str) -> List[str]:
@@ -207,6 +217,7 @@ class MemoryManager:
         precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]] = None,
     ) -> str:
         """Handle one user message with retrieval, LLM call, and memory updates."""
+        self.last_prompt_eval_chunks = []
         logger.info(f"MemoryManager.chat: user input='{input_text}'")
         query = retrieval_query if retrieval_query is not None else input_text
         if precomputed_context is not None:
@@ -232,6 +243,11 @@ class MemoryManager:
             final = str(decided.get("answer", "")).strip()
             reason = str(decided.get("reason", "deterministic"))
             if final:
+                self.last_prompt_eval_chunks = [
+                    {"text": str(item.get("text", ""))}
+                    for item in evidence_sentences
+                    if str(item.get("text", "")).strip()
+                ]
                 logger.info(
                     "MemoryManager.chat: deterministic decision "
                     f"(reason={reason}, answer='{final}')."
@@ -241,6 +257,11 @@ class MemoryManager:
 
         short_answer = self.answering.maybe_short_circuit(candidates, evidence_sentences)
         if short_answer is not None:
+            self.last_prompt_eval_chunks = [
+                {"text": str(item.get("text", ""))}
+                for item in evidence_sentences
+                if str(item.get("text", "")).strip()
+            ]
             logger.info(
                 "MemoryManager.chat: short-circuit answer from extracted candidates "
                 f"(candidate='{short_answer}', score={float(candidates[0]['score']):.4f})."
@@ -248,13 +269,33 @@ class MemoryManager:
             self._record_turn(input_text, short_answer)
             return short_answer
 
+        recent_messages = self.short_memory.get()
+        if self.prompt_recent_max_messages > 0:
+            recent_messages = recent_messages[-self.prompt_recent_max_messages :]
         recent_context = "\n".join(
-            f"{msg.get('role', 'user')}: {msg.get('content', '')}"
-            for msg in self.short_memory.get()
+            f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in recent_messages
+        )
+        generation_context = build_generation_context(
+            reranked_chunks=chunks,
+            evidence_sentences=evidence_sentences,
+            fallback_context=retrieved_context,
+            limits=PromptContextLimits(
+                max_chunks=self.prompt_context_max_chunks,
+                max_chars_per_chunk=self.prompt_context_max_chars_per_chunk,
+                max_total_chars=self.prompt_context_max_total_chars,
+            ),
+        )
+        self.last_prompt_eval_chunks = []
+        if generation_context.strip():
+            self.last_prompt_eval_chunks.append({"text": generation_context})
+        self.last_prompt_eval_chunks.extend(
+            {"text": str(item.get("text", ""))}
+            for item in evidence_sentences
+            if str(item.get("text", "")).strip()
         )
         prompt_text = self.answering.build_answer_prompt(
             input_text=input_text,
-            retrieved_context=retrieved_context,
+            retrieved_context=generation_context,
             recent_context=recent_context,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
@@ -309,6 +350,10 @@ class MemoryManager:
 
         self._record_turn(input_text, ai_response)
         return ai_response
+
+    def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
+        """Return prompt-grounded chunks used by the most recent chat call."""
+        return [{"text": str(item.get("text", ""))} for item in self.last_prompt_eval_chunks]
 
     def close(self) -> None:
         """Close owned resources."""

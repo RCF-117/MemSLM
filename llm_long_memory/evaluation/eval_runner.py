@@ -14,6 +14,7 @@ from llm_long_memory.evaluation.metrics_runtime import (
     evaluate_match,
     update_group_stats,
 )
+from llm_long_memory.evaluation.eval_reporting import EvalCounters, finalize_eval_run
 from llm_long_memory.memory.memory_manager import MemoryManager
 from llm_long_memory.utils.logger import logger
 
@@ -55,15 +56,8 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
 
     instances = load_stream(dataset_path)
     seen = 0
-    total = 0
-    matched = 0
+    counters = EvalCounters()
     grouped: Dict[str, Dict[str, int]] = {}
-    retrieval_total = 0
-    retrieval_span_hits = 0
-    retrieval_support_hits = 0
-    retrieval_evidence_hits = 0
-    graph_retrieval_total = 0
-    graph_retrieval_hits = 0
 
     eval_error: Exception | None = None
     try:
@@ -97,7 +91,8 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
             evidence_recall = None
             answer_span_hit = None
             support_sentence_hit = None
-            graph_retrieval_hit = None
+            graph_answer_span_hit = None
+            graph_support_sentence_hit = None
             retrieved_session_ids: List[str] = []
             precomputed_context = None
             if (
@@ -108,13 +103,14 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 precomputed_context = manager.retrieve_context(question)
                 _ctx, _topics, chunks = precomputed_context
                 graph_nodes = manager.long_memory.query(question)
-                graph_retrieval_total += 1
+                counters.graph_retrieval_total += 1
                 graph_chunks = [{"text": str(item.get("text", ""))} for item in graph_nodes]
-                graph_retrieval_hit = bool(
-                    compute_answer_span_hit(expected, graph_chunks, eval_cfg)
-                    or compute_support_sentence_hit(expected, graph_chunks, eval_cfg)
+                graph_answer_span_hit = compute_answer_span_hit(expected, graph_chunks, eval_cfg)
+                graph_support_sentence_hit = compute_support_sentence_hit(
+                    expected, graph_chunks, eval_cfg
                 )
-                graph_retrieval_hits += int(bool(graph_retrieval_hit))
+                counters.graph_span_hits += int(bool(graph_answer_span_hit))
+                counters.graph_support_hits += int(bool(graph_support_sentence_hit))
                 if compute_evidence_recall:
                     retrieved_session_ids = sorted(
                         {
@@ -141,26 +137,32 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                         if evidence_sessions
                         else (1.0 if hit_turn else 0.0)
                     )
-                    retrieval_evidence_hits += int(bool(evidence_hit))
+                    counters.retrieval_evidence_hits += int(bool(evidence_hit))
                 if compute_answer_span_hit_enabled:
-                    answer_span_hit = compute_answer_span_hit(expected, chunks, eval_cfg)
-                    retrieval_span_hits += int(bool(answer_span_hit))
+                    answer_span_hit = None
                 if compute_support_sentence_hit_enabled:
-                    support_sentence_hit = compute_support_sentence_hit(expected, chunks, eval_cfg)
-                    retrieval_support_hits += int(bool(support_sentence_hit))
-                retrieval_total += 1
+                    support_sentence_hit = None
 
-            total += 1
+            counters.total += 1
             eval_question = f"{answer_style}\n{question}" if answer_style else question
             prediction = manager.chat(
                 eval_question,
                 retrieval_query=question,
                 precomputed_context=precomputed_context,
             )
+            prompt_chunks = manager.get_last_prompt_eval_chunks()
+            if compute_answer_span_hit_enabled:
+                answer_span_hit = compute_answer_span_hit(expected, prompt_chunks, eval_cfg)
+                counters.retrieval_span_hits += int(bool(answer_span_hit))
+            if compute_support_sentence_hit_enabled:
+                support_sentence_hit = compute_support_sentence_hit(expected, prompt_chunks, eval_cfg)
+                counters.retrieval_support_hits += int(bool(support_sentence_hit))
+            if compute_answer_span_hit_enabled or compute_support_sentence_hit_enabled:
+                counters.retrieval_total += 1
             match_result = evaluate_match(prediction, expected, eval_cfg)
             is_match = bool(match_result["is_match"])
             if is_match:
-                matched += 1
+                counters.matched += 1
             if group_by_type:
                 update_group_stats(grouped, eval_group_key(qid, qtype, eval_cfg), is_match)
             manager.mid_memory.log_eval_result(
@@ -175,14 +177,15 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 evidence_recall=evidence_recall,
                 answer_span_hit=answer_span_hit,
                 support_sentence_hit=support_sentence_hit,
-                graph_retrieval_hit=graph_retrieval_hit,
+                graph_answer_span_hit=graph_answer_span_hit,
+                graph_support_sentence_hit=graph_support_sentence_hit,
                 retrieved_session_ids=retrieved_session_ids,
                 commit=False,
             )
 
             preview = prediction[:preview_chars].replace("\n", " ")
             print(
-                f"[Eval {total}] question_id={qid} | type={qtype} | match={is_match}\n"
+                f"[Eval {counters.total}] question_id={qid} | type={qtype} | match={is_match}\n"
                 f"Score: em={match_result['em']:.2f}, f1={match_result['f1']:.2f}, "
                 f"substring={match_result['substring']:.0f}, numeric={match_result['numeric']:.0f}\n"
                 "Retrieval Quality: "
@@ -200,64 +203,13 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
     finally:
         if should_disable_temporal:
             manager.mid_memory.set_temporal_weight_disabled(prev_temporal_disabled)
-        accuracy = (float(matched) / float(total)) if total else 0.0
-        retrieval_span_rate = (
-            (float(retrieval_span_hits) / float(retrieval_total)) if retrieval_total else 0.0
+        finalize_eval_run(
+            manager=manager,
+            run_id=run_id,
+            grouped=grouped,
+            group_by_type=group_by_type,
+            counters=counters,
         )
-        retrieval_support_rate = (
-            float(retrieval_support_hits) / float(retrieval_total)
-        ) if retrieval_total else 0.0
-        retrieval_evidence_rate = (
-            float(retrieval_evidence_hits) / float(retrieval_total)
-        ) if retrieval_total else 0.0
-        graph_retrieval_hit_rate = (
-            float(graph_retrieval_hits) / float(graph_retrieval_total)
-        ) if graph_retrieval_total else 0.0
-        long_stats = manager.long_memory.debug_stats()
-        ingest_total = int(long_stats.get("ingest_event_total", 0))
-        ingest_accepted = int(long_stats.get("ingest_event_accepted", 0))
-        graph_ingest_accept_rate = (
-            float(ingest_accepted) / float(ingest_total)
-            if ingest_total > 0
-            else 0.0
-        )
-        logger.info(f"Eval mode completed: total={total}, matched={matched}, accuracy={accuracy:.4f}")
-        print(f"Eval summary: total={total}, matched={matched}, final_answer_acc={accuracy:.4f}")
-        print(
-            "Retrieval summary: "
-            f"answer_span_hit_rate={retrieval_span_rate:.4f}, "
-            f"support_sentence_hit_rate={retrieval_support_rate:.4f}, "
-            f"evidence_hit_rate={retrieval_evidence_rate:.4f}, "
-            f"graph_retrieval_hit_rate={graph_retrieval_hit_rate:.4f}"
-        )
-        print(
-            "Graph ingest summary: "
-            f"accepted={ingest_accepted}, total={ingest_total}, "
-            f"graph_ingest_accept_rate={graph_ingest_accept_rate:.4f}"
-        )
-        if group_by_type and grouped:
-            print("Eval by question_type:")
-            for key in sorted(grouped.keys()):
-                g_total = grouped[key]["total"]
-                g_matched = grouped[key]["matched"]
-                g_acc = (float(g_matched) / float(g_total)) if g_total else 0.0
-                manager.mid_memory.log_eval_group_result(
-                    run_id, key, g_total, g_matched, g_acc, commit=False
-                )
-                print(f"- {key}: total={g_total}, matched={g_matched}, accuracy={g_acc:.4f}")
-        manager.mid_memory.log_eval_run_finish(
-            run_id,
-            total,
-            matched,
-            accuracy,
-            retrieval_answer_span_hit_rate=retrieval_span_rate,
-            retrieval_support_sentence_hit_rate=retrieval_support_rate,
-            retrieval_evidence_hit_rate=retrieval_evidence_rate,
-            graph_retrieval_hit_rate=graph_retrieval_hit_rate,
-            graph_ingest_accept_rate=graph_ingest_accept_rate,
-            commit=False,
-        )
-        manager.mid_memory.commit()
 
     if eval_error is not None:
         raise eval_error

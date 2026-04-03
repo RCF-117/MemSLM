@@ -236,6 +236,7 @@ class AnsweringPipeline:
                         "text": clipped,
                         "score": score,
                         "topic_id": str(chunk.get("topic_id", "")),
+                        "chunk_id": int(chunk.get("chunk_id", 0)),
                     }
                 )
         evidence.sort(key=lambda x: float(x["score"]), reverse=True)
