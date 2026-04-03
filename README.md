@@ -1,24 +1,42 @@
-# MemSLM (Research Prototype)
+# MemSLM
 
-A modular, local memory-RAG prototype for long-conversation research.
+MemSLM is a local, modular memory-RAG research prototype for long-conversation evaluation.
 
-## Repo Goals
-- Keep a stable **mid-RAG baseline** branch for reproducible comparisons.
-- Develop new memory modules (especially long-term memory) on `main`.
-- Keep runtime artifacts and large datasets **out of Git history**.
+It is designed for thesis-style iteration: fast experiments, clear module boundaries, and reproducible baseline comparisons.
 
-## Branch Strategy
-- `main`: active development (long-memory / architecture upgrades).
-- `baseline/midrag_v1`: frozen mid-memory baseline for controlled A/B.
+## What This Repo Contains
+- Local LLM chat pipeline (Ollama)
+- Short-term memory (context buffer)
+- Mid-term memory (SQLite topic/chunk memory + hybrid retrieval)
+- Early long-term memory prototype (event-centric graph-like store)
+- Dataset streaming + eval persistence for LongMemEval-style workflows
 
-## Project Layout
-- `llm_long_memory/main.py`: CLI entry (`interactive`, `/run_dataset`, `/run_eval`, `/debug`, `/health`).
-- `llm_long_memory/memory/`: short/mid/long memory orchestration.
-- `llm_long_memory/evaluation/`: loaders, metrics runtime, eval persistence.
-- `llm_long_memory/baselines/`: baseline protocol, baseline config and runner.
-- `llm_long_memory/config/config.yaml`: active full-system config.
+## System Flow
+```mermaid
+flowchart LR
+    A["Input Message"] --> B["Short Memory"]
+    B --> C["Mid Memory Ingest"]
+    C --> D["Topic + Chunk Retrieval"]
+    D --> E["Answering Pipeline"]
+    E --> F["8B LLM Generation"]
+    B --> G["Long Memory Ingest Worker"]
+    G --> H["Event Store (SQLite)"]
+    H --> D
+```
 
-## Quick Start
+## Branch Policy
+- `main`: active development branch (current architecture evolution)
+- `baseline/midrag_v1`: frozen mid-memory RAG baseline for controlled A/B
+
+## Repo Structure
+- `llm_long_memory/main.py`: CLI entry
+- `llm_long_memory/config/config.yaml`: active runtime config
+- `llm_long_memory/memory/`: short/mid/long memory and manager
+- `llm_long_memory/evaluation/`: loader, runner, metrics, eval DB writer
+- `llm_long_memory/baselines/`: baseline protocol + baseline config + runner
+- `llm_long_memory/tests/`: unit tests
+
+## 3-Minute Quick Start
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -27,14 +45,33 @@ python -m unittest discover -s llm_long_memory/tests -v
 python llm_long_memory/main.py
 ```
 
-## Data Policy
-Ignored by Git:
-- `llm_long_memory/data/raw/*.json` (LongMemEval raw files)
-- `llm_long_memory/data/processed/*.db*` (runtime sqlite)
+## CLI Commands
+After starting `python llm_long_memory/main.py`:
+- `/run_dataset path/to/file.json`: ingest dataset messages into memory
+- `/run_eval path/to/file.json`: run evaluation pipeline
+- `/debug`: print memory debug stats
+- `/health`: check Ollama + DB state
+- `exit`: quit
+
+## Data and Git Hygiene
+Large or runtime files are intentionally ignored:
+- `llm_long_memory/data/raw/*.json`
+- `llm_long_memory/data/processed/*.db*`
 - `llm_long_memory/logs/`
 
-This keeps repo size clean while preserving reproducibility scripts/config.
+Tracked placeholders keep directory structure reproducible:
+- `llm_long_memory/data/raw/.gitkeep`
+- `llm_long_memory/data/processed/.gitkeep`
+- `llm_long_memory/data/graphs/.gitkeep`
 
-## Notes
-- This is a thesis/research prototype, not production software.
-- Prioritize modularity, observability, and controlled experiments.
+## Current Status
+- This is a research prototype, not a production system.
+- Priorities: clarity, controllable experiments, and maintainability.
+- Long-memory module is under active refinement and should be evaluated against the frozen mid-RAG baseline.
+
+## Development Notes
+- Keep baseline changes out of `main` experiments unless intentionally updating protocol.
+- Use small commits with one concern per commit.
+- Run tests before pushing.
+
+See also: [CONTRIBUTING.md](CONTRIBUTING.md)
