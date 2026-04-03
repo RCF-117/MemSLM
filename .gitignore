@@ -1,0 +1,27 @@
+# macOS / IDE
+.DS_Store
+.idea/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Runtime outputs
+llm_long_memory/logs/
+llm_long_memory/data/processed/*.db
+llm_long_memory/data/processed/*.db-wal
+llm_long_memory/data/processed/*.db-shm
+llm_long_memory/data/processed/*.sqlite
+llm_long_memory/data/processed/*.sqlite3
+llm_long_memory/data/processed/*.json
+llm_long_memory/data/graphs/*.json
+llm_long_memory/data/raw/wget-log
+
+# Large raw datasets (keep scripts tracked)
+llm_long_memory/data/raw/*.json
+llm_long_memory/data/raw/*.jsonl
+!llm_long_memory/data/raw/*.py

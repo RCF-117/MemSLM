@@ -1,0 +1,5 @@
+numpy
+pyyaml
+networkx
+faiss-cpu
+ollama

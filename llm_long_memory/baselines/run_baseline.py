@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=str,
-        default="llm_long_memory/config/baseline_midrag_v1.yaml",
+        default="llm_long_memory/baselines/baseline_midrag_v1.yaml",
         help="Baseline config file.",
     )
     parser.add_argument(

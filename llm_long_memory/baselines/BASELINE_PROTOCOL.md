@@ -4,7 +4,7 @@ This file defines the reproducible baseline protocol for the Mid-RAG stage.
 
 ## Branch and Config
 - Branch: `baseline/midrag_v1`
-- Frozen config: `llm_long_memory/config/baseline_midrag_v1.yaml`
+- Frozen config: `llm_long_memory/baselines/baseline_midrag_v1.yaml`
 
 ## Datasets and Default Scope
 - Sample set: `llm_long_memory/data/raw/longmemeval_s_sample_20.json`
@@ -13,8 +13,8 @@ This file defines the reproducible baseline protocol for the Mid-RAG stage.
 
 ## Run Command
 ```bash
-python -m llm_long_memory.evaluation.run_baseline \
-  --config llm_long_memory/config/baseline_midrag_v1.yaml \
+python -m llm_long_memory.baselines.run_baseline \
+  --config llm_long_memory/baselines/baseline_midrag_v1.yaml \
   --sample_limit 10
 ```
 
