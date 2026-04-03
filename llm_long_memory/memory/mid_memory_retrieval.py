@@ -17,10 +17,8 @@ class RetrievalOwner(Protocol):
     retrieval_diversity_enabled: bool
     top_k: int
     retrieval_diversity_similarity_threshold: float
-    summary_enabled: bool
     hybrid_alpha: float
     keyword_weight: float
-    summary_weight: float
     time_weight: float
     temporal_boost_max: float
     recent_topic_apply_margin: float
@@ -106,7 +104,7 @@ def search_topics(owner: RetrievalOwner, query: str) -> List[Topic]:
 
     rows = owner.conn.execute(
         """
-        SELECT topic_id, topic_embedding, summary_embedding, keywords, topic_times, last_updated_step, active
+        SELECT topic_id, topic_embedding, keywords, topic_times, last_updated_step, active
         FROM topics
         """
     ).fetchall()
@@ -122,19 +120,16 @@ def search_topics(owner: RetrievalOwner, query: str) -> List[Topic]:
     for row in rows:
         topic_id = str(row["topic_id"])
         topic_emb = owner._blob_to_arr(row["topic_embedding"])
-        summary_emb = owner._blob_to_arr(row["summary_embedding"])
         keywords = json.loads(row["keywords"] or "[]")
         topic_times = json.loads(row["topic_times"] or "[]")
         last = int(row["last_updated_step"] or 0)
 
         embedding_score = owner._cosine(q_emb, topic_emb)
         keyword_score = keyword_overlap(q_tokens, keywords)
-        summary_score = owner._cosine(q_emb, summary_emb) if owner.summary_enabled else 0.0
         time_score = keyword_overlap(q_times, topic_times)
         base_score = (
             owner.hybrid_alpha * embedding_score
             + owner.keyword_weight * keyword_score
-            + owner.summary_weight * summary_score
             + owner.time_weight * time_score
         )
         temporal = owner._temporal_weight(owner.current_step - last)

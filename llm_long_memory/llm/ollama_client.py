@@ -3,13 +3,114 @@
 from __future__ import annotations
 
 import json
+import socket
+import time
 import urllib.error
 import urllib.request
 from typing import Dict, List, Optional, Sequence, Union
 
 from llm_long_memory.utils.helpers import load_config
+from llm_long_memory.utils.logger import logger
 
 Message = Dict[str, str]
+
+
+def ollama_generate_with_retry(
+    *,
+    host: str,
+    model: str,
+    prompt: str,
+    temperature: float,
+    timeout_sec: int,
+    opener: urllib.request.OpenerDirector,
+    max_attempts: int,
+    backoff_sec: float,
+    retry_on_timeout: bool,
+    retry_on_http_502: bool,
+    retry_on_url_error: bool,
+) -> str:
+    """Call Ollama /api/generate with retry for transient local failures."""
+    body = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    req = urllib.request.Request(
+        url=f"{host}/api/generate",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    attempts = max(1, int(max_attempts))
+    wait_sec = max(0.0, float(backoff_sec))
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with opener.open(req, timeout=timeout_sec) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            if payload.get("error"):
+                raise RuntimeError(str(payload["error"]))
+            return str(payload.get("response", "")).strip()
+        except urllib.error.HTTPError as exc:
+            details = ""
+            try:
+                details = exc.read().decode("utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                details = ""
+            if exc.code == 404:
+                raise RuntimeError(f"Model `{model}` not found. Run `ollama pull {model}`.") from exc
+            should_retry = bool(retry_on_http_502 and exc.code == 502 and attempt < attempts)
+            if should_retry:
+                logger.warn(
+                    f"Ollama HTTP {exc.code}; retrying {attempt}/{attempts} after {wait_sec:.1f}s."
+                )
+                time.sleep(wait_sec)
+                continue
+            if exc.code == 502:
+                raise RuntimeError(
+                    "HTTP 502 from Ollama API. This is often a local proxy/host mismatch; "
+                    f"try host `{host}`."
+                    + (f" Details: {details}" if details else "")
+                ) from exc
+            raise RuntimeError(f"Ollama HTTP error {exc.code}" + (f": {details}" if details else "")) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            last_err = exc
+            should_retry = bool(retry_on_timeout and attempt < attempts)
+            if should_retry:
+                logger.warn(
+                    f"Ollama timeout; retrying {attempt}/{attempts} after {wait_sec:.1f}s."
+                )
+                time.sleep(wait_sec)
+                continue
+            raise RuntimeError(
+                f"Ollama request timed out at {host} (timeout={timeout_sec}s)."
+            ) from exc
+        except urllib.error.URLError as exc:
+            last_err = exc
+            reason = getattr(exc, "reason", None)
+            is_timeout = isinstance(reason, (TimeoutError, socket.timeout))
+            should_retry = bool(
+                attempt < attempts and ((retry_on_timeout and is_timeout) or retry_on_url_error)
+            )
+            if should_retry:
+                logger.warn(
+                    "Ollama URL error; "
+                    f"retrying {attempt}/{attempts} after {wait_sec:.1f}s: {exc}"
+                )
+                time.sleep(wait_sec)
+                continue
+            raise RuntimeError(
+                f"Cannot reach Ollama at {host}. Start with `ollama serve`."
+            ) from exc
+        except (RuntimeError, ValueError, TypeError) as exc:
+            last_err = exc
+            raise
+
+    if last_err is not None:
+        raise RuntimeError(f"Ollama call failed after {attempts} attempts: {last_err}") from last_err
+    raise RuntimeError(f"Ollama call failed after {attempts} attempts.")
 
 
 class LLM:
@@ -26,6 +127,12 @@ class LLM:
         self.host = (host or str(llm_cfg["host"])).rstrip("/")
         self.temperature = float(llm_cfg["temperature"])
         self.request_timeout_sec = int(llm_cfg["request_timeout_sec"])
+        retry_cfg = dict(llm_cfg.get("retry", {}))
+        self.retry_max_attempts = int(retry_cfg.get("max_attempts", 1))
+        self.retry_backoff_sec = float(retry_cfg.get("backoff_sec", 0.0))
+        self.retry_on_timeout = bool(retry_cfg.get("retry_on_timeout", True))
+        self.retry_on_http_502 = bool(retry_cfg.get("retry_on_http_502", True))
+        self.retry_on_url_error = bool(retry_cfg.get("retry_on_url_error", False))
         # Force direct local connection; ignore HTTP(S)_PROXY env.
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -65,41 +172,16 @@ class LLM:
         return "\n".join(lines)
 
     def _generate(self, prompt: str) -> str:
-        body = {
-            "model": self.model_name,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": self.temperature},
-        }
-        req = urllib.request.Request(
-            url=f"{self.host}/api/generate",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        return ollama_generate_with_retry(
+            host=self.host,
+            model=self.model_name,
+            prompt=prompt,
+            temperature=self.temperature,
+            timeout_sec=self.request_timeout_sec,
+            opener=self._opener,
+            max_attempts=self.retry_max_attempts,
+            backoff_sec=self.retry_backoff_sec,
+            retry_on_timeout=self.retry_on_timeout,
+            retry_on_http_502=self.retry_on_http_502,
+            retry_on_url_error=self.retry_on_url_error,
         )
-        try:
-            with self._opener.open(req, timeout=self.request_timeout_sec) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            details = ""
-            try:
-                details = exc.read().decode("utf-8").strip()
-            except (OSError, UnicodeDecodeError):
-                details = ""
-            if exc.code == 404:
-                raise RuntimeError(f"Model `{self.model_name}` not found. Run `ollama pull {self.model_name}`.") from exc
-            if exc.code == 502:
-                raise RuntimeError(
-                    "HTTP 502 from Ollama API. This is often a local proxy/host mismatch; "
-                    f"try host `{self.host}`."
-                    + (f" Details: {details}" if details else "")
-                ) from exc
-            raise RuntimeError(f"Ollama HTTP error {exc.code}" + (f": {details}" if details else "")) from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(
-                f"Cannot reach Ollama at {self.host}. Start with `ollama serve`."
-            ) from exc
-
-        if payload.get("error"):
-            raise RuntimeError(str(payload["error"]))
-        return str(payload.get("response", "")).strip()

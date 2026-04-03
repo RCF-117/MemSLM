@@ -16,11 +16,6 @@ memory:
     topic_merge_threshold: 0.97
     enable_topic_merge: false
     topic_min_chunks_before_merge: 3
-    summary_update_every: 10
-    summary_min_chunk_count: 6
-    summary_cooldown_steps: 60
-    summary_on_new_topic: false
-    summary_enabled: false
     database_file: data/processed/mid_memory.db
     sqlite_busy_timeout_ms: 5000
     sqlite_journal_mode: WAL
@@ -200,7 +195,6 @@ retrieval:
   chunks_per_topic: 5
   hybrid_alpha: 0.6
   keyword_weight: 0.25
-  summary_weight: 0.0
   recent_topic_weight: 1.2
   recent_topic_apply_margin: 0.08
   chunk_topic_weight: 0.2
@@ -238,6 +232,10 @@ retrieval:
     enabled: true
     prepend_before_mid_context: true
   answering:
+    prompt_context_max_chunks: 8
+    prompt_context_max_chars_per_chunk: 500
+    prompt_context_max_total_chars: 6000
+    prompt_recent_max_messages: 6
     evidence_top_n_chunks: 10
     evidence_top_n_sentences: 8
     evidence_sentence_max_chars: 220
@@ -395,11 +393,16 @@ llm:
   supported_models:
     - qwen3:8b
     - deepseek-r1:8b
-  summary_model: qwen3:4b
   embedding_timeout_sec: 60
   host: http://127.0.0.1:11434
   temperature: 0.2
   request_timeout_sec: 360
+  retry:
+    max_attempts: 2
+    backoff_sec: 1.0
+    retry_on_timeout: true
+    retry_on_http_502: true
+    retry_on_url_error: false
 
 logging:
   log_file: logs/system.log

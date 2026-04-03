@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Protocol, Sequence
 
 import numpy as np
 
-from llm_long_memory.utils.embedding import embed
 from llm_long_memory.utils.logger import logger
 
 
@@ -71,20 +70,16 @@ def create_topic(owner: TopicOwner, topic_embedding: np.ndarray) -> str:
     owner.conn.execute(
         """
         INSERT INTO topics(
-          topic_id, topic_embedding, summary, summary_embedding, keywords, topic_times,
-          last_updated_step, last_summary_step, active
+          topic_id, topic_embedding, keywords, topic_times, last_updated_step, active
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?)
         """,
         (
             topic_id,
             owner._arr_to_blob(topic_embedding),
-            "",
-            owner._arr_to_blob(np.zeros(owner.embedding_dim, dtype=np.float32)),
             json.dumps([]),
             json.dumps([]),
             owner.current_step,
-            0,
             1,
         ),
     )
@@ -139,13 +134,6 @@ def recompute_topic_embedding(owner: TopicOwner, topic_id: str) -> None:
     )
 
 
-def merge_text(left: str, right: str) -> str:
-    """Merge two summary strings preserving content."""
-    if left and right:
-        return f"{left}\n{right}"
-    return left or right
-
-
 def merge_keywords(owner: TopicOwner, left: Sequence[str], right: Sequence[str]) -> List[str]:
     """Merge keyword lists with normalization and deduplication."""
     merged: List[str] = []
@@ -191,18 +179,14 @@ def merge_topic_pair(owner: TopicOwner, target_topic_id: str, source_topic_id: s
     deduplicate_topic_chunks(owner, target_topic_id)
 
     source = owner.conn.execute(
-        "SELECT summary, keywords, last_updated_step, COALESCE(last_summary_step, 0) AS last_summary_step FROM topics WHERE topic_id = ?",
+        "SELECT keywords, last_updated_step FROM topics WHERE topic_id = ?",
         (source_topic_id,),
     ).fetchone()
     target = owner.conn.execute(
-        "SELECT summary, keywords, last_updated_step, COALESCE(last_summary_step, 0) AS last_summary_step FROM topics WHERE topic_id = ?",
+        "SELECT keywords, last_updated_step FROM topics WHERE topic_id = ?",
         (target_topic_id,),
     ).fetchone()
     if source and target:
-        merged_summary = merge_text(
-            str(target["summary"] or ""),
-            str(source["summary"] or ""),
-        )
         merged_keywords = merge_keywords(
             owner,
             json.loads(target["keywords"] or "[]"),
@@ -212,33 +196,15 @@ def merge_topic_pair(owner: TopicOwner, target_topic_id: str, source_topic_id: s
             int(target["last_updated_step"] or 0),
             int(source["last_updated_step"] or 0),
         )
-        merged_summary_step = max(
-            int(target["last_summary_step"] or 0),
-            int(source["last_summary_step"] or 0),
-        )
-        summary_embedding_blob = owner._arr_to_blob(np.zeros(owner.embedding_dim, dtype=np.float32))
-        if merged_summary:
-            try:
-                summary_embedding_blob = owner._arr_to_blob(
-                    embed(merged_summary, owner.embedding_dim)
-                )
-            except (RuntimeError, ValueError, TypeError) as exc:
-                logger.warn(
-                    "MidMemory._merge_topic_pair: summary embedding failed; "
-                    f"falling back to zero vector. error={exc}"
-                )
         owner.conn.execute(
             """
             UPDATE topics
-            SET summary = ?, summary_embedding = ?, keywords = ?, last_updated_step = ?, last_summary_step = ?, active = 1
+            SET keywords = ?, last_updated_step = ?, active = 1
             WHERE topic_id = ?
             """,
             (
-                merged_summary,
-                summary_embedding_blob,
                 json.dumps(merged_keywords),
                 merged_step,
-                merged_summary_step,
                 target_topic_id,
             ),
         )

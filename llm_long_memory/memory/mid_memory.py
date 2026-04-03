@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.request
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
 from llm_long_memory.memory import mid_memory_chunking as chunking
 from llm_long_memory.memory import mid_memory_retrieval as retrieval
-from llm_long_memory.memory import mid_memory_summary as summary
 from llm_long_memory.memory.mid_memory_store import MidMemoryStore
 from llm_long_memory.memory import mid_memory_topicing as topicing
 from llm_long_memory.utils.embedding import embed
@@ -32,7 +30,6 @@ class MidMemory:
         self.config = config or load_config()
         self.memory_cfg = self.config["memory"]["mid_memory"]
         self.retrieval_cfg = self.config["retrieval"]
-        self.llm_cfg = self.config["llm"]
         self.eval_cfg = self.config["evaluation"]
         self.embedding_dim = int(self.config["embedding"]["dim"])
         self.time_cfg = dict(self.config.get("time_extraction", {}))
@@ -55,11 +52,6 @@ class MidMemory:
         self.topic_merge_threshold = float(self.memory_cfg["topic_merge_threshold"])
         self.enable_topic_merge = bool(self.memory_cfg["enable_topic_merge"])
         self.topic_min_chunks_before_merge = int(self.memory_cfg.get("topic_min_chunks_before_merge", 1))
-        self.summary_update_every = int(self.memory_cfg["summary_update_every"])
-        self.summary_min_chunk_count = int(self.memory_cfg["summary_min_chunk_count"])
-        self.summary_cooldown_steps = int(self.memory_cfg["summary_cooldown_steps"])
-        self.summary_on_new_topic = bool(self.memory_cfg["summary_on_new_topic"])
-        self.summary_enabled = bool(self.memory_cfg["summary_enabled"])
         self.sqlite_busy_timeout_ms = int(self.memory_cfg["sqlite_busy_timeout_ms"])
         self.sqlite_journal_mode = str(self.memory_cfg["sqlite_journal_mode"])
         self.sqlite_synchronous = str(self.memory_cfg["sqlite_synchronous"])
@@ -90,7 +82,6 @@ class MidMemory:
         self.chunks_per_topic = int(self.retrieval_cfg["chunks_per_topic"])
         self.hybrid_alpha = float(self.retrieval_cfg["hybrid_alpha"])
         self.keyword_weight = float(self.retrieval_cfg["keyword_weight"])
-        self.summary_weight = float(self.retrieval_cfg["summary_weight"])
         self.recent_topic_weight = float(self.retrieval_cfg["recent_topic_weight"])
         self.recent_topic_apply_margin = float(self.retrieval_cfg["recent_topic_apply_margin"])
         self.chunk_topic_weight = float(self.retrieval_cfg["chunk_topic_weight"])
@@ -127,12 +118,6 @@ class MidMemory:
         topic_expansion_cfg = dict(self.retrieval_cfg["topic_expansion"])
         self.topic_expansion_enabled = bool(topic_expansion_cfg["enabled"])
         self.topic_expansion_per_topic_limit = int(topic_expansion_cfg["per_topic_limit"])
-
-        self.summary_model = str(self.llm_cfg["summary_model"])
-        self.llm_host = str(self.llm_cfg["host"]).rstrip("/")
-        self.temperature = float(self.llm_cfg["temperature"])
-        self.request_timeout_sec = int(self.llm_cfg["request_timeout_sec"])
-        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         self.buffer: List[Dict[str, Any]] = []
         self.current_step = 0
@@ -398,29 +383,15 @@ class MidMemory:
     def _create_topic(self, topic_embedding: np.ndarray) -> str:
         return topicing.create_topic(self, topic_embedding)
 
-    def _update_topic(self, topic_id: str, created_new_topic: bool) -> None:
+    def _update_topic(self, topic_id: str, _created_new_topic: bool) -> None:
         self._recompute_topic_embedding(topic_id)
         self.conn.execute(
             "UPDATE topics SET last_updated_step = ?, active = 1 WHERE topic_id = ?",
             (self.current_step, topic_id),
         )
-        self._maybe_update_summary_keywords(topic_id, created_new_topic)
 
     def _recompute_topic_embedding(self, topic_id: str) -> None:
         topicing.recompute_topic_embedding(self, topic_id)
-
-    def _maybe_update_summary_keywords(self, topic_id: str, created_new_topic: bool) -> None:
-        summary.maybe_update_summary_keywords(self, topic_id, created_new_topic)
-
-    def _summarize_with_model(self, raw_text: str) -> str:
-        return summary.summarize_with_model(self, raw_text)
-
-    @staticmethod
-    def _extractive_clip(summary: str, source: str) -> str:
-        return summary.extractive_clip(summary, source)
-
-    def _extract_keywords(self, text: str) -> List[str]:
-        return summary.extract_keywords(self, text)
 
     def _merge_topics(self) -> None:
         topicing.merge_topics(self)
@@ -430,10 +401,6 @@ class MidMemory:
 
     def _deduplicate_topic_chunks(self, topic_id: str) -> None:
         topicing.deduplicate_topic_chunks(self, topic_id)
-
-    @staticmethod
-    def _merge_text(left: str, right: str) -> str:
-        return topicing.merge_text(left, right)
 
     def _merge_keywords(self, left: Sequence[str], right: Sequence[str]) -> List[str]:
         return topicing.merge_keywords(self, left, right)
@@ -516,7 +483,8 @@ class MidMemory:
         evidence_recall: float | None = None,
         answer_span_hit: bool | None = None,
         support_sentence_hit: bool | None = None,
-        graph_retrieval_hit: bool | None = None,
+        graph_answer_span_hit: bool | None = None,
+        graph_support_sentence_hit: bool | None = None,
         retrieved_session_ids: Sequence[str] | None = None,
         commit: bool = True,
     ) -> None:
@@ -533,7 +501,8 @@ class MidMemory:
             evidence_recall=evidence_recall,
             answer_span_hit=answer_span_hit,
             support_sentence_hit=support_sentence_hit,
-            graph_retrieval_hit=graph_retrieval_hit,
+            graph_answer_span_hit=graph_answer_span_hit,
+            graph_support_sentence_hit=graph_support_sentence_hit,
             retrieved_session_ids=retrieved_session_ids,
             commit=commit,
         )
@@ -566,6 +535,9 @@ class MidMemory:
         retrieval_answer_span_hit_rate: float | None = None,
         retrieval_support_sentence_hit_rate: float | None = None,
         retrieval_evidence_hit_rate: float | None = None,
+        graph_answer_span_hit_rate: float | None = None,
+        graph_support_sentence_hit_rate: float | None = None,
+        graph_ingest_accept_rate: float | None = None,
         commit: bool = True,
     ) -> None:
         """Update final metrics and finished_at for one eval run."""
@@ -577,6 +549,9 @@ class MidMemory:
             retrieval_answer_span_hit_rate=retrieval_answer_span_hit_rate,
             retrieval_support_sentence_hit_rate=retrieval_support_sentence_hit_rate,
             retrieval_evidence_hit_rate=retrieval_evidence_hit_rate,
+            graph_answer_span_hit_rate=graph_answer_span_hit_rate,
+            graph_support_sentence_hit_rate=graph_support_sentence_hit_rate,
+            graph_ingest_accept_rate=graph_ingest_accept_rate,
             commit=commit,
         )
 
