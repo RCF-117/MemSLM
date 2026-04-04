@@ -53,14 +53,21 @@ After starting `python llm_long_memory/main.py`:
 - `/health`: check Ollama + DB state
 - `exit`: quit
 
+Example dataset paths:
+- LongMemEval: `llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json`
+- LoCoMo: `llm_long_memory/data/raw/LoCoMo/locomo10.json`
+
 ## Data and Git Hygiene
 Large or runtime files are intentionally ignored:
 - `llm_long_memory/data/raw/*.json`
+- `llm_long_memory/data/raw/**/*.json`
 - `llm_long_memory/data/processed/*.db*`
 - `llm_long_memory/logs/`
 
 Tracked placeholders keep directory structure reproducible:
 - `llm_long_memory/data/raw/.gitkeep`
+- `llm_long_memory/data/raw/LongMemEval/.gitkeep`
+- `llm_long_memory/data/raw/LoCoMo/.gitkeep`
 - `llm_long_memory/data/processed/.gitkeep`
 - `llm_long_memory/data/graphs/.gitkeep`
 
