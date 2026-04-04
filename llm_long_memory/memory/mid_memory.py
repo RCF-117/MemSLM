@@ -51,7 +51,7 @@ class MidMemory:
         self.topic_inactive_steps = int(self.memory_cfg["topic_inactive_steps"])
         self.topic_merge_threshold = float(self.memory_cfg["topic_merge_threshold"])
         self.enable_topic_merge = bool(self.memory_cfg["enable_topic_merge"])
-        self.topic_min_chunks_before_merge = int(self.memory_cfg.get("topic_min_chunks_before_merge", 1))
+        self.topic_min_chunks_before_merge = int(self.memory_cfg["topic_min_chunks_before_merge"])
         self.sqlite_busy_timeout_ms = int(self.memory_cfg["sqlite_busy_timeout_ms"])
         self.sqlite_journal_mode = str(self.memory_cfg["sqlite_journal_mode"])
         self.sqlite_synchronous = str(self.memory_cfg["sqlite_synchronous"])
@@ -86,14 +86,14 @@ class MidMemory:
         self.recent_topic_apply_margin = float(self.retrieval_cfg["recent_topic_apply_margin"])
         self.chunk_topic_weight = float(self.retrieval_cfg["chunk_topic_weight"])
         self.time_weight = float(self.retrieval_cfg["time_weight"])
-        lexical_cfg = dict(self.retrieval_cfg.get("lexical_search", {}))
-        self.lexical_search_enabled = bool(lexical_cfg.get("enabled", True))
-        self.lexical_bm25_top_n = int(lexical_cfg.get("bm25_top_n", 40))
-        fusion_cfg = dict(self.retrieval_cfg.get("fusion", {}))
-        self.fusion_rrf_k = int(fusion_cfg.get("rrf_k", 60))
-        self.fusion_dense_weight = float(fusion_cfg.get("dense_weight", 1.0))
-        self.fusion_lexical_weight = float(fusion_cfg.get("lexical_weight", 1.0))
-        self.fusion_topic_weight = float(fusion_cfg.get("topic_weight", 0.15))
+        lexical_cfg = dict(self.retrieval_cfg["lexical_search"])
+        self.lexical_search_enabled = bool(lexical_cfg["enabled"])
+        self.lexical_bm25_top_n = int(lexical_cfg["bm25_top_n"])
+        fusion_cfg = dict(self.retrieval_cfg["fusion"])
+        self.fusion_rrf_k = int(fusion_cfg["rrf_k"])
+        self.fusion_dense_weight = float(fusion_cfg["dense_weight"])
+        self.fusion_lexical_weight = float(fusion_cfg["lexical_weight"])
+        self.fusion_topic_weight = float(fusion_cfg["topic_weight"])
         self.temporal_boost_max = float(self.retrieval_cfg["temporal_boost_max"])
         self.retrieval_diversity_enabled = bool(self.retrieval_cfg["diversity"]["enabled"])
         self.retrieval_diversity_similarity_threshold = float(
@@ -463,97 +463,6 @@ class MidMemory:
         self.buffer.clear()
         self.current_step = 0
         logger.info("MidMemory.clear_all: cleared topics, chunks, and runtime buffer.")
-
-    def log_eval_run_start(
-        self, run_id: str, dataset_path: str, isolated: bool, commit: bool = True
-    ) -> None:
-        """Insert evaluation run start metadata."""
-        self.eval_store.log_eval_run_start(run_id, dataset_path, isolated, commit=commit)
-
-    def log_eval_result(
-        self,
-        run_id: str,
-        question_id: str,
-        question_type: str,
-        question: str,
-        expected_answer: str,
-        prediction: str,
-        is_match: bool,
-        evidence_hit: bool | None = None,
-        evidence_recall: float | None = None,
-        answer_span_hit: bool | None = None,
-        support_sentence_hit: bool | None = None,
-        graph_answer_span_hit: bool | None = None,
-        graph_support_sentence_hit: bool | None = None,
-        retrieved_session_ids: Sequence[str] | None = None,
-        commit: bool = True,
-    ) -> None:
-        """Insert one per-instance eval result row."""
-        self.eval_store.log_eval_result(
-            run_id=run_id,
-            question_id=question_id,
-            question_type=question_type,
-            question=question,
-            expected_answer=expected_answer,
-            prediction=prediction,
-            is_match=is_match,
-            evidence_hit=evidence_hit,
-            evidence_recall=evidence_recall,
-            answer_span_hit=answer_span_hit,
-            support_sentence_hit=support_sentence_hit,
-            graph_answer_span_hit=graph_answer_span_hit,
-            graph_support_sentence_hit=graph_support_sentence_hit,
-            retrieved_session_ids=retrieved_session_ids,
-            commit=commit,
-        )
-
-    def log_eval_group_result(
-        self,
-        run_id: str,
-        group_key: str,
-        total: int,
-        matched: int,
-        accuracy: float,
-        commit: bool = True,
-    ) -> None:
-        """Insert one grouped eval summary row."""
-        self.eval_store.log_eval_group_result(
-            run_id=run_id,
-            group_key=group_key,
-            total=total,
-            matched=matched,
-            accuracy=accuracy,
-            commit=commit,
-        )
-
-    def log_eval_run_finish(
-        self,
-        run_id: str,
-        total: int,
-        matched: int,
-        accuracy: float,
-        retrieval_answer_span_hit_rate: float | None = None,
-        retrieval_support_sentence_hit_rate: float | None = None,
-        retrieval_evidence_hit_rate: float | None = None,
-        graph_answer_span_hit_rate: float | None = None,
-        graph_support_sentence_hit_rate: float | None = None,
-        graph_ingest_accept_rate: float | None = None,
-        commit: bool = True,
-    ) -> None:
-        """Update final metrics and finished_at for one eval run."""
-        self.eval_store.log_eval_run_finish(
-            run_id=run_id,
-            total=total,
-            matched=matched,
-            accuracy=accuracy,
-            retrieval_answer_span_hit_rate=retrieval_answer_span_hit_rate,
-            retrieval_support_sentence_hit_rate=retrieval_support_sentence_hit_rate,
-            retrieval_evidence_hit_rate=retrieval_evidence_hit_rate,
-            graph_answer_span_hit_rate=graph_answer_span_hit_rate,
-            graph_support_sentence_hit_rate=graph_support_sentence_hit_rate,
-            graph_ingest_accept_rate=graph_ingest_accept_rate,
-            commit=commit,
-        )
 
     def commit(self) -> None:
         """Commit current transaction."""

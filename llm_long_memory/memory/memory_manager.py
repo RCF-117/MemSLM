@@ -220,6 +220,59 @@ class MemoryManager:
         self.last_prompt_eval_chunks = []
         logger.info(f"MemoryManager.chat: user input='{input_text}'")
         query = retrieval_query if retrieval_query is not None else input_text
+        (
+            retrieved_context,
+            topics,
+            chunks,
+            evidence_sentences,
+            candidates,
+            evidence_candidate,
+            best_evidence,
+            best_candidate,
+        ) = self._prepare_answer_inputs(query, precomputed_context)
+        fast_answer = self._try_fast_paths(
+            input_text=input_text,
+            query=query,
+            chunks=chunks,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
+            evidence_candidate=evidence_candidate,
+        )
+        if fast_answer is not None:
+            return fast_answer
+
+        prompt_text = self._build_generation_prompt(
+            input_text=input_text,
+            retrieved_context=retrieved_context,
+            chunks=chunks,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
+        )
+        ai_response, fallback_path, not_found_reason = self._generate_with_fallback(
+            input_text=input_text,
+            query=query,
+            prompt_text=prompt_text,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
+            evidence_candidate=evidence_candidate,
+        )
+        logger.info(
+            "MemoryManager.answer_debug: "
+            f"fallback_path={fallback_path}, "
+            f"not_found_reason={not_found_reason or 'none'}, "
+            f"best_evidence='{best_evidence}', "
+            f"best_candidate='{best_candidate}', "
+            f"evidence_candidate='{(evidence_candidate or {}).get('answer', '')}'."
+        )
+        logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
+        self._record_turn(input_text, ai_response)
+        return ai_response
+
+    def _prepare_answer_inputs(
+        self,
+        query: str,
+        precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]],
+    ) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], Optional[Dict[str, str]], str, str]:
         if precomputed_context is not None:
             retrieved_context, topics, chunks = precomputed_context
         else:
@@ -237,17 +290,58 @@ class MemoryManager:
             str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
         )
         best_candidate = str(candidates[0].get("text", "")) if candidates else ""
+        return (
+            retrieved_context,
+            topics,
+            chunks,
+            evidence_sentences,
+            candidates,
+            evidence_candidate,
+            best_evidence,
+            best_candidate,
+        )
 
-        decided = self.answering.decide_answer(query, evidence_sentences, candidates)
+    def _set_prompt_eval_chunks(self, generation_context: str, evidence_sentences: List[Dict[str, object]]) -> None:
+        self.last_prompt_eval_chunks = []
+        if generation_context.strip():
+            self.last_prompt_eval_chunks.append({"text": generation_context})
+        self.last_prompt_eval_chunks.extend(
+            {"text": str(item.get("text", ""))}
+            for item in evidence_sentences
+            if str(item.get("text", "")).strip()
+        )
+
+    def _set_evidence_only_eval_chunks(self, evidence_sentences: List[Dict[str, object]]) -> None:
+        self.last_prompt_eval_chunks = [
+            {"text": str(item.get("text", ""))}
+            for item in evidence_sentences
+            if str(item.get("text", "")).strip()
+        ]
+
+    def _try_fast_paths(
+        self,
+        *,
+        input_text: str,
+        query: str,
+        chunks: List[Dict[str, object]],
+        evidence_sentences: List[Dict[str, object]],
+        candidates: List[Dict[str, object]],
+        evidence_candidate: Optional[Dict[str, str]],
+    ) -> Optional[str]:
+        decided = self.answering.decide_answer(
+            query,
+            evidence_sentences,
+            candidates,
+            reranked_chunks=chunks,
+        )
         if decided is not None:
             final = str(decided.get("answer", "")).strip()
             reason = str(decided.get("reason", "deterministic"))
             if final:
-                self.last_prompt_eval_chunks = [
-                    {"text": str(item.get("text", ""))}
-                    for item in evidence_sentences
-                    if str(item.get("text", "")).strip()
-                ]
+                final = self.answering.postprocess_final_answer(
+                    final, query, evidence_candidate=evidence_candidate
+                )
+                self._set_evidence_only_eval_chunks(evidence_sentences)
                 logger.info(
                     "MemoryManager.chat: deterministic decision "
                     f"(reason={reason}, answer='{final}')."
@@ -257,24 +351,36 @@ class MemoryManager:
 
         short_answer = self.answering.maybe_short_circuit(candidates, evidence_sentences)
         if short_answer is not None:
-            self.last_prompt_eval_chunks = [
-                {"text": str(item.get("text", ""))}
-                for item in evidence_sentences
-                if str(item.get("text", "")).strip()
-            ]
+            self._set_evidence_only_eval_chunks(evidence_sentences)
+            top_score = (
+                f"{float(candidates[0]['score']):.4f}" if candidates else "n/a"
+            )
             logger.info(
                 "MemoryManager.chat: short-circuit answer from extracted candidates "
-                f"(candidate='{short_answer}', score={float(candidates[0]['score']):.4f})."
+                f"(candidate='{short_answer}', score={top_score})."
             )
             self._record_turn(input_text, short_answer)
             return short_answer
+        return None
 
+    def _build_recent_context(self) -> str:
         recent_messages = self.short_memory.get()
         if self.prompt_recent_max_messages > 0:
             recent_messages = recent_messages[-self.prompt_recent_max_messages :]
-        recent_context = "\n".join(
+        return "\n".join(
             f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in recent_messages
         )
+
+    def _build_generation_prompt(
+        self,
+        *,
+        input_text: str,
+        retrieved_context: str,
+        chunks: List[Dict[str, object]],
+        evidence_sentences: List[Dict[str, object]],
+        candidates: List[Dict[str, object]],
+    ) -> str:
+        recent_context = self._build_recent_context()
         generation_context = build_generation_context(
             reranked_chunks=chunks,
             evidence_sentences=evidence_sentences,
@@ -285,21 +391,25 @@ class MemoryManager:
                 max_total_chars=self.prompt_context_max_total_chars,
             ),
         )
-        self.last_prompt_eval_chunks = []
-        if generation_context.strip():
-            self.last_prompt_eval_chunks.append({"text": generation_context})
-        self.last_prompt_eval_chunks.extend(
-            {"text": str(item.get("text", ""))}
-            for item in evidence_sentences
-            if str(item.get("text", "")).strip()
-        )
-        prompt_text = self.answering.build_answer_prompt(
+        self._set_prompt_eval_chunks(generation_context, evidence_sentences)
+        return self.answering.build_answer_prompt(
             input_text=input_text,
             retrieved_context=generation_context,
             recent_context=recent_context,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
         )
+
+    def _generate_with_fallback(
+        self,
+        *,
+        input_text: str,
+        query: str,
+        prompt_text: str,
+        evidence_sentences: List[Dict[str, object]],
+        candidates: List[Dict[str, object]],
+        evidence_candidate: Optional[Dict[str, str]],
+    ) -> Tuple[str, str, str]:
         prompt_messages: List[Message] = [{"role": "user", "content": prompt_text}]
         model_name = str(getattr(self.llm, "model_name", "unknown"))
         logger.info(
@@ -316,7 +426,19 @@ class MemoryManager:
         ai_response = str(fallback_result.get("response", "")).strip()
         fallback_path = str(fallback_result.get("fallback_path", "none"))
         not_found_reason = str(fallback_result.get("not_found_reason", ""))
-        if fallback_path.startswith("retry_due_to_"):
+
+        normalized_ai_response = ai_response.strip().lower()
+        should_retry_second_pass = (
+            fallback_path.startswith("retry_due_to_")
+            or (
+                self.answering.second_pass_llm_enabled
+                and evidence_sentences
+                and normalized_ai_response == "not found in retrieved context."
+                and fallback_path in {"fallback_to_not_found", "llm_not_found_accepted"}
+            )
+        )
+
+        if should_retry_second_pass:
             model_name = str(getattr(self.llm, "model_name", "unknown"))
             logger.info(
                 "MemoryManager.chat: invoking second-pass LLM "
@@ -334,22 +456,18 @@ class MemoryManager:
                 candidates=candidates,
                 evidence_candidate=evidence_candidate,
             )
+            second_path = str(second_result.get("fallback_path", "none"))
             ai_response = str(second_result.get("response", "")).strip()
-            fallback_path = "second_pass:" + str(second_result.get("fallback_path", "none"))
+            if second_path.startswith("retry_due_to_"):
+                ai_response = "Not found in retrieved context."
+                second_path = "fallback_to_not_found"
+            fallback_path = "second_pass:" + second_path
             not_found_reason = str(second_result.get("not_found_reason", not_found_reason))
 
-        logger.info(
-            "MemoryManager.answer_debug: "
-            f"fallback_path={fallback_path}, "
-            f"not_found_reason={not_found_reason or 'none'}, "
-            f"best_evidence='{best_evidence}', "
-            f"best_candidate='{best_candidate}', "
-            f"evidence_candidate='{(evidence_candidate or {}).get('answer', '')}'."
+        ai_response = self.answering.postprocess_final_answer(
+            ai_response, query, evidence_candidate=evidence_candidate
         )
-        logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
-
-        self._record_turn(input_text, ai_response)
-        return ai_response
+        return ai_response, fallback_path, not_found_reason
 
     def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
         """Return prompt-grounded chunks used by the most recent chat call."""

@@ -73,6 +73,19 @@ def split_expected_answers(expected: str, match_cfg: Dict[str, Any]) -> List[str
         return [raw]
 
     candidates = [raw]
+
+    # Expand common "also acceptable" patterns into clean alternatives.
+    # Example: "14 days. 15 days (including the last day) is also acceptable."
+    # -> add "15 days"
+    acceptable_patterns = [
+        r"([^.?!]+?)\s*\([^)]*\)\s*is also acceptable\.?",
+        r"([^.?!]+?)\s+is also acceptable\.?",
+    ]
+    for pat in acceptable_patterns:
+        for m in re.finditer(pat, raw, flags=re.IGNORECASE):
+            candidate = str(m.group(1)).strip(" .,:;")
+            if candidate:
+                candidates.append(candidate)
     for delimiter in split_cfg["delimiters"]:
         next_list: List[str] = []
         for item in candidates:

@@ -51,7 +51,9 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
         f"path={dataset_path}, stream_mode={stream_mode}, max_instances={max_instances}, isolated={isolated}"
     )
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
-    manager.mid_memory.log_eval_run_start(run_id, dataset_path, isolated, commit=False)
+    manager.mid_memory.eval_store.log_eval_run_start(
+        run_id, dataset_path, isolated, commit=False
+    )
     logger.info(f"Eval run id: {run_id}")
 
     instances = load_stream(dataset_path)
@@ -165,7 +167,7 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 counters.matched += 1
             if group_by_type:
                 update_group_stats(grouped, eval_group_key(qid, qtype, eval_cfg), is_match)
-            manager.mid_memory.log_eval_result(
+            manager.mid_memory.eval_store.log_eval_result(
                 run_id=run_id,
                 question_id=qid,
                 question_type=qtype,

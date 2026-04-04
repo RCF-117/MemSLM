@@ -169,7 +169,8 @@ class TestMemoryManager(unittest.TestCase):
             ],
         )
         out = manager.chat("where did she move?", precomputed_context=pre)
-        self.assertEqual(llm.calls, 1)
+        expected_calls = 2 if manager.answering.second_pass_llm_enabled else 1
+        self.assertEqual(llm.calls, expected_calls)
         self.assertIsInstance(out, str)
         self.assertEqual(manager.mid_memory.search_calls, 0)
         self.assertEqual(manager.mid_memory.rerank_calls, 0)

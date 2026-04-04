@@ -288,7 +288,7 @@ def rerank_chunks_global(
         rows = owner.conn.execute(
             f"""
             SELECT chunk_id, topic_id, text, chunk_embedding, chunk_role, chunk_session_id,
-                   chunk_session_date, chunk_has_answer
+                   chunk_session_date, chunk_has_answer, chunk_times
             FROM chunks
             WHERE chunk_id IN ({placeholders})
             """,
@@ -298,7 +298,7 @@ def rerank_chunks_global(
         rows = owner.conn.execute(
             """
             SELECT chunk_id, topic_id, text, chunk_embedding, chunk_role, chunk_session_id,
-                   chunk_session_date, chunk_has_answer
+                   chunk_session_date, chunk_has_answer, chunk_times
             FROM chunks
             """
         ).fetchall()

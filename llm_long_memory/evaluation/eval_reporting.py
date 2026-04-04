@@ -86,12 +86,12 @@ def finalize_eval_run(
             g_total = grouped[key]["total"]
             g_matched = grouped[key]["matched"]
             g_acc = (float(g_matched) / float(g_total)) if g_total else 0.0
-            manager.mid_memory.log_eval_group_result(
+            manager.mid_memory.eval_store.log_eval_group_result(
                 run_id, key, g_total, g_matched, g_acc, commit=False
             )
             print(f"- {key}: total={g_total}, matched={g_matched}, accuracy={g_acc:.4f}")
 
-    manager.mid_memory.log_eval_run_finish(
+    manager.mid_memory.eval_store.log_eval_run_finish(
         run_id,
         total,
         matched,

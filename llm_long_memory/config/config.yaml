@@ -63,6 +63,8 @@ memory:
     database_file: data/processed/long_memory.db
     worker_poll_timeout_sec: 0.2
     queue_max_size: 5000
+    queue_put_timeout_sec: 0.1
+    queue_overflow_policy: sync_process
     sqlite_busy_timeout_ms: 5000
     sqlite_journal_mode: WAL
     sqlite_synchronous: NORMAL
@@ -82,6 +84,8 @@ memory:
       lexical_weight: 0.4
       embedding_weight: 0.5
       recency_weight: 0.1
+      fact_type_boost: 0.2
+      fact_type_mismatch_penalty: 0.05
       role_weights:
         user: 1.0
         assistant: 0.6
@@ -91,14 +95,21 @@ memory:
         - user
         - assistant
         - system
-      min_confidence: 0.72
-      assistant_min_confidence: 0.90
-      min_keywords: 4
-      min_object_tokens: 2
+      min_confidence: 0.55
+      assistant_min_confidence: 0.65
+      min_keywords: 2
+      min_object_tokens: 1
+      min_entity_count: 1
+      min_sentence_tokens: 4
+      max_sentence_tokens: 60
+      require_time_or_location: false
       object_key_tokens: 4
       detail_min_chars: 8
       max_details_per_event: 6
-      allow_generic_action: false
+      allow_generic_action: true
+      bootstrap_min_accepts: 8
+      bootstrap_min_confidence: 0.35
+      bootstrap_allow_generic_action: true
       generic_actions:
         - states
         - is
@@ -251,9 +262,19 @@ retrieval:
     not_found_top_evidence_score_threshold: 0.35
     second_pass_llm_enabled: true
     second_pass_use_evidence_candidate: true
+    not_found_force_evidence_candidate_when_available: true
     span_min_tokens: 1
     span_max_tokens: 5
     span_top_n_per_sentence: 8
+    postprocess:
+      enabled: true
+      strip_prefixes:
+        - the answer is
+        - the first issue mentioned was
+        - the issue was
+        - it was
+        - it is
+      issue_with_pattern_enabled: true
     evidence_candidate:
       enabled: true
       min_score: 0.45
@@ -313,6 +334,8 @@ retrieval:
         - called
         - titled
       time_regexes:
+        - "\\b\\d{4}[/-]\\d{1,2}[/-]\\d{1,2}\\b"
+        - "\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b"
         - "\\b\\d{1,2}:\\d{2}\\s?(?:am|pm)?\\b"
         - "\\b\\d+\\s?(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\\b"
         - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
@@ -333,6 +356,15 @@ retrieval:
       temporal_choice_enabled: true
       temporal_min_confidence_gap: 0.08
       temporal_require_both_options: true
+      temporal_overlap_floor: 0.4
+      temporal_contains_bonus: 0.15
+      temporal_date_bonus: 0.08
+      temporal_event_anchor_enabled: true
+      temporal_event_anchor_min_overlap: 0.5
+      temporal_event_anchor_min_score: 0.2
+      temporal_event_anchor_pair_min_score: 0.6
+      temporal_event_anchor_use_session_date_fallback: true
+      temporal_event_anchor_fallback_to_sentence_score: true
     counting:
       enabled: true
       count_query_keywords:
@@ -375,6 +407,61 @@ retrieval:
         - listed
         - ones
         - one
+      list_count_focus_stopwords:
+        - how
+        - many
+        - number
+        - count
+        - did
+        - do
+        - does
+        - i
+        - we
+        - you
+        - mention
+        - mentioned
+        - in
+        - the
+        - a
+        - an
+        - of
+        - to
+        - for
+        - with
+        - and
+      list_count_focus_min_overlap: 1
+      list_count_irregular_forms:
+        buy:
+          - bought
+        go:
+          - went
+      numeric_answer_filter:
+        enabled: true
+        focus_min_overlap: 1
+        allowed_units:
+          - ""
+          - time
+          - times
+          - event
+          - events
+          - item
+          - items
+          - people
+          - persons
+        disallowed_units:
+          - km
+          - kilometer
+          - kilometers
+          - mile
+          - miles
+          - m
+          - meter
+          - meters
+          - usd
+          - dollar
+          - dollars
+          - percent
+          - "%"
 
 embedding:
   dim: 512

@@ -58,6 +58,8 @@ class LongMemoryStore:
             CREATE TABLE IF NOT EXISTS events(
               event_id TEXT PRIMARY KEY,
               fact_key TEXT,
+              subject_action_key TEXT,
+              fact_type TEXT,
               skeleton_text TEXT,
               skeleton_embedding BLOB,
               keywords TEXT,
@@ -84,6 +86,10 @@ class LongMemoryStore:
 
     def _create_indexes(self) -> None:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_fact_key ON events(fact_key)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_fact_type ON events(fact_type)")
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_subject_action_key ON events(subject_action_key)"
+        )
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_last_seen ON events(last_seen_step)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_details_event ON details(event_id)")
@@ -94,6 +100,8 @@ class LongMemoryStore:
         event_names = {str(row["name"]) for row in event_cols}
         for col, ddl in (
             ("fact_key", "ALTER TABLE events ADD COLUMN fact_key TEXT"),
+            ("subject_action_key", "ALTER TABLE events ADD COLUMN subject_action_key TEXT"),
+            ("fact_type", "ALTER TABLE events ADD COLUMN fact_type TEXT"),
             ("skeleton_text", "ALTER TABLE events ADD COLUMN skeleton_text TEXT"),
             ("skeleton_embedding", "ALTER TABLE events ADD COLUMN skeleton_embedding BLOB"),
             ("keywords", "ALTER TABLE events ADD COLUMN keywords TEXT"),
@@ -154,12 +162,25 @@ class LongMemoryStore:
         self,
         event_id: str,
         fact_key: str,
+        subject_action_key: str,
+        fact_type: str,
         skeleton_text: str,
         skeleton_embedding: np.ndarray,
         keywords: List[str],
         role: str,
         current_step: int,
     ) -> None:
+        # Keep only latest active object for a subject-action pair.
+        self.conn.execute(
+            """
+            UPDATE events
+            SET status='superseded'
+            WHERE status='active'
+              AND subject_action_key=?
+              AND fact_key<>?
+            """,
+            (subject_action_key, fact_key),
+        )
         row = self.conn.execute(
             "SELECT salience FROM events WHERE event_id=?",
             (event_id,),
@@ -168,13 +189,15 @@ class LongMemoryStore:
             self.conn.execute(
                 """
                 INSERT INTO events(
-                  event_id, fact_key, skeleton_text, skeleton_embedding, keywords,
+                  event_id, fact_key, subject_action_key, fact_type, skeleton_text, skeleton_embedding, keywords,
                   role, status, salience, first_seen_step, last_seen_step
-                ) VALUES(?, ?, ?, ?, ?, ?, 'active', 1.0, ?, ?)
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'active', 1.0, ?, ?)
                 """,
                 (
                     event_id,
                     fact_key,
+                    subject_action_key,
+                    fact_type,
                     skeleton_text,
                     self._arr_to_blob(skeleton_embedding),
                     json.dumps(keywords),
@@ -188,6 +211,8 @@ class LongMemoryStore:
             """
             UPDATE events
             SET fact_key = ?,
+                subject_action_key = ?,
+                fact_type = ?,
                 skeleton_text = ?,
                 skeleton_embedding = ?,
                 keywords = ?,
@@ -199,6 +224,8 @@ class LongMemoryStore:
             """,
             (
                 fact_key,
+                subject_action_key,
+                fact_type,
                 skeleton_text,
                 self._arr_to_blob(skeleton_embedding),
                 json.dumps(keywords),
@@ -326,6 +353,7 @@ class LongMemoryStore:
         return self.conn.execute(
             """
             SELECT event_id, skeleton_text, skeleton_embedding, keywords, role, salience, last_seen_step
+                   , fact_type
             FROM events
             WHERE status='active'
             """

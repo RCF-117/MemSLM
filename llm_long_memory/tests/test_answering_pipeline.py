@@ -57,6 +57,34 @@ class TestAnsweringPipeline(unittest.TestCase):
         else:
             self.assertEqual(result, "Completely unrelated answer")
 
+    def test_temporal_choice_prefers_latest_option(self) -> None:
+        evidence = [
+            {"text": "I bought marigolds on 2023/05/10.", "score": 0.8},
+            {"text": "I bought tomatoes on 2023/05/18.", "score": 0.7},
+        ]
+        out = self.pipeline.decide_answer(
+            query="Which did I buy later, marigolds or tomatoes?",
+            evidence_sentences=evidence,
+            candidates=[],
+            reranked_chunks=[],
+        )
+        self.assertIsNotNone(out)
+        self.assertEqual(str(out.get("answer", "")).lower(), "tomatoes")
+
+    def test_list_count_uses_query_focus(self) -> None:
+        evidence = [
+            {"text": "I bought apples, oranges, and pears today.", "score": 0.9},
+            {"text": "I met Alice and Bob after work.", "score": 0.9},
+        ]
+        out = self.pipeline.decide_answer(
+            query="How many items did I buy?",
+            evidence_sentences=evidence,
+            candidates=[],
+            reranked_chunks=[],
+        )
+        self.assertIsNotNone(out)
+        self.assertEqual(str(out.get("answer", "")), "3")
+
 
 if __name__ == "__main__":
     unittest.main()

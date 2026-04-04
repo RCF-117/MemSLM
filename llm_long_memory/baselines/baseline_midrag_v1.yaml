@@ -63,6 +63,8 @@ memory:
     database_file: data/processed/long_memory.db
     worker_poll_timeout_sec: 0.2
     queue_max_size: 5000
+    queue_put_timeout_sec: 0.1
+    queue_overflow_policy: sync_process
     sqlite_busy_timeout_ms: 5000
     sqlite_journal_mode: WAL
     sqlite_synchronous: NORMAL
@@ -257,6 +259,8 @@ retrieval:
         - called
         - titled
       time_regexes:
+        - "\\b\\d{4}[/-]\\d{1,2}[/-]\\d{1,2}\\b"
+        - "\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b"
         - "\\b\\d{1,2}:\\d{2}\\s?(?:am|pm)?\\b"
         - "\\b\\d+\\s?(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\\b"
         - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
@@ -277,6 +281,15 @@ retrieval:
       temporal_choice_enabled: true
       temporal_min_confidence_gap: 0.08
       temporal_require_both_options: true
+      temporal_overlap_floor: 0.4
+      temporal_contains_bonus: 0.15
+      temporal_date_bonus: 0.08
+      temporal_event_anchor_enabled: true
+      temporal_event_anchor_min_overlap: 0.5
+      temporal_event_anchor_min_score: 0.2
+      temporal_event_anchor_pair_min_score: 0.6
+      temporal_event_anchor_use_session_date_fallback: true
+      temporal_event_anchor_fallback_to_sentence_score: true
     counting:
       enabled: true
       count_query_keywords:

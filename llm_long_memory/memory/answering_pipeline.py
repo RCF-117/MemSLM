@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from llm_long_memory.memory.counting_resolver import CountingResolver
+from llm_long_memory.memory.answering_response import AnswerResponseHandler
 from llm_long_memory.memory.answering_temporal import choose_temporal_option
 from llm_long_memory.utils.logger import logger
 
@@ -95,7 +96,59 @@ class AnsweringPipeline:
         self.decision_temporal_require_both_options = bool(
             decision_cfg.get("temporal_require_both_options", True)
         )
+        self.decision_temporal_overlap_floor = float(
+            decision_cfg["temporal_overlap_floor"]
+        )
+        self.decision_temporal_contains_bonus = float(
+            decision_cfg["temporal_contains_bonus"]
+        )
+        self.decision_temporal_date_bonus = float(
+            decision_cfg["temporal_date_bonus"]
+        )
+        self.decision_temporal_event_anchor_enabled = bool(
+            decision_cfg["temporal_event_anchor_enabled"]
+        )
+        self.decision_temporal_event_anchor_min_overlap = float(
+            decision_cfg["temporal_event_anchor_min_overlap"]
+        )
+        self.decision_temporal_event_anchor_min_score = float(
+            decision_cfg["temporal_event_anchor_min_score"]
+        )
+        self.decision_temporal_event_anchor_pair_min_score = float(
+            decision_cfg["temporal_event_anchor_pair_min_score"]
+        )
+        self.decision_temporal_event_anchor_use_session_date_fallback = bool(
+            decision_cfg["temporal_event_anchor_use_session_date_fallback"]
+        )
+        self.decision_temporal_event_anchor_fallback_to_sentence_score = bool(
+            decision_cfg["temporal_event_anchor_fallback_to_sentence_score"]
+        )
+        self.not_found_force_evidence_candidate_when_available = bool(
+            self.answering_cfg["not_found_force_evidence_candidate_when_available"]
+        )
+        post_cfg = dict(self.answering_cfg["postprocess"])
+        self.postprocess_enabled = bool(post_cfg["enabled"])
+        self.postprocess_strip_prefixes = [
+            str(x).strip().lower() for x in list(post_cfg["strip_prefixes"])
+        ]
+        self.postprocess_issue_with_pattern_enabled = bool(
+            post_cfg["issue_with_pattern_enabled"]
+        )
         self.counting = CountingResolver(dict(self.answering_cfg.get("counting", {})))
+        self.response_handler = AnswerResponseHandler(
+            answer_context_only=self.answer_context_only,
+            llm_fallback_to_top_candidate=self.llm_fallback_to_top_candidate,
+            fallback_min_score=self.fallback_min_score,
+            response_evidence_min_token_overlap=self.response_evidence_min_token_overlap,
+            response_evidence_min_shared_tokens=self.response_evidence_min_shared_tokens,
+            not_found_top_evidence_score_threshold=self.not_found_top_evidence_score_threshold,
+            second_pass_llm_enabled=self.second_pass_llm_enabled,
+            second_pass_use_evidence_candidate=self.second_pass_use_evidence_candidate,
+            not_found_force_evidence_candidate_when_available=self.not_found_force_evidence_candidate_when_available,
+            postprocess_enabled=self.postprocess_enabled,
+            postprocess_strip_prefixes=self.postprocess_strip_prefixes,
+            postprocess_issue_with_pattern_enabled=self.postprocess_issue_with_pattern_enabled,
+        )
 
     @staticmethod
     def _tokenize(text: str) -> List[str]:
@@ -212,6 +265,10 @@ class AnsweringPipeline:
         for bad in self.candidate_filter_reject_contains:
             if bad and bad in low:
                 return True
+        if low.startswith("by the way "):
+            return True
+        if low in {"by the way", "by the", "the way i"}:
+            return True
         return False
 
     def collect_evidence_sentences(
@@ -237,6 +294,7 @@ class AnsweringPipeline:
                         "score": score,
                         "topic_id": str(chunk.get("topic_id", "")),
                         "chunk_id": int(chunk.get("chunk_id", 0)),
+                        "session_date": str(chunk.get("session_date", "")),
                     }
                 )
         evidence.sort(key=lambda x: float(x["score"]), reverse=True)
@@ -254,11 +312,10 @@ class AnsweringPipeline:
             if not text:
                 continue
             intent_spans = self._extract_intent_candidates(text, intent)
-            spans = intent_spans + self._generate_spans(text)
-            if len(spans) > self.span_top_n_per_sentence:
-                spans = spans[: self.span_top_n_per_sentence]
             sentence_score = float(item.get("score", 0.0))
-            for value in spans:
+            generated_spans = self._generate_spans(text)
+            scored_spans: List[tuple[float, str, float]] = []
+            for value in intent_spans + generated_spans:
                 if not value:
                     continue
                 if value.lower() in self.cand_reject_tokens:
@@ -266,11 +323,25 @@ class AnsweringPipeline:
                 if self._is_noisy_candidate(value):
                     continue
                 overlap_score = self._candidate_overlap(query, value)
+                token_count = len(self._tokenize(value))
+                length_bonus = min(0.15, float(max(0, token_count - 1)) * 0.03)
+                ranked = (0.75 * overlap_score) + length_bonus
+                scored_spans.append((ranked, value, overlap_score))
+            scored_spans.sort(key=lambda x: x[0], reverse=True)
+            spans = scored_spans[: self.span_top_n_per_sentence]
+            for _, value, overlap_score in spans:
+                if overlap_score <= 0.0 and intent == "generic":
+                    continue
                 position_score = 1.0 / float(1 + idx)
                 prev = candidates.get(value)
                 support = 1 if prev is None else int(prev.get("support", 1)) + 1
                 support_score = float(support) / float(evidence_size)
-                total_score = (overlap_score + sentence_score + position_score + support_score) / 4.0
+                total_score = (
+                    (0.55 * overlap_score)
+                    + (0.25 * sentence_score)
+                    + (0.15 * support_score)
+                    + (0.05 * position_score)
+                )
                 if total_score < self.cand_min_score:
                     continue
                 if prev is None:
@@ -380,69 +451,23 @@ class AnsweringPipeline:
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
     ) -> str:
-        evidence_text = "\n".join(
-            f"- {str(item.get('text', ''))}" for item in evidence_sentences
-        )
-        candidate_text = "\n".join(
-            f"- {str(item.get('text', ''))} (score={float(item.get('score', 0.0)):.2f})"
-            for item in candidates
-        )
-        rules = (
-            "Answer using only the retrieved context and evidence sentences.\n"
-            "If the answer is not in the evidence, say exactly: Not found in retrieved context.\n"
-            "Return the smallest complete answer phrase from evidence.\n"
-            "Keep key qualifiers (for example: each way, round trip, per day).\n"
-            "Final answer must be an exact substring of one evidence sentence.\n"
-            "Return only the final answer."
-            if self.answer_context_only
-            else "Return only the final answer."
-        )
-        return (
-            "[Retrieved Context]\n"
-            f"{retrieved_context}\n\n"
-            "[Evidence Sentences]\n"
-            f"{evidence_text}\n\n"
-            "[Candidate Answers]\n"
-            f"{candidate_text}\n\n"
-            "[Recent Context]\n"
-            f"{recent_context}\n\n"
-            "[Answer Rules]\n"
-            f"{rules}\n\n"
-            f"User: {input_text}"
+        return self.response_handler.build_answer_prompt(
+            input_text=input_text,
+            retrieved_context=retrieved_context,
+            recent_context=recent_context,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
         )
 
     def response_in_evidence(self, response: str, evidence_sentences: List[Dict[str, object]]) -> bool:
-        ans = self._normalize_space(response).lower()
-        if not ans:
-            return False
-        for item in evidence_sentences:
-            sentence = self._normalize_space(str(item.get("text", ""))).lower()
-            if ans in sentence:
-                return True
-        return False
+        return self.response_handler.response_in_evidence(response, evidence_sentences)
 
     def response_supported_by_evidence(
         self, response: str, evidence_sentences: List[Dict[str, object]]
     ) -> bool:
-        """Allow semantically grounded response via token overlap when exact substring fails."""
-        response_tokens = self._tokenize(response)
-        if not response_tokens:
-            return False
-        response_token_set = set(response_tokens)
-        response_token_len = float(max(1, len(response_token_set)))
-        for item in evidence_sentences:
-            sentence_tokens = set(self._tokenize(str(item.get("text", ""))))
-            if not sentence_tokens:
-                continue
-            shared = response_token_set.intersection(sentence_tokens)
-            shared_count = len(shared)
-            overlap_ratio = float(shared_count) / response_token_len
-            if (
-                shared_count >= self.response_evidence_min_shared_tokens
-                and overlap_ratio >= self.response_evidence_min_token_overlap
-            ):
-                return True
-        return False
+        return self.response_handler.response_supported_by_evidence(
+            response, evidence_sentences
+        )
 
     def evaluate_response_fallback(
         self,
@@ -451,75 +476,12 @@ class AnsweringPipeline:
         candidates: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
-        if not self.answer_context_only:
-            return {"response": response, "fallback_path": "context_free"}
-        top_evidence_score = (
-            float(evidence_sentences[0].get("score", 0.0)) if evidence_sentences else 0.0
+        return self.response_handler.evaluate_response_fallback(
+            response=response,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
+            evidence_candidate=evidence_candidate,
         )
-        normalized_response = self._normalize_space(response).lower()
-        if normalized_response == "not found in retrieved context.":
-            if (
-                evidence_sentences
-                and top_evidence_score >= self.not_found_top_evidence_score_threshold
-            ):
-                if self.second_pass_llm_enabled:
-                    return {
-                        "response": response,
-                        "fallback_path": "retry_due_to_guarded_not_found",
-                        "not_found_reason": "guarded_by_high_evidence_score",
-                    }
-                if evidence_candidate is not None:
-                    return {
-                        "response": evidence_candidate["answer"],
-                        "fallback_path": "guarded_not_found_to_evidence_candidate",
-                        "not_found_reason": "guarded_by_high_evidence_score",
-                    }
-            return {
-                "response": response,
-                "fallback_path": "llm_not_found_accepted",
-                "not_found_reason": (
-                    "empty_evidence"
-                    if not evidence_sentences
-                    else "low_top_evidence_score"
-                ),
-            }
-        if self.response_in_evidence(response, evidence_sentences) or self.response_supported_by_evidence(
-            response, evidence_sentences
-        ):
-            if evidence_candidate is not None:
-                candidate_answer = self._normalize_space(
-                    str(evidence_candidate.get("answer", ""))
-                )
-                candidate_low = candidate_answer.lower()
-                response_low = self._normalize_space(response).lower()
-                if candidate_answer and candidate_low in response_low:
-                    candidate_tokens = len(self._tokenize(candidate_answer))
-                    response_tokens = len(self._tokenize(response))
-                    if response_tokens > candidate_tokens:
-                        return {
-                            "response": candidate_answer,
-                            "fallback_path": "compress_supported_response_to_evidence_candidate",
-                        }
-            return {"response": response, "fallback_path": "llm_supported_by_evidence"}
-        # Only retry with a second LLM call when the first pass returns
-        # "Not found..." but evidence confidence is strong (handled above).
-        if self.second_pass_use_evidence_candidate and evidence_candidate is not None:
-            return {
-                "response": evidence_candidate["answer"],
-                "fallback_path": "fallback_to_evidence_candidate",
-            }
-        if (
-            self.llm_fallback_to_top_candidate
-            and candidates
-            and float(candidates[0]["score"]) >= self.fallback_min_score
-        ):
-            fallback = str(candidates[0]["text"])
-            return {"response": fallback, "fallback_path": "fallback_to_top_candidate"}
-        return {
-            "response": "Not found in retrieved context.",
-            "fallback_path": "fallback_to_not_found",
-            "not_found_reason": "llm_response_not_supported_and_no_fallback",
-        }
 
     def apply_response_fallback(
         self,
@@ -543,25 +505,10 @@ class AnsweringPipeline:
         evidence_sentences: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
-        """Build a strict second-pass prompt for answer extraction from evidence."""
-        evidence_text = "\n".join(f"- {str(item.get('text', ''))}" for item in evidence_sentences)
-        candidate_text = (
-            str(evidence_candidate.get("answer", "")) if evidence_candidate is not None else ""
-        )
-        guidance = (
-            "You must answer using only the evidence sentences.\n"
-            "Do not say Not found unless evidence is empty.\n"
-            "Prefer the shortest exact phrase from evidence.\n"
-            "Return only the final answer."
-        )
-        if candidate_text:
-            guidance += f"\nPreferred evidence candidate: {candidate_text}"
-        return (
-            "[Evidence Sentences]\n"
-            f"{evidence_text}\n\n"
-            "[Rules]\n"
-            f"{guidance}\n\n"
-            f"Question: {input_text}"
+        return self.response_handler.build_second_pass_prompt(
+            input_text=input_text,
+            evidence_sentences=evidence_sentences,
+            evidence_candidate=evidence_candidate,
         )
 
     def decide_answer(
@@ -569,10 +516,16 @@ class AnsweringPipeline:
         query: str,
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
+        reranked_chunks: Optional[List[Dict[str, object]]] = None,
     ) -> Optional[Dict[str, str]]:
         """Intent-specific decision before LLM generation (counting/temporal only)."""
 
-        counted = self.counting.resolve(query, evidence_sentences, candidates)
+        counted = self.counting.resolve(
+            query,
+            evidence_sentences,
+            candidates,
+            reranked_chunks=reranked_chunks or [],
+        )
         if counted is not None:
             return counted
 
@@ -583,8 +536,29 @@ class AnsweringPipeline:
             min_confidence_gap=self.decision_temporal_min_confidence_gap,
             require_both_options=self.decision_temporal_require_both_options,
             time_patterns=self.intent_time_patterns,
+            overlap_floor=self.decision_temporal_overlap_floor,
+            contains_bonus=self.decision_temporal_contains_bonus,
+            date_bonus=self.decision_temporal_date_bonus,
+            event_anchor_enabled=self.decision_temporal_event_anchor_enabled,
+            event_anchor_min_overlap=self.decision_temporal_event_anchor_min_overlap,
+            event_anchor_min_score=self.decision_temporal_event_anchor_min_score,
+            event_anchor_pair_min_score=self.decision_temporal_event_anchor_pair_min_score,
+            event_anchor_use_session_date_fallback=self.decision_temporal_event_anchor_use_session_date_fallback,
+            event_anchor_fallback_to_sentence_score=self.decision_temporal_event_anchor_fallback_to_sentence_score,
         )
         if temporal is not None:
             return temporal
 
         return None
+
+    def postprocess_final_answer(
+        self,
+        answer: str,
+        query: str,
+        evidence_candidate: Optional[Dict[str, str]] = None,
+    ) -> str:
+        return self.response_handler.postprocess_final_answer(
+            answer=answer,
+            query=query,
+            evidence_candidate=evidence_candidate,
+        )
