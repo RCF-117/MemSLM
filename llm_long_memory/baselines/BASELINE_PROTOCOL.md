@@ -7,8 +7,8 @@ This file defines the reproducible baseline protocol for the Mid-RAG stage.
 - Frozen config: `llm_long_memory/baselines/baseline_midrag_v1.yaml`
 
 ## Datasets and Default Scope
-- Sample set: `llm_long_memory/data/raw/longmemeval_s_sample_20.json`
-- Oracle set: `llm_long_memory/data/raw/longmemeval_oracle.json`
+- Sample set: `llm_long_memory/data/raw/LongMemEval/longmemeval_s_sample_20.json`
+- Oracle set: `llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json`
 - Default run size: first 10 instances per dataset
 
 ## Run Command

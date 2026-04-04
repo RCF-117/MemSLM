@@ -24,4 +24,7 @@ llm_long_memory/data/raw/wget-log
 # Large raw datasets (keep scripts tracked)
 llm_long_memory/data/raw/*.json
 llm_long_memory/data/raw/*.jsonl
+llm_long_memory/data/raw/**/*.json
+llm_long_memory/data/raw/**/*.jsonl
 !llm_long_memory/data/raw/*.py
+!llm_long_memory/data/raw/**/*.py

@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 
 from llm_long_memory.evaluation.eval_runner import run_eval
-from llm_long_memory.evaluation.longmemeval_loader import iter_history_messages, load_stream
+from llm_long_memory.evaluation.dataset_loader import iter_history_messages, load_stream
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.memory.memory_manager import MemoryManager
 from llm_long_memory.utils.helpers import load_config

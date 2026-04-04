@@ -28,13 +28,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sample20_path",
         type=str,
-        default="llm_long_memory/data/raw/longmemeval_s_sample_20.json",
+        default="llm_long_memory/data/raw/LongMemEval/longmemeval_s_sample_20.json",
         help="Path to LongMemEval sample-20 file.",
     )
     parser.add_argument(
         "--oracle_path",
         type=str,
-        default="llm_long_memory/data/raw/longmemeval_oracle.json",
+        default="llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json",
         help="Path to LongMemEval oracle file.",
     )
     return parser.parse_args()

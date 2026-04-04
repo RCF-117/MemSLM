@@ -1,12 +1,20 @@
-"""Streaming loader for LongMemEval evaluation instances.
+"""Streaming loader for LongMemEval and LoCoMo evaluation instances.
 
-This module preserves LongMemEval's instance-level structure:
-one yielded item == one evaluation instance (question + haystack sessions).
+The public interface is intentionally stable:
+- ``load_stream(path)`` yields normalized eval instances
+- ``iter_history_messages(instance)`` yields normalized history turns
+
+For LongMemEval:
+- one raw item -> one eval instance
+
+For LoCoMo:
+- one raw sample -> multiple eval instances (one per QA pair)
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, List
 
@@ -115,8 +123,148 @@ def _normalize_instance(item: Any) -> EvalInstance | None:
     }
 
 
+def _is_locomo_sample(item: Any) -> bool:
+    """Return True if item matches LoCoMo sample shape."""
+    return (
+        isinstance(item, dict)
+        and isinstance(item.get("conversation"), dict)
+        and isinstance(item.get("qa"), list)
+    )
+
+
+def _session_index_from_dia_id(dia_id: str) -> int | None:
+    """Extract session index from dia id like 'D12:3'."""
+    match = re.fullmatch(r"[Dd](\d+):\d+", str(dia_id).strip())
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _normalize_locomo_instances(item: Dict[str, Any]) -> List[EvalInstance]:
+    """Normalize one LoCoMo sample into LongMemEval-like eval instances."""
+    conversation = item.get("conversation", {})
+    if not isinstance(conversation, dict):
+        return []
+
+    speaker_a = str(conversation.get("speaker_a", "")).strip()
+    speaker_b = str(conversation.get("speaker_b", "")).strip()
+
+    session_keys = [
+        key
+        for key in conversation.keys()
+        if re.fullmatch(r"session_\d+", str(key))
+    ]
+    session_keys.sort(key=lambda key: int(str(key).split("_")[1]))
+
+    session_ids: List[str] = []
+    session_dates: List[str] = []
+    sessions: List[Session] = []
+    dia_to_session_id: Dict[str, str] = {}
+
+    for session_key in session_keys:
+        raw_session = conversation.get(session_key)
+        if not isinstance(raw_session, list):
+            continue
+
+        normalized_session: Session = []
+        sid = str(session_key)
+        sdate = str(conversation.get(f"{session_key}_date_time", "")).strip()
+
+        for turn in raw_session:
+            if not isinstance(turn, dict):
+                continue
+            text = str(turn.get("text", "")).strip()
+            if not text:
+                continue
+            speaker = str(turn.get("speaker", "")).strip()
+            role = "assistant"
+            if speaker and speaker_a and speaker == speaker_a:
+                role = "user"
+            elif speaker and speaker_b and speaker == speaker_b:
+                role = "assistant"
+            elif str(turn.get("role", "")).strip().lower() in {"user", "assistant", "system"}:
+                role = str(turn.get("role")).strip().lower()
+
+            normalized: Turn = {"role": role, "content": text}
+            dia_id = str(turn.get("dia_id", "")).strip()
+            if dia_id:
+                normalized["dia_id"] = dia_id
+                dia_to_session_id[dia_id] = sid
+            normalized_session.append(normalized)
+
+        if normalized_session:
+            session_ids.append(sid)
+            session_dates.append(sdate)
+            sessions.append(normalized_session)
+
+    if not sessions:
+        return []
+
+    qa_list = item.get("qa", [])
+    if not isinstance(qa_list, list):
+        return []
+
+    sample_id = str(item.get("sample_id", "")).strip()
+    out: List[EvalInstance] = []
+    for index, qa in enumerate(qa_list):
+        if not isinstance(qa, dict):
+            continue
+        question = str(qa.get("question", "")).strip()
+        answer = str(qa.get("answer", "")).strip()
+        if not question:
+            continue
+
+        evidence = qa.get("evidence", [])
+        evidence_ids = {str(x).strip() for x in evidence if str(x).strip()}
+
+        tagged_sessions: List[Session] = []
+        for session in sessions:
+            tagged: Session = []
+            for turn in session:
+                copied = dict(turn)
+                if str(copied.get("dia_id", "")).strip() in evidence_ids:
+                    copied["has_answer"] = True
+                tagged.append(copied)
+            tagged_sessions.append(tagged)
+
+        answer_session_ids = sorted(
+            {
+                dia_to_session_id[eid]
+                for eid in evidence_ids
+                if eid in dia_to_session_id
+            }
+        )
+
+        qid = str(qa.get("question_id", "")).strip()
+        if not qid:
+            qid = f"{sample_id}_qa_{index}"
+        category = str(qa.get("category", "")).strip()
+        qtype = f"locomo_category_{category}" if category else "locomo"
+        question_date = str(qa.get("question_date", "")).strip()
+
+        out.append(
+            {
+                "question_id": qid,
+                "question_type": qtype,
+                "question": question,
+                "answer": answer,
+                "question_date": question_date,
+                "haystack_session_ids": list(session_ids),
+                "haystack_dates": list(session_dates),
+                "haystack_sessions": tagged_sessions,
+                "answer_session_ids": answer_session_ids,
+            }
+        )
+    return out
+
+
 def load_stream(path: str) -> Generator[EvalInstance, None, None]:
-    """Yield one normalized LongMemEval instance at a time."""
+    """Yield one normalized eval instance at a time.
+
+    Supports:
+    - LongMemEval JSON / JSONL
+    - LoCoMo JSON (one sample expanded into multiple QA instances)
+    """
     stream_read_size = int(load_config()["dataset"]["stream_read_size"])
     file_path = Path(path)
     with file_path.open("r", encoding="utf-8") as file:
@@ -145,9 +293,13 @@ def load_stream(path: str) -> Generator[EvalInstance, None, None]:
                     except json.JSONDecodeError:
                         break
                     buffer = buffer[index:]
-                    instance = _normalize_instance(item)
-                    if instance is not None:
-                        yield instance
+                    if _is_locomo_sample(item):
+                        for locomo_instance in _normalize_locomo_instances(item):
+                            yield locomo_instance
+                    else:
+                        instance = _normalize_instance(item)
+                        if instance is not None:
+                            yield instance
             return
 
         for line in file:
@@ -155,9 +307,13 @@ def load_stream(path: str) -> Generator[EvalInstance, None, None]:
             if not text:
                 continue
             item = json.loads(text)
-            instance = _normalize_instance(item)
-            if instance is not None:
-                yield instance
+            if _is_locomo_sample(item):
+                for locomo_instance in _normalize_locomo_instances(item):
+                    yield locomo_instance
+            else:
+                instance = _normalize_instance(item)
+                if instance is not None:
+                    yield instance
 
 
 def iter_history_messages(instance: EvalInstance) -> Iterable[Turn]:

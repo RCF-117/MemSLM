@@ -6,7 +6,7 @@ from datetime import datetime
 import uuid
 from typing import Any, Dict, List
 
-from llm_long_memory.evaluation.longmemeval_loader import iter_history_messages, load_stream
+from llm_long_memory.evaluation.dataset_loader import iter_history_messages, load_stream
 from llm_long_memory.evaluation.metrics_runtime import (
     compute_answer_span_hit,
     compute_support_sentence_hit,
