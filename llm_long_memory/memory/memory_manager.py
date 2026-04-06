@@ -226,6 +226,7 @@ class MemoryManager:
             chunks,
             evidence_sentences,
             candidates,
+            option_evidence_chains,
             evidence_candidate,
             best_evidence,
             best_candidate,
@@ -236,6 +237,7 @@ class MemoryManager:
             chunks=chunks,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
+            option_evidence_chains=option_evidence_chains,
             evidence_candidate=evidence_candidate,
         )
         if fast_answer is not None:
@@ -247,6 +249,7 @@ class MemoryManager:
             chunks=chunks,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
+            option_evidence_chains=option_evidence_chains,
         )
         ai_response, fallback_path, not_found_reason = self._generate_with_fallback(
             input_text=input_text,
@@ -254,6 +257,7 @@ class MemoryManager:
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
+            option_evidence_chains=option_evidence_chains,
             evidence_candidate=evidence_candidate,
         )
         logger.info(
@@ -272,7 +276,17 @@ class MemoryManager:
         self,
         query: str,
         precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]],
-    ) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], Optional[Dict[str, str]], str, str]:
+    ) -> Tuple[
+        str,
+        List[Dict[str, object]],
+        List[Dict[str, object]],
+        List[Dict[str, object]],
+        List[Dict[str, object]],
+        Optional[Dict[str, object]],
+        Optional[Dict[str, str]],
+        str,
+        str,
+    ]:
         if precomputed_context is not None:
             retrieved_context, topics, chunks = precomputed_context
         else:
@@ -282,6 +296,11 @@ class MemoryManager:
 
         evidence_sentences = self.answering.collect_evidence_sentences(query, chunks)
         candidates = self.answering.extract_candidates(query, evidence_sentences)
+        option_evidence_chains = self.answering.build_option_evidence_chains(
+            query,
+            evidence_sentences,
+            candidates,
+        )
         self.answering.log_decision_snapshot(query, evidence_sentences, candidates)
         evidence_candidate = self.answering.extract_evidence_candidate(
             query, evidence_sentences, candidates
@@ -296,6 +315,7 @@ class MemoryManager:
             chunks,
             evidence_sentences,
             candidates,
+            option_evidence_chains,
             evidence_candidate,
             best_evidence,
             best_candidate,
@@ -326,6 +346,7 @@ class MemoryManager:
         chunks: List[Dict[str, object]],
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
+        option_evidence_chains: Optional[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Optional[str]:
         decided = self.answering.decide_answer(
@@ -333,6 +354,7 @@ class MemoryManager:
             evidence_sentences,
             candidates,
             reranked_chunks=chunks,
+            option_evidence_chains=option_evidence_chains,
         )
         if decided is not None:
             final = str(decided.get("answer", "")).strip()
@@ -379,6 +401,7 @@ class MemoryManager:
         chunks: List[Dict[str, object]],
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
+        option_evidence_chains: Optional[Dict[str, object]],
     ) -> str:
         recent_context = self._build_recent_context()
         generation_context = build_generation_context(
@@ -398,6 +421,7 @@ class MemoryManager:
             recent_context=recent_context,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
+            option_evidence_chains=option_evidence_chains,
         )
 
     def _generate_with_fallback(
@@ -408,6 +432,7 @@ class MemoryManager:
         prompt_text: str,
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
+        option_evidence_chains: Optional[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
         prompt_messages: List[Message] = [{"role": "user", "content": prompt_text}]
@@ -448,6 +473,7 @@ class MemoryManager:
                 input_text=input_text,
                 evidence_sentences=evidence_sentences,
                 evidence_candidate=evidence_candidate,
+                option_evidence_chains=option_evidence_chains,
             )
             second_response = self.llm.chat([{"role": "user", "content": second_prompt}])
             second_result = self.answering.evaluate_response_fallback(

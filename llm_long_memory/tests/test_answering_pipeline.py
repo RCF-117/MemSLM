@@ -85,6 +85,26 @@ class TestAnsweringPipeline(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertEqual(str(out.get("answer", "")), "3")
 
+    def test_option_evidence_chain_builds_per_option_pools(self) -> None:
+        evidence = [
+            {"text": "I visited Boston on 2023/05/10.", "score": 0.9, "session_date": "2023/05/10"},
+            {"text": "I visited Chicago on 2023/05/12.", "score": 0.8, "session_date": "2023/05/12"},
+        ]
+        candidates = [
+            {"text": "Boston", "score": 0.8, "support": 1},
+            {"text": "Chicago", "score": 0.75, "support": 1},
+        ]
+        chains = self.pipeline.build_option_evidence_chains(
+            query="Which city did I visit later, Boston or Chicago?",
+            evidence_sentences=evidence,
+            candidates=candidates,
+        )
+        self.assertIsNotNone(chains)
+        options = list((chains or {}).get("options", []))
+        self.assertGreaterEqual(len(options), 2)
+        self.assertTrue(any(str(x.get("option")) == "boston" for x in options))
+        self.assertTrue(any(str(x.get("option")) == "chicago" for x in options))
+
 
 if __name__ == "__main__":
     unittest.main()

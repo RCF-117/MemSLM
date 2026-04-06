@@ -59,6 +59,7 @@ class AnswerResponseHandler:
         recent_context: str,
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
+        option_evidence_chains: Optional[Dict[str, object]] = None,
     ) -> str:
         evidence_text = "\n".join(
             f"- {str(item.get('text', ''))}" for item in evidence_sentences
@@ -76,6 +77,36 @@ class AnswerResponseHandler:
             if self.answer_context_only
             else "Return only the final answer."
         )
+        option_block = ""
+        if option_evidence_chains is not None:
+            parts: List[str] = []
+            target_k = int(option_evidence_chains.get("selection_target_k", 1))
+            parts.append(f"selection_target_k={target_k}")
+            for row in list(option_evidence_chains.get("options", [])):
+                if not isinstance(row, dict):
+                    continue
+                option = str(row.get("option", ""))
+                parts.append(f"\nOption: {option}")
+                time_items = list(row.get("time_evidence", []))
+                other_items = list(row.get("other_evidence", []))
+                cand_items = list(row.get("candidates", []))
+                parts.append("  Time Evidence:")
+                for item in time_items:
+                    text = str(item.get("text", ""))
+                    date = str(item.get("date", ""))
+                    score = float(item.get("score", 0.0))
+                    parts.append(f"  - [{date}] {text} (score={score:.3f})")
+                parts.append("  Other Evidence:")
+                for item in other_items:
+                    text = str(item.get("text", ""))
+                    score = float(item.get("score", 0.0))
+                    parts.append(f"  - {text} (score={score:.3f})")
+                parts.append("  Option Candidates:")
+                for item in cand_items:
+                    text = str(item.get("text", ""))
+                    score = float(item.get("score", 0.0))
+                    parts.append(f"  - {text} (score={score:.3f})")
+            option_block = "\n\n[Option Evidence Chains]\n" + "\n".join(parts)
         return (
             "[Retrieved Context]\n"
             f"{retrieved_context}\n\n"
@@ -83,6 +114,7 @@ class AnswerResponseHandler:
             f"{evidence_text}\n\n"
             "[Candidate Answers]\n"
             f"{candidate_text}\n\n"
+            f"{option_block}\n\n"
             "[Recent Context]\n"
             f"{recent_context}\n\n"
             "[Answer Rules]\n"
@@ -207,6 +239,7 @@ class AnswerResponseHandler:
         input_text: str,
         evidence_sentences: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
+        option_evidence_chains: Optional[Dict[str, object]] = None,
     ) -> str:
         evidence_text = "\n".join(f"- {str(item.get('text', ''))}" for item in evidence_sentences)
         candidate_text = (
@@ -220,9 +253,17 @@ class AnswerResponseHandler:
         )
         if candidate_text:
             guidance += f"\nPreferred evidence candidate: {candidate_text}"
+        option_block = ""
+        if option_evidence_chains is not None:
+            option_block = (
+                "\n[Option Evidence Chains]\n"
+                + str(option_evidence_chains)
+                + "\n"
+            )
         return (
             "[Evidence Sentences]\n"
             f"{evidence_text}\n\n"
+            f"{option_block}"
             "[Rules]\n"
             f"{guidance}\n\n"
             f"Question: {input_text}"

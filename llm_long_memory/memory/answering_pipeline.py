@@ -7,7 +7,12 @@ from typing import Any, Dict, List, Optional
 
 from llm_long_memory.memory.counting_resolver import CountingResolver
 from llm_long_memory.memory.answering_response import AnswerResponseHandler
-from llm_long_memory.memory.answering_temporal import choose_temporal_option
+from llm_long_memory.memory.answering_temporal import (
+    choose_temporal_option,
+    extract_dates_from_text,
+    parse_choice_query,
+    parse_session_date,
+)
 from llm_long_memory.utils.logger import logger
 
 
@@ -123,6 +128,26 @@ class AnsweringPipeline:
         self.decision_temporal_event_anchor_fallback_to_sentence_score = bool(
             decision_cfg["temporal_event_anchor_fallback_to_sentence_score"]
         )
+        self.decision_option_chain_enabled = bool(decision_cfg["option_chain_enabled"])
+        self.decision_option_chain_max_options = int(decision_cfg["option_chain_max_options"])
+        self.decision_option_chain_default_target_k = int(
+            decision_cfg["option_chain_default_target_k"]
+        )
+        self.decision_option_chain_min_option_overlap = float(
+            decision_cfg["option_chain_min_option_overlap"]
+        )
+        self.decision_option_chain_top_evidence_per_option = int(
+            decision_cfg["option_chain_top_evidence_per_option"]
+        )
+        self.decision_option_chain_top_time_evidence_per_option = int(
+            decision_cfg["option_chain_top_time_evidence_per_option"]
+        )
+        self.decision_option_chain_top_candidates_per_option = int(
+            decision_cfg["option_chain_top_candidates_per_option"]
+        )
+        self.decision_temporal_delegate_to_llm_when_option_chain = bool(
+            decision_cfg["temporal_delegate_to_llm_when_option_chain"]
+        )
         self.not_found_force_evidence_candidate_when_available = bool(
             self.answering_cfg["not_found_force_evidence_candidate_when_available"]
         )
@@ -178,6 +203,13 @@ class AnsweringPipeline:
         if not q_tokens or not c_tokens:
             return 0.0
         return float(len(q_tokens.intersection(c_tokens))) / float(len(q_tokens))
+
+    def _text_overlap(self, left: str, right: str) -> float:
+        left_tokens = set(self._tokenize(left))
+        right_tokens = set(self._tokenize(right))
+        if not left_tokens or not right_tokens:
+            return 0.0
+        return float(len(left_tokens.intersection(right_tokens))) / float(len(left_tokens))
 
     def _generate_spans(self, sentence: str) -> List[str]:
         tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9'&._/-]*", sentence)
@@ -450,6 +482,7 @@ class AnsweringPipeline:
         recent_context: str,
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
+        option_evidence_chains: Optional[Dict[str, object]] = None,
     ) -> str:
         return self.response_handler.build_answer_prompt(
             input_text=input_text,
@@ -457,6 +490,7 @@ class AnsweringPipeline:
             recent_context=recent_context,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
+            option_evidence_chains=option_evidence_chains,
         )
 
     def response_in_evidence(self, response: str, evidence_sentences: List[Dict[str, object]]) -> bool:
@@ -504,12 +538,114 @@ class AnsweringPipeline:
         input_text: str,
         evidence_sentences: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
+        option_evidence_chains: Optional[Dict[str, object]] = None,
     ) -> str:
         return self.response_handler.build_second_pass_prompt(
             input_text=input_text,
             evidence_sentences=evidence_sentences,
             evidence_candidate=evidence_candidate,
+            option_evidence_chains=option_evidence_chains,
         )
+
+    def build_option_evidence_chains(
+        self,
+        query: str,
+        evidence_sentences: List[Dict[str, object]],
+        candidates: List[Dict[str, object]],
+    ) -> Optional[Dict[str, object]]:
+        """Build independent evidence pools per option for choice-style questions."""
+        if not self.decision_option_chain_enabled:
+            return None
+
+        parsed = parse_choice_query(
+            query,
+            max_options=self.decision_option_chain_max_options,
+            default_target_k=self.decision_option_chain_default_target_k,
+        )
+        if parsed is None:
+            return None
+        options, target_k = parsed
+
+        option_rows: List[Dict[str, object]] = []
+        for option in options:
+            option_low = str(option).lower()
+            evidence_pool: List[Dict[str, object]] = []
+            time_pool: List[Dict[str, object]] = []
+
+            for item in evidence_sentences:
+                text = str(item.get("text", "")).strip()
+                if not text:
+                    continue
+                overlap = self._text_overlap(option_low, text.lower())
+                contains = option_low in text.lower()
+                if (not contains) and overlap < self.decision_option_chain_min_option_overlap:
+                    continue
+                sentence_score = float(item.get("score", 0.0))
+                option_score = sentence_score * max(self.decision_temporal_overlap_floor, overlap)
+                if contains:
+                    option_score += self.decision_temporal_contains_bonus * sentence_score
+                evidence_pool.append(
+                    {
+                        "text": text,
+                        "score": option_score,
+                        "session_date": str(item.get("session_date", "")),
+                    }
+                )
+                parsed_dates = extract_dates_from_text(text, self.intent_time_patterns)
+                if not parsed_dates:
+                    session_dt = parse_session_date(str(item.get("session_date", "")))
+                    if session_dt is not None:
+                        parsed_dates = [session_dt]
+                for dt in parsed_dates:
+                    time_pool.append(
+                        {
+                            "text": text,
+                            "score": option_score,
+                            "date": dt.isoformat(),
+                        }
+                    )
+
+            evidence_pool.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+            time_pool.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+
+            option_candidates: List[Dict[str, object]] = []
+            for cand in candidates:
+                c_text = str(cand.get("text", "")).strip()
+                if not c_text:
+                    continue
+                overlap = self._text_overlap(option_low, c_text.lower())
+                if overlap < self.decision_option_chain_min_option_overlap:
+                    continue
+                option_candidates.append(
+                    {
+                        "text": c_text,
+                        "score": float(cand.get("score", 0.0)) * overlap,
+                        "support": int(cand.get("support", 0)),
+                    }
+                )
+            option_candidates.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+
+            option_rows.append(
+                {
+                    "option": option,
+                    "time_evidence": time_pool[: self.decision_option_chain_top_time_evidence_per_option],
+                    "other_evidence": evidence_pool[: self.decision_option_chain_top_evidence_per_option],
+                    "candidates": option_candidates[: self.decision_option_chain_top_candidates_per_option],
+                }
+            )
+
+        # Require at least two options with usable evidence.
+        usable = [
+            row
+            for row in option_rows
+            if row["other_evidence"] or row["time_evidence"] or row["candidates"]
+        ]
+        if len(usable) < 2:
+            return None
+        return {
+            "selection_target_k": int(target_k),
+            "options": usable,
+        }
 
     def decide_answer(
         self,
@@ -517,6 +653,7 @@ class AnsweringPipeline:
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
         reranked_chunks: Optional[List[Dict[str, object]]] = None,
+        option_evidence_chains: Optional[Dict[str, object]] = None,
     ) -> Optional[Dict[str, str]]:
         """Intent-specific decision before LLM generation (counting/temporal only)."""
 
@@ -529,25 +666,29 @@ class AnsweringPipeline:
         if counted is not None:
             return counted
 
-        temporal = choose_temporal_option(
-            query=query,
-            evidence_sentences=evidence_sentences,
-            enabled=self.decision_temporal_choice_enabled,
-            min_confidence_gap=self.decision_temporal_min_confidence_gap,
-            require_both_options=self.decision_temporal_require_both_options,
-            time_patterns=self.intent_time_patterns,
-            overlap_floor=self.decision_temporal_overlap_floor,
-            contains_bonus=self.decision_temporal_contains_bonus,
-            date_bonus=self.decision_temporal_date_bonus,
-            event_anchor_enabled=self.decision_temporal_event_anchor_enabled,
-            event_anchor_min_overlap=self.decision_temporal_event_anchor_min_overlap,
-            event_anchor_min_score=self.decision_temporal_event_anchor_min_score,
-            event_anchor_pair_min_score=self.decision_temporal_event_anchor_pair_min_score,
-            event_anchor_use_session_date_fallback=self.decision_temporal_event_anchor_use_session_date_fallback,
-            event_anchor_fallback_to_sentence_score=self.decision_temporal_event_anchor_fallback_to_sentence_score,
-        )
-        if temporal is not None:
-            return temporal
+        if not (
+            self.decision_temporal_delegate_to_llm_when_option_chain
+            and option_evidence_chains is not None
+        ):
+            temporal = choose_temporal_option(
+                query=query,
+                evidence_sentences=evidence_sentences,
+                enabled=self.decision_temporal_choice_enabled,
+                min_confidence_gap=self.decision_temporal_min_confidence_gap,
+                require_both_options=self.decision_temporal_require_both_options,
+                time_patterns=self.intent_time_patterns,
+                overlap_floor=self.decision_temporal_overlap_floor,
+                contains_bonus=self.decision_temporal_contains_bonus,
+                date_bonus=self.decision_temporal_date_bonus,
+                event_anchor_enabled=self.decision_temporal_event_anchor_enabled,
+                event_anchor_min_overlap=self.decision_temporal_event_anchor_min_overlap,
+                event_anchor_min_score=self.decision_temporal_event_anchor_min_score,
+                event_anchor_pair_min_score=self.decision_temporal_event_anchor_pair_min_score,
+                event_anchor_use_session_date_fallback=self.decision_temporal_event_anchor_use_session_date_fallback,
+                event_anchor_fallback_to_sentence_score=self.decision_temporal_event_anchor_fallback_to_sentence_score,
+            )
+            if temporal is not None:
+                return temporal
 
         return None
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 TokenizeFn = Callable[[str], List[str]]
@@ -44,6 +44,94 @@ def extract_or_options(query: str) -> List[str]:
     if len(left.split()) > 10 or len(right.split()) > 10:
         return []
     return [left, right]
+
+
+def extract_list_options(query: str, max_options: int) -> List[str]:
+    """Extract option list from comma/or separated query segments."""
+    text = " ".join(str(query).split()).strip(" .?!")
+    if not text:
+        return []
+    if " or " not in text.lower():
+        return []
+    segments = re.split(r"\s*,\s*|\s+or\s+", text, flags=re.IGNORECASE)
+    options: List[str] = []
+    for seg in segments:
+        s = str(seg).strip(" ,;:!?")
+        if not s:
+            continue
+        s = re.sub(
+            r"^(which|what|who|did|do|does|is|are|was|were|among|between|choose|select|pick)\s+",
+            "",
+            s,
+            flags=re.IGNORECASE,
+        )
+        s = re.sub(r"^(the|a|an)\s+", "", s, flags=re.IGNORECASE)
+        s = " ".join(s.lower().split())
+        if not s:
+            continue
+        if len(s.split()) > 12:
+            continue
+        if s not in options:
+            options.append(s)
+        if len(options) >= int(max_options):
+            break
+    return options
+
+
+def extract_choice_options(query: str, max_options: int) -> List[str]:
+    """Extract options for 2-way / N-way choices from query text."""
+    quoted = extract_quoted_options(query)
+    if len(quoted) >= 2:
+        normalized: List[str] = []
+        for option in quoted:
+            s = " ".join(str(option).lower().split())
+            if s and s not in normalized:
+                normalized.append(s)
+            if len(normalized) >= int(max_options):
+                break
+        return normalized
+
+    pair = extract_or_options(query)
+    if len(pair) >= 2:
+        return pair[: int(max_options)]
+
+    listed = extract_list_options(query, max_options=max_options)
+    if len(listed) >= 2:
+        return listed
+    return []
+
+
+def infer_selection_target_k(query: str, option_count: int, default_target_k: int) -> int:
+    """Infer how many options should be selected in N-way choice questions."""
+    if option_count <= 0:
+        return 0
+    match = re.search(r"\b(?:choose|select|pick|which)\s+(\d+)\b", str(query), flags=re.IGNORECASE)
+    if match:
+        value = int(match.group(1))
+        return max(1, min(option_count, value))
+    if re.search(r"\bwhich\s+(?:two|2)\b", str(query), flags=re.IGNORECASE):
+        return max(1, min(option_count, 2))
+    if re.search(r"\bwhich\s+(?:three|3)\b", str(query), flags=re.IGNORECASE):
+        return max(1, min(option_count, 3))
+    return max(1, min(option_count, int(default_target_k)))
+
+
+def parse_choice_query(
+    query: str,
+    *,
+    max_options: int,
+    default_target_k: int,
+) -> Optional[Tuple[List[str], int]]:
+    """Parse query into option list + selection target for choice-style questions."""
+    options = extract_choice_options(query, max_options=max_options)
+    if len(options) < 2:
+        return None
+    target_k = infer_selection_target_k(
+        query,
+        option_count=len(options),
+        default_target_k=default_target_k,
+    )
+    return options, target_k
 
 
 def _tokenize(text: str) -> List[str]:
