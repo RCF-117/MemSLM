@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any, Dict, List
 import urllib.error
 import urllib.request
@@ -12,7 +13,7 @@ from llm_long_memory.evaluation.eval_runner import run_eval
 from llm_long_memory.evaluation.dataset_loader import iter_history_messages, load_stream
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.memory.memory_manager import MemoryManager
-from llm_long_memory.utils.helpers import load_config
+from llm_long_memory.utils.helpers import load_config, resolve_project_path
 from llm_long_memory.utils.logger import logger
 
 
@@ -20,11 +21,30 @@ Message = Dict[str, str]
 EvalInstance = Dict[str, Any]
 
 
-def parse_args(config: Dict[str, Any]) -> argparse.Namespace:
+def _parse_config_path() -> str:
+    """Parse config path early so runtime options can depend on it."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config/config.yaml",
+        help="Path to runtime config file.",
+    )
+    args, _ = parser.parse_known_args()
+    return str(args.config)
+
+
+def parse_args(config: Dict[str, Any], default_config_path: str) -> argparse.Namespace:
     """Parse CLI arguments for model and host."""
     llm_cfg = config["llm"]
     supported_models = list(llm_cfg["supported_models"])
     parser = argparse.ArgumentParser(description="Memory-RAG system CLI.")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=default_config_path,
+        help="Path to runtime config file.",
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -68,6 +88,40 @@ def run_dataset(manager: MemoryManager, dataset_path: str, config: Dict[str, Any
 def _load_non_stream(dataset_path: str) -> List[EvalInstance]:
     """Load full dataset into memory when stream_mode is disabled."""
     return list(load_stream(dataset_path))
+
+
+def _resolve_input_path(path: str) -> Path:
+    """Resolve user path from absolute, CWD-relative, or project-relative inputs."""
+    raw = Path(path).expanduser()
+    if raw.is_absolute():
+        return raw
+    cwd_candidate = (Path.cwd() / raw).resolve()
+    if cwd_candidate.exists():
+        return cwd_candidate
+    return resolve_project_path(path).resolve()
+
+
+def _require_existing_file(path: str) -> Path:
+    resolved = _resolve_input_path(path)
+    if not resolved.exists() or not resolved.is_file():
+        raise FileNotFoundError(f"Dataset file does not exist: {resolved}")
+    return resolved
+
+
+def _resolve_eval_split_path(config: Dict[str, Any], split_name: str) -> Path:
+    """Resolve dataset path by configured split name."""
+    dataset_cfg = config["dataset"]
+    split_map = dataset_cfg.get("eval_splits", {})
+    if not isinstance(split_map, dict):
+        raise ValueError("Config key dataset.eval_splits must be a mapping.")
+    key = split_name.strip().lower()
+    if key not in split_map:
+        known = ", ".join(sorted(str(k) for k in split_map.keys()))
+        raise ValueError(f"Unknown eval split '{split_name}'. Available: {known}")
+    split_path = str(split_map[key]).strip()
+    if not split_path:
+        raise ValueError(f"Configured path for split '{split_name}' is empty.")
+    return _require_existing_file(split_path)
 
 
 def _fetch_ollama_models(host: str, timeout_sec: int) -> List[str]:
@@ -127,15 +181,105 @@ def run_health(manager: MemoryManager, config: Dict[str, Any]) -> None:
     print(f"eval_runs: {eval_runs}")
 
 
-def run_interactive(manager: MemoryManager, config: Dict[str, Any]) -> None:
-    """Run interactive chat loop with dataset and debug commands."""
-    logger.info("Interactive mode started.")
+def _print_commands() -> None:
+    """Print interactive CLI command help."""
     print("Commands:")
     print("/run_dataset path/to/file.json")
     print("/run_eval path/to/file.json")
+    print("/run_eval_split split_name")
     print("/debug")
     print("/health")
     print("exit\n")
+
+
+def _print_debug(manager: MemoryManager) -> None:
+    """Print mid/long memory debug stats."""
+    stats = manager.mid_memory.debug_stats()
+    long_stats = manager.long_memory.debug_stats()
+    print(f"topics: {stats['topics']}")
+    print(f"total_chunks: {stats['chunks']}")
+    print(f"active_topics: {stats['active_topics']}")
+    print(f"inactive_topics: {stats['inactive_topics']}")
+    print(f"long_nodes: {long_stats['nodes']}")
+    print(f"long_edges: {long_stats['edges']}")
+    print(f"long_events: {long_stats['events']}")
+    print(f"long_details: {long_stats['details']}")
+    print(f"long_active_events: {long_stats['active_events']}")
+    print(f"long_superseded_events: {long_stats['superseded_events']}")
+    print(f"long_queue: {long_stats['queued_updates']}")
+    print(f"long_ingest_total: {long_stats['ingest_event_total']}")
+    print(f"long_ingest_accepted: {long_stats['ingest_event_accepted']}")
+    print(f"long_ingest_rejected: {long_stats['ingest_event_rejected']}")
+
+
+def _handle_dataset_command(
+    manager: MemoryManager, config: Dict[str, Any], user_input: str
+) -> bool:
+    if not user_input.startswith("/run_dataset "):
+        return False
+    dataset_path = user_input[len("/run_dataset ") :].strip()
+    try:
+        resolved = _require_existing_file(dataset_path)
+        run_dataset(manager, str(resolved), config)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.error(str(exc))
+        print(f"[Error] {exc}")
+    return True
+
+
+def _handle_eval_command(
+    manager: MemoryManager, config: Dict[str, Any], user_input: str
+) -> bool:
+    if not user_input.startswith("/run_eval "):
+        return False
+    dataset_path = user_input[len("/run_eval ") :].strip()
+    try:
+        resolved = _require_existing_file(dataset_path)
+        run_eval(manager, str(resolved), config)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.error(str(exc))
+        print(f"[Error] {exc}")
+    return True
+
+
+def _handle_eval_split_command(
+    manager: MemoryManager, config: Dict[str, Any], user_input: str
+) -> bool:
+    if not user_input.startswith("/run_eval_split "):
+        return False
+    split_name = user_input[len("/run_eval_split ") :].strip()
+    try:
+        resolved = _resolve_eval_split_path(config, split_name)
+        run_eval(manager, str(resolved), config)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.error(str(exc))
+        print(f"[Error] {exc}")
+    return True
+
+
+def _handle_builtin_command(
+    manager: MemoryManager, config: Dict[str, Any], user_input: str
+) -> bool:
+    """Handle one built-in command; return True when consumed."""
+    if _handle_dataset_command(manager, config, user_input):
+        return True
+    if _handle_eval_command(manager, config, user_input):
+        return True
+    if _handle_eval_split_command(manager, config, user_input):
+        return True
+    if user_input == "/debug":
+        _print_debug(manager)
+        return True
+    if user_input == "/health":
+        run_health(manager, config)
+        return True
+    return False
+
+
+def run_interactive(manager: MemoryManager, config: Dict[str, Any]) -> None:
+    """Run interactive chat loop with dataset and debug commands."""
+    logger.info("Interactive mode started.")
+    _print_commands()
 
     while True:
         try:
@@ -150,37 +294,7 @@ def run_interactive(manager: MemoryManager, config: Dict[str, Any]) -> None:
             print("Session ended.")
             break
 
-        if user_input.startswith("/run_dataset "):
-            dataset_path = user_input[len("/run_dataset ") :].strip()
-            run_dataset(manager, dataset_path, config)
-            continue
-
-        if user_input.startswith("/run_eval "):
-            dataset_path = user_input[len("/run_eval ") :].strip()
-            run_eval(manager, dataset_path, config)
-            continue
-
-        if user_input == "/debug":
-            stats = manager.mid_memory.debug_stats()
-            long_stats = manager.long_memory.debug_stats()
-            print(f"topics: {stats['topics']}")
-            print(f"total_chunks: {stats['chunks']}")
-            print(f"active_topics: {stats['active_topics']}")
-            print(f"inactive_topics: {stats['inactive_topics']}")
-            print(f"long_nodes: {long_stats['nodes']}")
-            print(f"long_edges: {long_stats['edges']}")
-            print(f"long_events: {long_stats['events']}")
-            print(f"long_details: {long_stats['details']}")
-            print(f"long_active_events: {long_stats['active_events']}")
-            print(f"long_superseded_events: {long_stats['superseded_events']}")
-            print(f"long_queue: {long_stats['queued_updates']}")
-            print(f"long_ingest_total: {long_stats['ingest_event_total']}")
-            print(f"long_ingest_accepted: {long_stats['ingest_event_accepted']}")
-            print(f"long_ingest_rejected: {long_stats['ingest_event_rejected']}")
-            continue
-
-        if user_input == "/health":
-            run_health(manager, config)
+        if _handle_builtin_command(manager, config, user_input):
             continue
 
         try:
@@ -193,8 +307,9 @@ def run_interactive(manager: MemoryManager, config: Dict[str, Any]) -> None:
 
 def main() -> None:
     """Program entry point."""
-    config = load_config()
-    args = parse_args(config)
+    config_path = _parse_config_path()
+    config = load_config(config_path)
+    args = parse_args(config, default_config_path=config_path)
     llm = LLM(model_name=args.model, host=args.host)
     manager = MemoryManager(llm=llm, config=config)
     try:

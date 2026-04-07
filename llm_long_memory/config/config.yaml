@@ -509,6 +509,11 @@ dataset:
   stream_read_size: 4096
   eval_max_instances: 0
   eval_print_prediction_chars: 160
+  eval_splits:
+    sample20: data/raw/LongMemEval/longmemeval_s_sample_20.json
+    oracle: data/raw/LongMemEval/longmemeval_oracle.json
+    locomo10: data/raw/LoCoMo/locomo10.json
+  default_eval_split: sample20
 
 evaluation:
   isolated_per_instance: true

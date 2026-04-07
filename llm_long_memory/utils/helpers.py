@@ -106,6 +106,25 @@ def _validate_config(data: Dict[str, Any]) -> None:
     dataset = _require(data, "dataset", "")
     if "stream_mode" not in dataset:
         raise ValueError("Missing required config key: dataset.stream_mode")
+    eval_splits = dataset.get("eval_splits")
+    if eval_splits is not None:
+        if not isinstance(eval_splits, dict):
+            raise ValueError("Config key must be a mapping: dataset.eval_splits")
+        for key, value in eval_splits.items():
+            if not str(key).strip():
+                raise ValueError("Config key dataset.eval_splits contains empty split name.")
+            if not str(value).strip():
+                raise ValueError(
+                    f"Config key dataset.eval_splits.{key} must be a non-empty path."
+                )
+    default_eval_split = dataset.get("default_eval_split")
+    if default_eval_split is not None:
+        if not isinstance(default_eval_split, str) or not default_eval_split.strip():
+            raise ValueError("Config key dataset.default_eval_split must be a non-empty string.")
+        if isinstance(eval_splits, dict) and default_eval_split not in eval_splits:
+            raise ValueError(
+                "Config key dataset.default_eval_split must reference dataset.eval_splits."
+            )
 
     evaluation = _require(data, "evaluation", "")
     for key in ("save_to_db", "run_table", "result_table", "group_table"):

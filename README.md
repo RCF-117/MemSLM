@@ -49,6 +49,7 @@ python llm_long_memory/main.py
 After starting `python llm_long_memory/main.py`:
 - `/run_dataset path/to/file.json`: ingest dataset messages into memory
 - `/run_eval path/to/file.json`: run evaluation pipeline
+- `/run_eval_split split_name`: run evaluation using configured split from `config/config.yaml`
 - `/debug`: print memory debug stats
 - `/health`: check Ollama + DB state
 - `exit`: quit
@@ -56,6 +57,11 @@ After starting `python llm_long_memory/main.py`:
 Example dataset paths:
 - LongMemEval: `llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json`
 - LoCoMo: `llm_long_memory/data/raw/LoCoMo/locomo10.json`
+
+Configured eval split examples:
+- `/run_eval_split sample20`
+- `/run_eval_split oracle`
+- `/run_eval_split locomo10`
 
 ## Data and Git Hygiene
 Large or runtime files are intentionally ignored:
