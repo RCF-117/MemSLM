@@ -55,6 +55,8 @@ class MidMemory:
         self.sqlite_busy_timeout_ms = int(self.memory_cfg["sqlite_busy_timeout_ms"])
         self.sqlite_journal_mode = str(self.memory_cfg["sqlite_journal_mode"])
         self.sqlite_synchronous = str(self.memory_cfg["sqlite_synchronous"])
+        self.sqlite_checkpoint_on_commit = bool(self.memory_cfg["sqlite_checkpoint_on_commit"])
+        self.sqlite_checkpoint_mode = str(self.memory_cfg["sqlite_checkpoint_mode"])
 
         self.role_enabled = bool(self.memory_cfg["role"]["enable"])
         self.role_weights = {
@@ -128,6 +130,8 @@ class MidMemory:
             sqlite_busy_timeout_ms=self.sqlite_busy_timeout_ms,
             sqlite_journal_mode=self.sqlite_journal_mode,
             sqlite_synchronous=self.sqlite_synchronous,
+            sqlite_checkpoint_on_commit=self.sqlite_checkpoint_on_commit,
+            sqlite_checkpoint_mode=self.sqlite_checkpoint_mode,
             lexical_search_enabled=self.lexical_search_enabled,
             eval_cfg=self.eval_cfg,
         )
@@ -438,20 +442,27 @@ class MidMemory:
             topic_score_map=topic_score_map or {},
         )
 
+    def search_chunks_global_with_limit(
+        self,
+        query: str,
+        *,
+        topic_score_map: Optional[Dict[str, float]] = None,
+        top_n: Optional[int] = None,
+    ) -> List[Chunk]:
+        """Global chunk retrieval with optional temporary top-N override."""
+        return retrieval.rerank_chunks_global(
+            self,
+            query=query,
+            topic_score_map=topic_score_map or {},
+            top_n_override=top_n,
+        )
+
     def set_temporal_weight_disabled(self, disabled: bool) -> None:
         """Set temporal weighting behavior at runtime (useful for oracle eval)."""
         self.temporal_weight_disabled = bool(disabled)
         logger.info(
             f"MidMemory temporal weighting disabled={self.temporal_weight_disabled}."
         )
-
-    def get_topic_chunks(self, topic_id: str) -> List[str]:
-        """Return all chunk texts for one topic."""
-        rows = self.conn.execute(
-            "SELECT text FROM chunks WHERE topic_id = ? ORDER BY chunk_id ASC",
-            (topic_id,),
-        ).fetchall()
-        return [str(r["text"]) for r in rows]
 
     def debug_stats(self) -> Dict[str, int]:
         """Return topic/chunk statistics."""

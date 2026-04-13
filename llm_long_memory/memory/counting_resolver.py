@@ -3,9 +3,25 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from llm_long_memory.memory.counting_dates import (
+    anchor_tokens,
+    anchor_match_score,
+    extract_dates_with_context,
+    parse_date_token,
+    parse_session_date,
+    unique_dates,
+)
+from llm_long_memory.memory.counting_entities import (
+    extract_list_entities,
+    extract_query_focus_tokens,
+    normalize_entity,
+    normalize_text,
+    quoted_phrases,
+    sentence_focus_overlap,
+)
 
 Evidence = Dict[str, object]
 Candidate = Dict[str, object]
@@ -57,7 +73,7 @@ class CountingResolver:
 
     @staticmethod
     def _norm(text: str) -> str:
-        return " ".join(str(text).split()).strip()
+        return normalize_text(text)
 
     @staticmethod
     def _extract_quoted_options(query: str) -> List[str]:
@@ -109,240 +125,66 @@ class CountingResolver:
         m = re.search(r"\b(\d+(?:\.\d+)?)\s*([a-zA-Z%$]+)?\b", text, flags=re.IGNORECASE)
         if not m:
             return None
-        number = str(m.group(1)).strip()
         unit = str(m.group(2) or "").strip().lower()
         phrase = self._norm(m.group(0))
         return phrase, unit
 
     @staticmethod
     def _parse_date_token(token: str) -> Optional[datetime]:
-        clean = token.strip().lower().replace(",", "")
-        clean = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", clean)
-        formats = [
-            "%Y/%m/%d",
-            "%Y-%m-%d",
-            "%m/%d/%Y",
-            "%m/%d/%y",
-            "%m/%d",
-            "%b %d %Y",
-            "%b %d",
-            "%B %d %Y",
-            "%B %d",
-        ]
-        for fmt in formats:
-            try:
-                parsed = datetime.strptime(clean, fmt)
-                if fmt in {"%m/%d", "%b %d", "%B %d"}:
-                    parsed = parsed.replace(year=2000)
-                return parsed
-            except ValueError:
-                continue
-        return None
+        return parse_date_token(token)
 
     def _extract_dates(self, text: str) -> List[datetime]:
-        out: List[datetime] = []
-        for pat in self.date_patterns:
-            for m in pat.findall(text):
-                token = str(m).strip()
-                if not token:
-                    continue
-                dt = self._parse_date_token(token)
-                if dt is not None:
-                    out.append(dt)
-        return out
+        return extract_dates_with_context(text=text, session_date="", date_patterns=self.date_patterns)
 
     @staticmethod
     def _parse_session_date(session_date: str) -> Optional[datetime]:
-        token = str(session_date).strip().split(" ")[0]
-        if not token:
-            return None
-        for fmt in ("%Y/%m/%d", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(token, fmt)
-            except ValueError:
-                continue
-        return None
-
-    @staticmethod
-    def _relative_weekday_date(reference: datetime, weekday: int, is_last: bool) -> datetime:
-        """Resolve relative weekday against reference date."""
-        delta = (reference.weekday() - weekday) % 7
-        if is_last:
-            if delta == 0:
-                delta = 7
-            return reference - timedelta(days=delta)
-        return reference - timedelta(days=delta)
-
-    def _extract_relative_dates(self, text: str, session_date: str) -> List[datetime]:
-        out: List[datetime] = []
-        ref = self._parse_session_date(session_date)
-        if ref is None:
-            return out
-        lowered = str(text).lower()
-        if "today" in lowered:
-            out.append(ref)
-        if "yesterday" in lowered:
-            out.append(ref - timedelta(days=1))
-
-        weekday_map = {
-            "monday": 0,
-            "tuesday": 1,
-            "wednesday": 2,
-            "thursday": 3,
-            "friday": 4,
-            "saturday": 5,
-            "sunday": 6,
-        }
-        for name, idx in weekday_map.items():
-            if re.search(rf"\blast\s+{name}\b", lowered):
-                out.append(self._relative_weekday_date(ref, idx, is_last=True))
-            elif re.search(rf"\bthis\s+{name}\b", lowered):
-                out.append(self._relative_weekday_date(ref, idx, is_last=False))
-        return out
+        return parse_session_date(session_date)
 
     def _extract_dates_with_context(self, text: str, session_date: str) -> List[datetime]:
-        dates = self._extract_dates(text)
-        dates.extend(self._extract_relative_dates(text=text, session_date=session_date))
-        return self._unique_dates(dates)
+        return extract_dates_with_context(
+            text=text, session_date=session_date, date_patterns=self.date_patterns
+        )
 
     @staticmethod
     def _unique_dates(values: Sequence[datetime]) -> List[datetime]:
-        """Deduplicate dates at day granularity to avoid fake 0-day deltas."""
-        uniq: Dict[str, datetime] = {}
-        for d in values:
-            key = d.strftime("%Y-%m-%d")
-            if key not in uniq:
-                uniq[key] = d
-        return list(uniq.values())
+        return unique_dates(values)
 
     @staticmethod
     def _anchor_tokens(text: str) -> List[str]:
-        stop = {
-            "the",
-            "a",
-            "an",
-            "of",
-            "to",
-            "for",
-            "with",
-            "and",
-            "at",
-            "in",
-            "on",
-            "my",
-            "me",
-            "i",
-            "did",
-            "it",
-            "take",
-            "days",
-            "day",
-            "after",
-            "before",
-            "between",
-            "had",
-            "passed",
-            "was",
-            "were",
-        }
-        tokens = re.findall(r"[a-z0-9]+", str(text).lower())
-        return [t for t in tokens if t and t not in stop]
+        return anchor_tokens(text)
 
     def _anchor_match_score(self, anchor: str, text: str) -> float:
-        at = set(self._anchor_tokens(anchor))
-        if not at:
-            return 0.0
-        tt = set(self._anchor_tokens(text))
-        if not tt:
-            return 0.0
-        return float(len(at.intersection(tt))) / float(len(at))
+        return anchor_match_score(anchor, text)
 
     @staticmethod
     def _quoted_phrases(text: str) -> List[str]:
-        return [
-            x.strip()
-            for x in re.findall(r"'([^']{1,80})'|\"([^\"]{1,80})\"", text)
-            for x in x
-            if x.strip()
-        ]
+        return quoted_phrases(text)
 
     def _normalize_entity(self, text: str) -> str:
-        lowered = self._norm(text).lower()
-        lowered = re.sub(r"^[^a-z0-9]+|[^a-z0-9]+$", "", lowered)
-        if not lowered:
-            return ""
-        tokens = [t for t in re.findall(r"[a-z0-9]+", lowered) if t]
-        if not tokens:
-            return ""
-        if len(tokens) > self.list_count_max_entity_tokens:
-            return ""
-        if all(t in self.list_count_stopwords for t in tokens):
-            return ""
-        if any(re.fullmatch(r"\d+", t) for t in tokens):
-            return ""
-        return " ".join(tokens)
+        return normalize_entity(
+            text=text,
+            max_entity_tokens=self.list_count_max_entity_tokens,
+            stopwords=self.list_count_stopwords,
+        )
 
     def _extract_list_entities(self, text: str) -> List[str]:
-        entities: List[str] = []
-        # 1) quoted entities are usually the cleanest signal.
-        for q in self._quoted_phrases(text):
-            norm = self._normalize_entity(q)
-            if norm:
-                entities.append(norm)
-
-        # 2) comma/and-separated list fragments.
-        normalized_text = self._norm(text)
-        if "," in normalized_text or " and " in normalized_text.lower():
-            tmp = re.sub(r"\band\b", ",", normalized_text, flags=re.IGNORECASE)
-            for part in [x.strip() for x in tmp.split(",")]:
-                norm = self._normalize_entity(part)
-                if norm:
-                    entities.append(norm)
-        return entities
+        return extract_list_entities(
+            text=text,
+            max_entity_tokens=self.list_count_max_entity_tokens,
+            stopwords=self.list_count_stopwords,
+        )
 
     def _extract_query_focus_tokens(self, query: str) -> List[str]:
-        """Extract coarse focus terms from count questions to filter noisy evidence."""
-        lowered = self._norm(query).lower()
-        fragments: List[str] = []
-        patterns = [
-            r"how many\s+(.+?)(?:\?|$)",
-            r"number of\s+(.+?)(?:\?|$)",
-            r"count of\s+(.+?)(?:\?|$)",
-        ]
-        for pat in patterns:
-            m = re.search(pat, lowered, flags=re.IGNORECASE)
-            if m:
-                fragments.append(str(m.group(1)))
-        if not fragments:
-            fragments = [lowered]
-        tokens: List[str] = []
-        for frag in fragments:
-            for tok in re.findall(r"[a-z0-9]+", frag):
-                if tok in self.list_count_focus_stopwords:
-                    continue
-                tokens.append(tok)
-        uniq: List[str] = []
-        for tok in tokens:
-            if tok not in uniq:
-                uniq.append(tok)
-        return uniq
+        return extract_query_focus_tokens(
+            query=query, focus_stopwords=self.list_count_focus_stopwords
+        )
 
     def _sentence_focus_overlap(self, text: str, focus_tokens: Sequence[str]) -> int:
-        if not focus_tokens:
-            return 0
-        raw_tokens = set(re.findall(r"[a-z0-9]+", str(text).lower()))
-        expanded: set[str] = set(raw_tokens)
-        for tok in list(raw_tokens):
-            if tok.endswith("ed") and len(tok) > 3:
-                expanded.add(tok[:-2])
-            if tok.endswith("ing") and len(tok) > 4:
-                expanded.add(tok[:-3])
-            if tok.endswith("s") and len(tok) > 2:
-                expanded.add(tok[:-1])
-        for base, forms in self.list_count_irregular_forms.items():
-            if any(form in raw_tokens for form in forms):
-                expanded.add(base)
-        return sum(1 for tok in focus_tokens if tok in expanded)
+        return sentence_focus_overlap(
+            text=text,
+            focus_tokens=focus_tokens,
+            irregular_forms=self.list_count_irregular_forms,
+        )
 
     def _resolve_list_count(
         self,

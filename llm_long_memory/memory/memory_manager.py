@@ -2,23 +2,105 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
 import json
+from typing import Any, Dict, List, Optional, Tuple
 
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
 from llm_long_memory.memory.long_memory import LongMemory
-from llm_long_memory.memory.mid_memory import MidMemory
-from llm_long_memory.memory.prompt_context import (
-    PromptContextLimits,
-    build_generation_context,
+from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
+from llm_long_memory.memory.memory_manager_utils import (
+    build_evidence_only_eval_chunks,
+    build_prompt_eval_chunks,
+    build_recent_context,
+    build_temporal_anchor_queries,
+    dedup_chunks_keep_best,
+    is_temporal_query,
+    merge_anchor_chunks,
 )
+from llm_long_memory.memory.mid_memory import MidMemory
 from llm_long_memory.memory.short_memory import ShortMemory
 from llm_long_memory.utils.helpers import load_config
 from llm_long_memory.utils.logger import logger
 
 
 Message = Dict[str, Any]
+
+
+class _NoOpLongMemory:
+    """Disabled long-memory stub to avoid runtime overhead and code-path noise."""
+
+    query_rewrite_enabled = False
+    query_rewrite_max = 0
+
+    def query(self, query_text: str) -> List[Dict[str, Any]]:
+        return []
+
+    def query_multi(self, query_texts: List[str]) -> List[Dict[str, Any]]:
+        return []
+
+    def build_context_snippets(self, query_text: str) -> List[str]:
+        return []
+
+    def build_context_snippets_multi(self, query_texts: List[str]) -> List[str]:
+        return []
+
+    def retrieve_from_chunks(
+        self,
+        *,
+        query: str,
+        chunks: List[Dict[str, Any]],
+        top_chunks: int,
+        max_chars_per_chunk: int,
+        top_events: int,
+    ) -> List[str]:
+        return []
+
+    def ingest_from_chunks(
+        self,
+        *,
+        chunks: List[Dict[str, Any]],
+        top_chunks: int,
+        max_chars_per_chunk: int,
+    ) -> int:
+        return 0
+
+    def debug_stats(self) -> Dict[str, int]:
+        return {
+            "nodes": 0,
+            "edges": 0,
+            "events": 0,
+            "details": 0,
+            "active_events": 0,
+            "superseded_events": 0,
+            "queued_updates": 0,
+            "applied_updates": 0,
+            "ingest_event_total": 0,
+            "ingest_event_accepted": 0,
+            "ingest_event_rejected": 0,
+            "extractor_calls": 0,
+            "extractor_success": 0,
+            "extractor_failures": 0,
+            "extractor_seen_messages": 0,
+            "candidate_events": 0,
+            "reject_reason_low_confidence": 0,
+            "reject_reason_few_keywords": 0,
+            "reject_reason_short_object": 0,
+            "reject_reason_few_entities": 0,
+            "reject_reason_short_sentence": 0,
+            "reject_reason_long_sentence": 0,
+            "reject_reason_missing_time_or_location": 0,
+            "reject_reason_rejected_phrase": 0,
+            "reject_reason_generic_subject_action": 0,
+            "reject_reason_generic_action_disabled": 0,
+            "reject_reason_empty_key_component": 0,
+        }
+
+    def clear_all(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
 
 
 class MemoryManager:
@@ -31,15 +113,145 @@ class MemoryManager:
         short_size = int(self.config["memory"]["short_memory_size"])
         self.short_memory = ShortMemory(max_turns=short_size, config=self.config)
         self.mid_memory = MidMemory(config=self.config)
-        self.long_memory = LongMemory(config=self.config)
+        lm_ctx_cfg = dict(self.config["retrieval"].get("long_memory_context", {}))
+        long_mem_cfg = dict(self.config["memory"]["long_memory"])
+        self.long_memory_enabled = bool(long_mem_cfg.get("enabled", False))
+        self.long_memory_query_graph_enabled = bool(
+            lm_ctx_cfg.get("query_graph_enabled", False)
+        )
+        self.long_memory = (
+            LongMemory(config=self.config)
+            if (self.long_memory_enabled or self.long_memory_query_graph_enabled)
+            else _NoOpLongMemory()
+        )
         answering_cfg = dict(self.config["retrieval"]["answering"])
         self.answering = AnsweringPipeline(answering_cfg)
+        self.refiner_enabled = bool(answering_cfg.get("refiner_enabled", False))
+        self.refiner_model = str(answering_cfg.get("refiner_model", "qwen3:4b"))
+        self.refiner_top_chunks = int(answering_cfg.get("refiner_top_chunks", 6))
+        self.refiner_max_chars_per_chunk = int(
+            answering_cfg.get("refiner_max_chars_per_chunk", 280)
+        )
+        self.refiner_output_items = int(answering_cfg.get("refiner_output_items", 6))
+        self.refiner_llm: Optional[LLM] = None
+        if self.refiner_enabled:
+            self.refiner_llm = LLM(model_name=self.refiner_model)
+        self.graph_refiner_enabled = bool(answering_cfg.get("graph_refiner_enabled", False))
+        self.graph_context_from_store_enabled = bool(
+            answering_cfg.get("graph_context_from_store_enabled", False)
+        )
+        self.graph_refiner_top_chunks = int(answering_cfg.get("graph_refiner_top_chunks", 6))
+        self.graph_refiner_chunk_max_chars = int(
+            answering_cfg.get("graph_refiner_chunk_max_chars", 260)
+        )
+        self.graph_refiner_top_events = int(answering_cfg.get("graph_refiner_top_events", 6))
+        offline_graph_cfg = dict(self.config["memory"]["long_memory"].get("offline_graph", {}))
+        self.offline_graph_build_enabled = bool(offline_graph_cfg.get("enabled", False))
+        self.offline_graph_build_top_chunks = int(offline_graph_cfg.get("build_top_chunks", 6))
+        self.offline_graph_build_chunk_max_chars = int(
+            offline_graph_cfg.get("build_chunk_max_chars", 260)
+        )
+
         self.prompt_context_max_chunks = int(answering_cfg["prompt_context_max_chunks"])
         self.prompt_context_max_chars_per_chunk = int(answering_cfg["prompt_context_max_chars_per_chunk"])
         self.prompt_context_max_total_chars = int(answering_cfg["prompt_context_max_total_chars"])
         self.prompt_recent_max_messages = int(answering_cfg["prompt_recent_max_messages"])
+
+        temporal_anchor_cfg = dict(self.config["retrieval"].get("temporal_anchor_retrieval", {}))
+        self.temporal_anchor_enabled = bool(temporal_anchor_cfg.get("enabled", False))
+        self.temporal_anchor_require_temporal_cue = bool(
+            temporal_anchor_cfg.get("require_temporal_cue", True)
+        )
+        self.temporal_anchor_max_options = int(temporal_anchor_cfg.get("max_options", 3))
+        self.temporal_anchor_extra_queries_per_option = int(
+            temporal_anchor_cfg.get("extra_queries_per_option", 1)
+        )
+        self.temporal_anchor_top_n_per_query = int(
+            temporal_anchor_cfg.get("top_n_per_query", 10)
+        )
+        self.temporal_anchor_additive_limit = int(
+            temporal_anchor_cfg.get("additive_limit", 8)
+        )
+        self.temporal_anchor_cue_keywords = [
+            str(x).strip().lower()
+            for x in list(temporal_anchor_cfg.get("cue_keywords", []))
+            if str(x).strip()
+        ]
+
+        graph_retry_cfg = dict(self.config["retrieval"].get("graph_build_retry", {}))
+        self.graph_build_retry_enabled = bool(graph_retry_cfg.get("enabled", False))
+        self.graph_build_retry_expanded_top_n = int(
+            graph_retry_cfg.get("expanded_top_n", 48)
+        )
+        self.graph_build_retry_ingest_top_chunks = int(
+            graph_retry_cfg.get("ingest_top_chunks", 10)
+        )
+        self.graph_build_retry_use_temporal_anchors = bool(
+            graph_retry_cfg.get("use_temporal_anchors", True)
+        )
+        self.graph_build_retry_anchor_query_limit = int(
+            graph_retry_cfg.get("anchor_query_limit", 4)
+        )
+        self.graph_build_retry_anchor_top_n_per_query = int(
+            graph_retry_cfg.get("anchor_top_n_per_query", 8)
+        )
+        graph_build_role_cfg = dict(self.config["retrieval"].get("graph_build_role_weights", {}))
+        self.graph_build_role_weights = {
+            str(k).strip().lower(): float(v)
+            for k, v in graph_build_role_cfg.items()
+            if str(k).strip()
+        }
+        self.chat_runtime = MemoryManagerChatRuntime(self)
         self.last_prompt_eval_chunks: List[Dict[str, str]] = []
         logger.info("MemoryManager initialized.")
+
+    @staticmethod
+    def _dedup_chunks_keep_best(chunks: List[Dict[str, object]]) -> List[Dict[str, object]]:
+        return dedup_chunks_keep_best(chunks)
+
+    def _graph_build_role_weight(self, role: str) -> float:
+        normalized = str(role).strip().lower()
+        if normalized in self.graph_build_role_weights:
+            return float(self.graph_build_role_weights[normalized])
+        return 1.0
+
+    def _rank_chunks_for_graph_build(
+        self,
+        chunks: List[Dict[str, object]],
+    ) -> List[Dict[str, object]]:
+        ranked = [dict(x) for x in chunks]
+        ranked.sort(
+            key=lambda x: float(x.get("score", 0.0))
+            * self._graph_build_role_weight(str(x.get("role", "user"))),
+            reverse=True,
+        )
+        return ranked
+
+    def _is_temporal_query(self, query: str) -> bool:
+        return is_temporal_query(query, self.temporal_anchor_cue_keywords)
+
+    def _build_temporal_anchor_queries(self, query: str) -> List[str]:
+        return build_temporal_anchor_queries(
+            query=query,
+            temporal_anchor_enabled=self.temporal_anchor_enabled,
+            temporal_anchor_require_temporal_cue=self.temporal_anchor_require_temporal_cue,
+            temporal_anchor_cue_keywords=self.temporal_anchor_cue_keywords,
+            temporal_anchor_max_options=self.temporal_anchor_max_options,
+            temporal_anchor_extra_queries_per_option=self.temporal_anchor_extra_queries_per_option,
+        )
+
+    def _merge_anchor_chunks(
+        self,
+        *,
+        base_chunks: List[Dict[str, object]],
+        extra_chunks: List[Dict[str, object]],
+        additive_limit: int,
+    ) -> List[Dict[str, object]]:
+        return merge_anchor_chunks(
+            base_chunks=base_chunks,
+            extra_chunks=extra_chunks,
+            additive_limit=additive_limit,
+        )
 
     def _rewrite_query_for_long_memory(self, query: str) -> List[str]:
         """Use main LLM once to create a few retrieval-friendly rewrites."""
@@ -120,6 +332,30 @@ class MemoryManager:
                             topic_counts[tid] = count + 1
         else:
             reranked_chunks = self.mid_memory.rerank_chunks(query, topics)
+
+        if self.temporal_anchor_enabled and hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+            anchor_queries = self._build_temporal_anchor_queries(query)
+            if anchor_queries:
+                anchor_chunks: List[Dict[str, object]] = []
+                for aq in anchor_queries:
+                    anchor_chunks.extend(
+                        self.mid_memory.search_chunks_global_with_limit(
+                            aq,
+                            topic_score_map=topic_score_map,
+                            top_n=self.temporal_anchor_top_n_per_query,
+                        )
+                    )
+                if anchor_chunks:
+                    reranked_chunks = self._merge_anchor_chunks(
+                        base_chunks=reranked_chunks,
+                        extra_chunks=self._dedup_chunks_keep_best(anchor_chunks),
+                        additive_limit=self.temporal_anchor_additive_limit,
+                    )
+                    logger.info(
+                        "MemoryManager.retrieve_context: "
+                        f"temporal_anchor_queries={len(anchor_queries)}, "
+                        f"anchor_candidates={len(anchor_chunks)}."
+                    )
         grouped: Dict[str, List[str]] = {}
         for item in reranked_chunks:
             topic_id = str(item["topic_id"])
@@ -180,7 +416,6 @@ class MemoryManager:
         logger.debug(f"MemoryManager.ingest_message: role={role}, content_len={len(content)}")
         self.short_memory.add(normalized)
         self.short_memory.flush_to_mid_memory(self.mid_memory)
-        self.long_memory.enqueue_message(normalized)
 
     def finalize_ingest(self) -> None:
         """Flush pending dynamic chunk buffer after dataset ingestion."""
@@ -287,56 +522,19 @@ class MemoryManager:
         str,
         str,
     ]:
-        if precomputed_context is not None:
-            retrieved_context, topics, chunks = precomputed_context
-        else:
-            retrieved_context, topics, chunks = self.retrieve_context(query)
-        retrieved_ids = [str(topic["topic_id"]) for topic in topics]
-        logger.info(f"MemoryManager.chat: retrieved topics={retrieved_ids}")
-
-        evidence_sentences = self.answering.collect_evidence_sentences(query, chunks)
-        candidates = self.answering.extract_candidates(query, evidence_sentences)
-        option_evidence_chains = self.answering.build_option_evidence_chains(
-            query,
-            evidence_sentences,
-            candidates,
-        )
-        self.answering.log_decision_snapshot(query, evidence_sentences, candidates)
-        evidence_candidate = self.answering.extract_evidence_candidate(
-            query, evidence_sentences, candidates
-        )
-        best_evidence = (
-            str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
-        )
-        best_candidate = str(candidates[0].get("text", "")) if candidates else ""
-        return (
-            retrieved_context,
-            topics,
-            chunks,
-            evidence_sentences,
-            candidates,
-            option_evidence_chains,
-            evidence_candidate,
-            best_evidence,
-            best_candidate,
+        return self.chat_runtime.prepare_answer_inputs(
+            query=query,
+            precomputed_context=precomputed_context,
         )
 
     def _set_prompt_eval_chunks(self, generation_context: str, evidence_sentences: List[Dict[str, object]]) -> None:
-        self.last_prompt_eval_chunks = []
-        if generation_context.strip():
-            self.last_prompt_eval_chunks.append({"text": generation_context})
-        self.last_prompt_eval_chunks.extend(
-            {"text": str(item.get("text", ""))}
-            for item in evidence_sentences
-            if str(item.get("text", "")).strip()
+        self.last_prompt_eval_chunks = build_prompt_eval_chunks(
+            generation_context,
+            evidence_sentences,
         )
 
     def _set_evidence_only_eval_chunks(self, evidence_sentences: List[Dict[str, object]]) -> None:
-        self.last_prompt_eval_chunks = [
-            {"text": str(item.get("text", ""))}
-            for item in evidence_sentences
-            if str(item.get("text", "")).strip()
-        ]
+        self.last_prompt_eval_chunks = build_evidence_only_eval_chunks(evidence_sentences)
 
     def _try_fast_paths(
         self,
@@ -349,48 +547,20 @@ class MemoryManager:
         option_evidence_chains: Optional[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Optional[str]:
-        decided = self.answering.decide_answer(
-            query,
-            evidence_sentences,
-            candidates,
-            reranked_chunks=chunks,
+        return self.chat_runtime.try_fast_paths(
+            input_text=input_text,
+            query=query,
+            chunks=chunks,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
             option_evidence_chains=option_evidence_chains,
+            evidence_candidate=evidence_candidate,
         )
-        if decided is not None:
-            final = str(decided.get("answer", "")).strip()
-            reason = str(decided.get("reason", "deterministic"))
-            if final:
-                final = self.answering.postprocess_final_answer(
-                    final, query, evidence_candidate=evidence_candidate
-                )
-                self._set_evidence_only_eval_chunks(evidence_sentences)
-                logger.info(
-                    "MemoryManager.chat: deterministic decision "
-                    f"(reason={reason}, answer='{final}')."
-                )
-                self._record_turn(input_text, final)
-                return final
-
-        short_answer = self.answering.maybe_short_circuit(candidates, evidence_sentences)
-        if short_answer is not None:
-            self._set_evidence_only_eval_chunks(evidence_sentences)
-            top_score = (
-                f"{float(candidates[0]['score']):.4f}" if candidates else "n/a"
-            )
-            logger.info(
-                "MemoryManager.chat: short-circuit answer from extracted candidates "
-                f"(candidate='{short_answer}', score={top_score})."
-            )
-            self._record_turn(input_text, short_answer)
-            return short_answer
-        return None
 
     def _build_recent_context(self) -> str:
-        recent_messages = self.short_memory.get()
-        if self.prompt_recent_max_messages > 0:
-            recent_messages = recent_messages[-self.prompt_recent_max_messages :]
-        return "\n".join(
-            f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in recent_messages
+        return build_recent_context(
+            self.short_memory.get(),
+            self.prompt_recent_max_messages,
         )
 
     def _build_generation_prompt(
@@ -403,26 +573,85 @@ class MemoryManager:
         candidates: List[Dict[str, object]],
         option_evidence_chains: Optional[Dict[str, object]],
     ) -> str:
-        recent_context = self._build_recent_context()
-        generation_context = build_generation_context(
-            reranked_chunks=chunks,
-            evidence_sentences=evidence_sentences,
-            fallback_context=retrieved_context,
-            limits=PromptContextLimits(
-                max_chunks=self.prompt_context_max_chunks,
-                max_chars_per_chunk=self.prompt_context_max_chars_per_chunk,
-                max_total_chars=self.prompt_context_max_total_chars,
-            ),
-        )
-        self._set_prompt_eval_chunks(generation_context, evidence_sentences)
-        return self.answering.build_answer_prompt(
+        return self.chat_runtime.build_generation_prompt(
             input_text=input_text,
-            retrieved_context=generation_context,
-            recent_context=recent_context,
+            retrieved_context=retrieved_context,
+            chunks=chunks,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
             option_evidence_chains=option_evidence_chains,
         )
+
+    def _build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
+        return self.chat_runtime.build_graph_context(query, chunks)
+
+    def offline_build_long_graph_from_chunks(
+        self,
+        chunks: List[Dict[str, object]],
+        query: Optional[str] = None,
+    ) -> int:
+        """Offline stage: build long-memory graph from retrieved chunks via 4B extractor."""
+        if not self.offline_graph_build_enabled:
+            return 0
+        accepted = int(
+            self.long_memory.ingest_from_chunks(
+                chunks=self._rank_chunks_for_graph_build(list(chunks)),
+                top_chunks=self.offline_graph_build_top_chunks,
+                max_chars_per_chunk=self.offline_graph_build_chunk_max_chars,
+            )
+        )
+        if accepted > 0:
+            return accepted
+        if (not self.graph_build_retry_enabled) or (not query):
+            return accepted
+        if not hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+            return accepted
+
+        topic_score_map: Dict[str, float] = {}
+        for item in chunks:
+            topic_id = str(item.get("topic_id", "")).strip()
+            if not topic_id:
+                continue
+            topic_score_map[topic_id] = max(
+                float(item.get("score", 0.0)),
+                float(topic_score_map.get(topic_id, 0.0)),
+            )
+
+        expanded = self.mid_memory.search_chunks_global_with_limit(
+            str(query),
+            topic_score_map=topic_score_map,
+            top_n=self.graph_build_retry_expanded_top_n,
+        )
+        combined = self._dedup_chunks_keep_best(list(chunks) + list(expanded))
+
+        if self.graph_build_retry_use_temporal_anchors:
+            anchor_queries = self._build_temporal_anchor_queries(str(query))
+            for aq in anchor_queries[: max(0, self.graph_build_retry_anchor_query_limit)]:
+                combined.extend(
+                    self.mid_memory.search_chunks_global_with_limit(
+                        aq,
+                        topic_score_map=topic_score_map,
+                        top_n=self.graph_build_retry_anchor_top_n_per_query,
+                    )
+                )
+            combined = self._dedup_chunks_keep_best(combined)
+
+        retry_accepted = int(
+            self.long_memory.ingest_from_chunks(
+                chunks=self._rank_chunks_for_graph_build(combined),
+                top_chunks=self.graph_build_retry_ingest_top_chunks,
+                max_chars_per_chunk=self.offline_graph_build_chunk_max_chars,
+            )
+        )
+        logger.info(
+            "MemoryManager.offline_graph_retry: "
+            f"base_chunks={len(chunks)}, expanded_chunks={len(combined)}, "
+            f"accepted_before={accepted}, accepted_after={retry_accepted}."
+        )
+        return retry_accepted
+
+    def _build_refined_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
+        return self.chat_runtime.build_refined_context(query, chunks)
 
     def _generate_with_fallback(
         self,
@@ -435,65 +664,15 @@ class MemoryManager:
         option_evidence_chains: Optional[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
-        prompt_messages: List[Message] = [{"role": "user", "content": prompt_text}]
-        model_name = str(getattr(self.llm, "model_name", "unknown"))
-        logger.info(
-            "MemoryManager.chat: invoking main LLM "
-            f"(model={model_name}, prompt_chars={len(prompt_text)})."
-        )
-        response = self.llm.chat(prompt_messages)
-        fallback_result = self.answering.evaluate_response_fallback(
-            response=response,
+        return self.chat_runtime.generate_with_fallback(
+            input_text=input_text,
+            query=query,
+            prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
+            option_evidence_chains=option_evidence_chains,
             evidence_candidate=evidence_candidate,
         )
-        ai_response = str(fallback_result.get("response", "")).strip()
-        fallback_path = str(fallback_result.get("fallback_path", "none"))
-        not_found_reason = str(fallback_result.get("not_found_reason", ""))
-
-        normalized_ai_response = ai_response.strip().lower()
-        should_retry_second_pass = (
-            fallback_path.startswith("retry_due_to_")
-            or (
-                self.answering.second_pass_llm_enabled
-                and evidence_sentences
-                and normalized_ai_response == "not found in retrieved context."
-                and fallback_path in {"fallback_to_not_found", "llm_not_found_accepted"}
-            )
-        )
-
-        if should_retry_second_pass:
-            model_name = str(getattr(self.llm, "model_name", "unknown"))
-            logger.info(
-                "MemoryManager.chat: invoking second-pass LLM "
-                f"(model={model_name})."
-            )
-            second_prompt = self.answering.build_second_pass_prompt(
-                input_text=input_text,
-                evidence_sentences=evidence_sentences,
-                evidence_candidate=evidence_candidate,
-                option_evidence_chains=option_evidence_chains,
-            )
-            second_response = self.llm.chat([{"role": "user", "content": second_prompt}])
-            second_result = self.answering.evaluate_response_fallback(
-                response=second_response,
-                evidence_sentences=evidence_sentences,
-                candidates=candidates,
-                evidence_candidate=evidence_candidate,
-            )
-            second_path = str(second_result.get("fallback_path", "none"))
-            ai_response = str(second_result.get("response", "")).strip()
-            if second_path.startswith("retry_due_to_"):
-                ai_response = "Not found in retrieved context."
-                second_path = "fallback_to_not_found"
-            fallback_path = "second_pass:" + second_path
-            not_found_reason = str(second_result.get("not_found_reason", not_found_reason))
-
-        ai_response = self.answering.postprocess_final_answer(
-            ai_response, query, evidence_candidate=evidence_candidate
-        )
-        return ai_response, fallback_path, not_found_reason
 
     def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
         """Return prompt-grounded chunks used by the most recent chat call."""
@@ -511,5 +690,3 @@ class MemoryManager:
         self.short_memory.add(user_message)
         self.short_memory.add(assistant_message)
         self.short_memory.flush_to_mid_memory(self.mid_memory)
-        self.long_memory.enqueue_message(user_message)
-        self.long_memory.enqueue_message(assistant_message)

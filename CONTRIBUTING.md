@@ -8,7 +8,7 @@
    - clear commit message (`type(scope): summary`)
 4. Run tests before commit:
 ```bash
-python -m unittest discover -s llm_long_memory/tests -v
+pytest -q llm_long_memory/tests
 ```
 
 ## What not to commit
@@ -25,3 +25,7 @@ python -m unittest discover -s llm_long_memory/tests -v
 For fair evaluation:
 - do not change baseline algorithm/params in ad-hoc experiments
 - keep baseline config in `llm_long_memory/baselines/baseline_midrag_v1.yaml`
+
+## Config Discipline
+- Treat `llm_long_memory/config/config.yaml` as the single runtime source of truth.
+- Avoid hidden constants in code paths that impact retrieval, prompting, or evaluation.

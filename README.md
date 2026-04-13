@@ -8,7 +8,7 @@ It is designed for thesis-style iteration: fast experiments, clear module bounda
 - Local LLM chat pipeline (Ollama)
 - Short-term memory (context buffer)
 - Mid-term memory (SQLite topic/chunk memory + hybrid retrieval)
-- Early long-term memory prototype (event-centric graph-like store)
+- Long-term memory prototype (event-centric graph store, SQLite-backed)
 - Dataset streaming + eval persistence for LongMemEval-style workflows
 
 ## System Flow
@@ -16,12 +16,12 @@ It is designed for thesis-style iteration: fast experiments, clear module bounda
 flowchart LR
     A["Input Message"] --> B["Short Memory"]
     B --> C["Mid Memory Ingest"]
-    C --> D["Topic + Chunk Retrieval"]
-    D --> E["Answering Pipeline"]
+    C --> D["Hybrid Retrieval (Topic + Global Chunk)"]
+    D --> E["Answering Pipeline (Evidence/Candidates/Decision)"]
     E --> F["8B LLM Generation"]
-    B --> G["Long Memory Ingest Worker"]
-    G --> H["Event Store (SQLite)"]
-    H --> D
+    D --> G["Offline Long-Memory Graph Build"]
+    G --> H["Event Graph Store (SQLite)"]
+    H --> E
 ```
 
 ## Branch Policy
@@ -31,7 +31,11 @@ flowchart LR
 ## Repo Structure
 - `llm_long_memory/main.py`: CLI entry
 - `llm_long_memory/config/config.yaml`: active runtime config
-- `llm_long_memory/memory/`: short/mid/long memory and manager
+- `llm_long_memory/cli/`: interactive command runtime
+- `llm_long_memory/memory/`: short/mid/long memory and orchestration
+  - `memory_manager.py` + `memory_manager_chat_runtime.py`
+  - `answering_pipeline.py` + extractor/response/temporal submodules
+  - `long_memory.py` + extractor/query/persist/store submodules
 - `llm_long_memory/evaluation/`: loader, runner, metrics, eval DB writer
 - `llm_long_memory/baselines/`: baseline protocol + baseline config + runner
 - `llm_long_memory/tests/`: unit tests
@@ -41,7 +45,7 @@ flowchart LR
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m unittest discover -s llm_long_memory/tests -v
+pytest -q llm_long_memory/tests
 python llm_long_memory/main.py
 ```
 
@@ -80,7 +84,12 @@ Tracked placeholders keep directory structure reproducible:
 ## Current Status
 - This is a research prototype, not a production system.
 - Priorities: clarity, controllable experiments, and maintainability.
-- Long-memory module is under active refinement and should be evaluated against the frozen mid-RAG baseline.
+- Long-memory module is under active refinement and should be evaluated against a frozen mid-RAG baseline config.
+
+## Engineering Notes (Current)
+- Core large modules were split into domain-focused submodules to reduce God Object risk.
+- Runtime behavior is config-driven via `llm_long_memory/config/config.yaml`.
+- Evaluation writes run/results/group summaries into mid-memory SQLite (`eval_runs`, `eval_results`, `eval_group_results`).
 
 ## Development Notes
 - Keep baseline changes out of `main` experiments unless intentionally updating protocol.

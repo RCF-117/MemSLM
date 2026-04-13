@@ -231,6 +231,7 @@ def rerank_chunks_global(
     owner: RetrievalOwner,
     query: str,
     topic_score_map: Dict[str, float],
+    top_n_override: int | None = None,
 ) -> List[Chunk]:
     """Primary retrieval path: global chunk rerank without topic gating."""
     q = query.strip()
@@ -364,7 +365,8 @@ def rerank_chunks_global(
         scored.append(out)
 
     scored.sort(key=lambda x: float(x["score"]), reverse=True)
-    selected = scored[: owner.global_chunk_top_n]
+    effective_top_n = int(top_n_override) if (top_n_override is not None and int(top_n_override) > 0) else int(owner.global_chunk_top_n)
+    selected = scored[: max(1, effective_top_n)]
     if not owner.global_chunk_dedup_by_text:
         return selected
 

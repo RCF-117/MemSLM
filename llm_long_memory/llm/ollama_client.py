@@ -28,14 +28,24 @@ def ollama_generate_with_retry(
     retry_on_timeout: bool,
     retry_on_http_502: bool,
     retry_on_url_error: bool,
+    max_output_tokens: Optional[int] = None,
+    think: Optional[bool] = None,
+    response_format: Optional[str] = None,
 ) -> str:
     """Call Ollama /api/generate with retry for transient local failures."""
+    options: Dict[str, Union[float, int]] = {"temperature": temperature}
+    if max_output_tokens is not None and int(max_output_tokens) > 0:
+        options["num_predict"] = int(max_output_tokens)
     body = {
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": temperature},
+        "options": options,
     }
+    if think is not None:
+        body["think"] = bool(think)
+    if response_format is not None and str(response_format).strip():
+        body["format"] = str(response_format).strip()
     req = urllib.request.Request(
         url=f"{host}/api/generate",
         data=json.dumps(body).encode("utf-8"),
@@ -133,6 +143,7 @@ class LLM:
         self.retry_on_timeout = bool(retry_cfg.get("retry_on_timeout", True))
         self.retry_on_http_502 = bool(retry_cfg.get("retry_on_http_502", True))
         self.retry_on_url_error = bool(retry_cfg.get("retry_on_url_error", False))
+        self.max_output_tokens = int(llm_cfg.get("max_output_tokens", 0))
         # Force direct local connection; ignore HTTP(S)_PROXY env.
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -184,4 +195,5 @@ class LLM:
             retry_on_timeout=self.retry_on_timeout,
             retry_on_http_502=self.retry_on_http_502,
             retry_on_url_error=self.retry_on_url_error,
+            max_output_tokens=self.max_output_tokens if self.max_output_tokens > 0 else None,
         )

@@ -36,6 +36,7 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
     oracle_temporal_cfg = dict(eval_cfg.get("oracle_temporal", {}))
     oracle_temporal_disable = bool(oracle_temporal_cfg.get("disable_temporal_weight", False))
     oracle_dataset_keyword = str(oracle_temporal_cfg.get("dataset_keyword", "")).strip().lower()
+    offline_graph_build_enabled = bool(eval_cfg.get("offline_graph_build_enabled", False))
 
     prev_temporal_disabled = bool(getattr(manager.mid_memory, "temporal_weight_disabled", False))
     should_disable_temporal = (
@@ -101,18 +102,19 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 compute_evidence_recall
                 or compute_answer_span_hit_enabled
                 or compute_support_sentence_hit_enabled
+                or offline_graph_build_enabled
             ):
                 precomputed_context = manager.retrieve_context(question)
                 _ctx, _topics, chunks = precomputed_context
-                graph_nodes = manager.long_memory.query(question)
-                counters.graph_retrieval_total += 1
-                graph_chunks = [{"text": str(item.get("text", ""))} for item in graph_nodes]
-                graph_answer_span_hit = compute_answer_span_hit(expected, graph_chunks, eval_cfg)
-                graph_support_sentence_hit = compute_support_sentence_hit(
-                    expected, graph_chunks, eval_cfg
-                )
-                counters.graph_span_hits += int(bool(graph_answer_span_hit))
-                counters.graph_support_hits += int(bool(graph_support_sentence_hit))
+                if offline_graph_build_enabled:
+                    built = manager.offline_build_long_graph_from_chunks(
+                        chunks,
+                        query=question,
+                    )
+                    logger.info(
+                        "Eval offline graph build: "
+                        f"question_id={qid}, accepted_events={built}."
+                    )
                 if compute_evidence_recall:
                     retrieved_session_ids = sorted(
                         {
@@ -199,7 +201,7 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 f"MatchedRef: {match_result['best_reference']}\n"
                 f"Pred: {preview}\n"
             )
-    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+    except (RuntimeError, ValueError, TypeError, OSError, KeyboardInterrupt) as exc:
         eval_error = exc
         logger.error(f"Eval aborted by exception: {exc}")
     finally:

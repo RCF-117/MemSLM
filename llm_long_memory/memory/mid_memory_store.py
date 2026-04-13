@@ -20,6 +20,8 @@ class MidMemoryStore:
         sqlite_busy_timeout_ms: int,
         sqlite_journal_mode: str,
         sqlite_synchronous: str,
+        sqlite_checkpoint_on_commit: bool,
+        sqlite_checkpoint_mode: str,
         lexical_search_enabled: bool,
         eval_cfg: dict,
     ) -> None:
@@ -32,6 +34,8 @@ class MidMemoryStore:
         self.sqlite_busy_timeout_ms = int(sqlite_busy_timeout_ms)
         self.sqlite_journal_mode = str(sqlite_journal_mode)
         self.sqlite_synchronous = str(sqlite_synchronous)
+        self.sqlite_checkpoint_on_commit = bool(sqlite_checkpoint_on_commit)
+        self.sqlite_checkpoint_mode = str(sqlite_checkpoint_mode).upper()
 
         self._configure_sqlite()
         self._create_tables()
@@ -51,6 +55,22 @@ class MidMemoryStore:
         self.conn.execute(f"PRAGMA synchronous={self.sqlite_synchronous}")
         self.conn.execute(f"PRAGMA busy_timeout={self.sqlite_busy_timeout_ms}")
         self.conn.commit()
+
+    def _checkpoint_if_enabled(self) -> None:
+        if not self.sqlite_checkpoint_on_commit:
+            return
+        if self.sqlite_journal_mode.upper() != "WAL":
+            return
+        mode = self.sqlite_checkpoint_mode if self.sqlite_checkpoint_mode in {
+            "PASSIVE",
+            "FULL",
+            "RESTART",
+            "TRUNCATE",
+        } else "TRUNCATE"
+        try:
+            self.conn.execute(f"PRAGMA wal_checkpoint({mode})")
+        except sqlite3.OperationalError as exc:
+            logger.warn(f"MidMemoryStore.wal_checkpoint failed: {exc}")
 
     def _create_tables(self) -> None:
         self.conn.execute(
@@ -251,6 +271,10 @@ class MidMemoryStore:
 
     def commit(self) -> None:
         self.conn.commit()
+        self._checkpoint_if_enabled()
 
     def close(self) -> None:
-        self.conn.close()
+        try:
+            self._checkpoint_if_enabled()
+        finally:
+            self.conn.close()

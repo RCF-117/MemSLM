@@ -20,6 +20,8 @@ memory:
     sqlite_busy_timeout_ms: 5000
     sqlite_journal_mode: WAL
     sqlite_synchronous: NORMAL
+    sqlite_checkpoint_on_commit: true
+    sqlite_checkpoint_mode: TRUNCATE
     role:
       enable: true
       user_weight: 1.0
@@ -60,146 +62,228 @@ memory:
       - with
   long_memory:
     enabled: true
+    staging_enabled: true
+    supersede_min_evidence_overlap: 0.25
     database_file: data/processed/long_memory.db
-    worker_poll_timeout_sec: 0.2
-    queue_max_size: 5000
-    queue_put_timeout_sec: 0.1
-    queue_overflow_policy: sync_process
     sqlite_busy_timeout_ms: 5000
     sqlite_journal_mode: WAL
     sqlite_synchronous: NORMAL
-    consolidation_every_updates: 0
-    forgetting_every_updates: 30
-    forget_decay: 0.985
-    forget_threshold: 0.2
-    forget_min_age_steps: 60
-    max_events: 5000
     retrieval_top_k: 6
     retrieval_min_score: 0.1
-    details_per_event: 2
+    details_per_event: 0
     context_max_items: 4
-    context_max_chars_per_item: 220
+    context_max_chars_per_item: 420
+    context_evidence_max_chars: 260
+    context_source_max_chars: 180
+    context_include_source: true
+    context_chain_enabled: true
+    context_chain_size: 3
+    context_chain_max_chars: 900
+    extractor:
+      enabled: true
+      model: qwen3:8b
+      temperature: 0.1
+      timeout_sec: 120
+      retry_max_attempts: 1
+      retry_backoff_sec: 1.0
+      retry_on_timeout: true
+      retry_on_http_502: true
+      retry_on_url_error: false
+      min_confidence: 0.5
+      max_events_per_message: 6
+      process_roles:
+        - user
+        - assistant
+      min_chars: 40
+      max_chars: 1400
+      input_max_chars: 1200
+      max_output_tokens: 160
+      force_json_output: true
+      think: false
+      require_action: true
+      min_filled_fields: 2
+      require_evidence_span: false
+      reject_pronoun_subject: false
+      subject_pronouns:
+        - i
+        - you
+        - we
+        - he
+        - she
+        - they
+        - it
+        - me
+        - us
+        - him
+        - her
+        - them
+      keyword_max_count: 12
+      no_source_keyword_fallback: true
+      keyword_blacklist:
+        - im
+        - i'm
+        - my
+        - your
+        - just
+        - very
+        - really
+      entity_normalization:
+        enabled: true
+        pronoun_map:
+          i: user
+          me: user
+          my: user
+          mine: user
+          myself: user
+          we: user
+          us: user
+          our: user
+          ours: user
+          you: user
+          your: user
+          yours: user
+        possessive_prefixes:
+          - my
+          - your
+          - our
+          - their
+          - his
+          - her
+      fact_filter:
+        enabled: true
+        hint_keywords:
+          - check
+          - ask
+          - consider
+          - should
+          - recommend
+          - suggestion
+          - tip
+          - tips
+          - advice
+          - remember
+          - compare
+          - review
+          - referrals
+          - quote
+          - quotes
+          - experience
+          - glad
+          - great
+          - happy
+          - feel
+          - feels
+          - feeling
+        fact_keywords:
+          - bought
+          - moved
+          - met
+          - scheduled
+          - booked
+          - paid
+          - started
+          - finished
+          - visited
+          - got
+          - serviced
+          - happened
+          - diagnosed
+          - arrived
+          - left
+          - traveled
+          - called
+          - sent
+      sentence_overlap: 1
+      sentence_min_chars: 40
+      compact_retry_enabled: true
+      compact_window_chars: 600
+      span_grounding_min_overlap: 0.35
+      gating:
+        enabled: true
+        hard_only: true
+        hard_require_action: true
+        hard_require_subject_or_object: true
+        hard_min_confidence: 0.3
+        quality_threshold: 0.55
+        weight_completeness: 0.45
+        weight_grounding: 0.35
+        weight_keyword: 0.15
+        weight_structure: 0.05
+        pronoun_penalty: 0.10
+        keyword_empty_score: 0.40
+        grounding_missing_score: 0.50
+        log_rejections: true
+      extract_every_n_messages: 3
+      warmup_enabled: true
+      warmup_timeout_sec: 30
+      warmup_prompt: Return OK.
     retrieval_scoring:
       use_embedding: true
       lexical_weight: 0.4
       embedding_weight: 0.5
+      embedding_fallback_weight: 0.7
+      temporal_filter_enabled: true
+      temporal_query_time_boost: 1.15
+      temporal_query_no_time_penalty: 0.75
+      keyword_primary_min_overlap: 1
+      keyword_density_weight: 0.3
       recency_weight: 0.1
-      fact_type_boost: 0.2
-      fact_type_mismatch_penalty: 0.05
-      role_weights:
-        user: 1.0
-        assistant: 0.6
-        system: 0.8
-    ingest:
-      allow_roles:
-        - user
-        - assistant
-        - system
-      min_confidence: 0.55
-      assistant_min_confidence: 0.65
-      min_keywords: 2
-      min_object_tokens: 1
-      min_entity_count: 1
-      min_sentence_tokens: 4
-      max_sentence_tokens: 60
-      require_time_or_location: false
-      object_key_tokens: 4
-      detail_min_chars: 8
-      max_details_per_event: 6
-      allow_generic_action: true
-      bootstrap_min_accepts: 8
-      bootstrap_min_confidence: 0.35
-      bootstrap_allow_generic_action: true
-      generic_actions:
-        - states
-        - is
-        - are
-        - was
-        - were
-        - be
-        - do
-        - did
-      reject_subjects:
-        - assistant
-        - user
-        - this
-        - that
-        - it
-        - here
-        - there
-      reject_phrases:
-        - how can i help
-        - let me know
-        - feel free
-        - good luck
-        - i can help
-      detail_kinds:
-        - sentence
-        - time
-        - location
-    query_rewrite:
+      history_enabled: true
+      history_weight: 0.7
+      history_max_candidates: 128
+      include_hints: false
+    graph:
+      neighbor_limit: 4
+      neighbor_weight: 0.15
+      max_edges_per_event: 6
+      edge_weight_same_fact: 1.0
+      edge_weight_subject_object: 0.8
+      edge_weight_same_subject: 0.7
+      edge_weight_same_object: 0.6
+      edge_weight_shared_keywords: 0.35
+      edge_min_shared_keywords: 2
+    node_graph:
       enabled: true
-      max_rewrites: 2
-      temperature: 0.1
-      fusion:
-        mode: rrf
-        rrf_k: 60
-    event:
-      extractor_backend: spacy_then_heuristic
-      spacy_model: en_core_web_sm
-      fallback_action: states
-      sentence_split_regex: "(?<=[.!?])\\s+"
-      min_sentence_chars: 12
-      max_sentence_chars: 400
-      noise_prefixes:
-        - thank you
-        - thanks
-        - sorry
-        - let me know
-        - how can i help
-        - feel free
-      action_verbs:
-        - is
-        - are
-        - was
-        - were
-        - bought
-        - purchased
-        - moved
-        - moved to
-        - lives
-        - lives in
-        - works
-        - works at
-        - likes
-        - loves
-        - hates
-        - studied
-        - graduated
-        - visited
-        - traveled
-      stopwords:
-        - a
-        - an
-        - and
-        - are
-        - as
-        - at
-        - be
-        - by
-        - for
-        - from
-        - in
-        - is
-        - it
-        - of
-        - on
-        - or
-        - that
-        - the
-        - to
-        - was
-        - with
+      node_boost_weight: 0.2
+      node_edge_boost_weight: 0.12
+      context_nodes_per_event: 6
+      keyword_nodes_limit: 8
+    offline_graph:
+      enabled: true
+      build_top_chunks: 10
+      adaptive_top_chunks_enabled: true
+      adaptive_top_chunks_min: 8
+      adaptive_top_chunks_max: 18
+      adaptive_score_gap_threshold: 0.08
+      min_pieces_per_query: 8
+      build_chunk_max_chars: 1200
+      use_full_chunk_text: true
+      user_priority_enabled: true
+      assistant_max_ratio: 0.35
+      system_max_ratio: 0.15
+      adaptive_role_cap_enabled: true
+      assistant_min_keep: 1
+      assistant_signal_threshold: 0.45
+      ingest_input_max_chars: 1200
+      anchor_filter_enabled: false
+      anchor_min_score: 1.6
+      anchor_top_sentences_per_chunk: 3
+      anchor_sentence_max_chars: 260
+      anchor_keep_full_if_empty: true
+      evidence_pack_enabled: false
+      evidence_pack_max_packs: 4
+      evidence_pack_max_chars: 220
+      evidence_pack_min_sentence_chars: 24
+      evidence_pack_top_sentences_per_chunk: 3
+    query_struct:
+      enabled: false
+      model: qwen3:8b
+      temperature: 0.0
+      timeout_sec: 120
+      max_keywords: 8
+      max_output_tokens: 96
+      force_json_output: true
+      think: false
 
 retrieval:
   top_k: 5
@@ -236,13 +320,53 @@ retrieval:
     prefilter_topic_top_k: 8
     recent_fallback_n: 64
     dedup_by_text: true
+  temporal_anchor_retrieval:
+    enabled: true
+    require_temporal_cue: true
+    cue_keywords:
+      - first
+      - earlier
+      - later
+      - before
+      - after
+      - days
+      - day
+      - date
+      - when
+      - between
+    max_options: 3
+    extra_queries_per_option: 2
+    top_n_per_query: 10
+    additive_limit: 8
+  graph_build_retry:
+    enabled: true
+    expanded_top_n: 48
+    ingest_top_chunks: 10
+    use_temporal_anchors: true
+    anchor_query_limit: 4
+    anchor_top_n_per_query: 8
+  graph_build_role_weights:
+    user: 1.0
+    assistant: 0.7
+    system: 0.5
   topic_expansion:
     enabled: true
     per_topic_limit: 1
   long_memory_context:
-    enabled: true
+    enabled: false
+    query_graph_enabled: true
     prepend_before_mid_context: true
   answering:
+    graph_refiner_enabled: true
+    graph_context_from_store_enabled: true
+    graph_refiner_top_chunks: 6
+    graph_refiner_chunk_max_chars: 260
+    graph_refiner_top_events: 6
+    refiner_enabled: false
+    refiner_model: qwen3:4b
+    refiner_top_chunks: 6
+    refiner_max_chars_per_chunk: 260
+    refiner_output_items: 6
     prompt_context_max_chunks: 8
     prompt_context_max_chars_per_chunk: 500
     prompt_context_max_total_chars: 6000
@@ -488,10 +612,12 @@ llm:
   supported_models:
     - qwen3:8b
     - deepseek-r1:8b
+    - qwen3:4b
   embedding_timeout_sec: 60
   host: http://127.0.0.1:11434
   temperature: 0.2
   request_timeout_sec: 360
+  max_output_tokens: 256
   retry:
     max_attempts: 2
     backoff_sec: 1.0
@@ -524,6 +650,7 @@ evaluation:
   compute_evidence_recall: true
   compute_answer_span_hit: true
   compute_support_sentence_hit: true
+  offline_graph_build_enabled: true
   save_to_db: true
   run_table: eval_runs
   result_table: eval_results

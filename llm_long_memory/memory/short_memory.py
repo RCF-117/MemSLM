@@ -36,12 +36,14 @@ class ShortMemory:
         logger.debug(f"ShortMemory.get: returning {len(self._buffer)} messages.")
         return list(self._buffer)
 
-    def flush_to_mid_memory(self, mid_memory: object) -> None:
+    def flush_to_mid_memory(self, mid_memory: object) -> List[Message]:
         """Flush oldest messages into mid-memory until within capacity."""
+        moved: List[Message] = []
         flushed = 0
         while len(self._buffer) > self.max_turns:
             old_message = self._buffer.pop(0)
             mid_memory.add(old_message)
+            moved.append(old_message)
             flushed += 1
         if flushed:
             logger.info(
@@ -49,6 +51,7 @@ class ShortMemory:
             )
         else:
             logger.debug("ShortMemory.flush_to_mid_memory: no flush needed.")
+        return moved
 
     def clear(self) -> None:
         """Clear all short-term memory turns."""

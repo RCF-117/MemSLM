@@ -1,5 +1,5 @@
-numpy
-pyyaml
-networkx
-faiss-cpu
-ollama
+numpy==1.26.4
+pyyaml==6.0.2
+networkx==3.3
+faiss-cpu==1.8.0
+ollama==0.4.7

@@ -21,6 +21,10 @@ class TestMidMemoryStore(unittest.TestCase):
             sqlite_busy_timeout_ms=int(cfg["memory"]["mid_memory"]["sqlite_busy_timeout_ms"]),
             sqlite_journal_mode=str(cfg["memory"]["mid_memory"]["sqlite_journal_mode"]),
             sqlite_synchronous=str(cfg["memory"]["mid_memory"]["sqlite_synchronous"]),
+            sqlite_checkpoint_on_commit=bool(
+                cfg["memory"]["mid_memory"]["sqlite_checkpoint_on_commit"]
+            ),
+            sqlite_checkpoint_mode=str(cfg["memory"]["mid_memory"]["sqlite_checkpoint_mode"]),
             lexical_search_enabled=True,
             eval_cfg=cfg["evaluation"],
         )
