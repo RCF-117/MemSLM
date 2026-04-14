@@ -1,4 +1,4 @@
-"""Query/ranking engine extracted from LongMemory to reduce class bloat."""
+"""Fact-oriented query/ranking engine for LongMemory."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set
 
 
 class LongMemoryQueryEngine:
-    """Run long-memory retrieval and graph-neighbor boosting."""
+    """Run fact retrieval using atomic-value scoring and minimal graph boosting."""
 
     def __init__(self, memory: Any) -> None:
         self.m = memory
@@ -41,14 +41,14 @@ class LongMemoryQueryEngine:
         if not value:
             return set()
         out: Set[str] = set()
-        for pat in (
+        for pattern in (
             r"\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b",
             r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b",
             r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b",
             r"\b\d{4}\b",
         ):
-            for m in re.findall(pat, value):
-                token = str(m).strip().lower()
+            for match in re.findall(pattern, value):
+                token = str(match).strip().lower()
                 if token:
                     out.add(token)
         return out
@@ -57,8 +57,8 @@ class LongMemoryQueryEngine:
         q = str(query or "").strip().lower()
         time_tokens = self._tokenize_time(q)
         has_temporal_terms = any(
-            t in q
-            for t in (
+            token in q
+            for token in (
                 "first",
                 "earlier",
                 "later",
@@ -69,12 +69,24 @@ class LongMemoryQueryEngine:
                 "day",
                 "month",
                 "year",
+                "last",
+                "current",
+                "currently",
             )
         )
         return {
             "has_explicit_time_tokens": bool(time_tokens),
             "time_tokens": time_tokens,
             "has_temporal_terms": bool(has_temporal_terms),
+        }
+
+    def _extract_query_intent(self, query: str) -> Dict[str, bool]:
+        lowered = str(query or "").strip().lower()
+        return {
+            "asks_where": "where" in lowered or "location" in lowered,
+            "asks_when": any(t in lowered for t in ("when", "date", "time", "year", "month", "day")),
+            "asks_how_many": any(t in lowered for t in ("how many", "number of", "count", "total")),
+            "asks_current": any(t in lowered for t in ("current", "currently", "latest", "now")),
         }
 
     def _event_time_tokens(self, detail_idx: Dict[str, List[str]]) -> Set[str]:
@@ -84,46 +96,58 @@ class LongMemoryQueryEngine:
                 out.update(self._tokenize_time(value))
         return out
 
+    def _collect_node_texts(self, node_rows: List[Any]) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for row in node_rows:
+            kind = str(row["node_kind"] or "").strip().lower()
+            text = str(row["node_text"] or "").strip()
+            if (not kind) or (not text):
+                continue
+            out.setdefault(kind, [])
+            if text not in out[kind]:
+                out[kind].append(text)
+        return out
+
     def _compose_context_text(
         self,
         *,
         skeleton: str,
-        node_rows: List[Any],
-        details: List[Any],
+        detail_idx: Dict[str, List[str]],
+        node_texts: Dict[str, List[str]],
     ) -> str:
-        base = self.m._build_compact_node_context(
-            skeleton=skeleton,
-            node_rows=node_rows,
-            max_chars=max(80, int(self.m.context_max_chars_per_item * 0.45)),
-        )
-        detail_idx = self._build_detail_index(details)
-        parts: List[str] = [base]
-
-        evidence = detail_idx.get("evidence", [])
+        canonical_fact = (detail_idx.get("canonical_fact", []) or [skeleton])[0]
+        value_text = detail_idx.get("value", []) or node_texts.get("value", []) or node_texts.get("object", [])
+        time_text = detail_idx.get("time", []) or node_texts.get("time", [])
+        location_text = detail_idx.get("location", []) or node_texts.get("location", [])
+        evidence = detail_idx.get("evidence", []) or node_texts.get("evidence", [])
+        parts: List[str] = [canonical_fact]
+        if value_text:
+            parts.append(f"value={value_text[0][:80]}")
+        if location_text:
+            parts.append(f"location={location_text[0][:80]}")
+        if time_text:
+            parts.append(f"time={time_text[0][:80]}")
         if evidence:
             parts.append(f"evidence={evidence[0][: self.m.context_evidence_max_chars]}")
-
         if self.m.context_include_source:
             source = detail_idx.get("source", [])
             if source:
                 parts.append(f"source={source[0][: self.m.context_source_max_chars]}")
+        return " || ".join([part for part in parts if part])[: self.m.context_max_chars_per_item]
 
-        time_rows = detail_idx.get("time", [])
-        if time_rows:
-            parts.append(f"time={time_rows[0][:64]}")
-        time_start = detail_idx.get("time_start", [])
-        time_end = detail_idx.get("time_end", [])
-        if time_start:
-            parts.append(f"time_start={time_start[0][:32]}")
-        if time_end:
-            parts.append(f"time_end={time_end[0][:32]}")
-        source_date = detail_idx.get("source_date", [])
-        if source_date:
-            parts.append(f"source_date={source_date[0][:32]}")
-        location_rows = detail_idx.get("location", [])
-        if location_rows:
-            parts.append(f"location={location_rows[0][:64]}")
-        return " || ".join([x for x in parts if x])[: self.m.context_max_chars_per_item]
+    def _semantic_text(
+        self,
+        *,
+        skeleton: str,
+        detail_idx: Dict[str, List[str]],
+        node_texts: Dict[str, List[str]],
+    ) -> str:
+        fields: List[str] = [skeleton]
+        for kind in ("canonical_fact", "subject", "predicate", "value", "location", "time", "fact_slot"):
+            fields.extend(detail_idx.get(kind, []))
+        for kind in ("subject", "predicate", "action", "value", "object", "location", "time", "keyword"):
+            fields.extend(node_texts.get(kind, []))
+        return " ".join([field for field in fields if field]).strip()
 
     def _score_event_row(
         self,
@@ -134,6 +158,7 @@ class LongMemoryQueryEngine:
         q_tokens: Set[str],
         q_emb: Any,
         time_constraints: Dict[str, Any],
+        query_intent: Dict[str, bool],
     ) -> Optional[Dict[str, Any]]:
         event_id = str(row["event_id"])
         skeleton = str(row["skeleton_text"] or "").strip()
@@ -143,67 +168,50 @@ class LongMemoryQueryEngine:
         if (not self.m.retrieval_include_hints) and fact_type == "hint":
             return None
         keywords = self._parse_keywords(row["keywords"])
-
+        details = self.m.store.fetch_event_details(event_id, self.m.details_per_event)
+        detail_idx = self._build_detail_index(details)
         node_rows = self.m.store.fetch_event_nodes(
             event_id,
             self.m.node_context_per_event if self.m.node_graph_enabled else 0,
         )
-        node_edge_rows = self.m.store.fetch_event_node_edges(
-            event_id,
-            (self.m.node_context_per_event * 2) if self.m.node_graph_enabled else 0,
-        )
-        node_texts = [str(n["node_text"]).strip() for n in node_rows if str(n["node_text"]).strip()]
-        edge_texts: List[str] = []
-        edge_weight_total = 0.0
-        edge_weight_count = 0
-        for e in node_edge_rows:
-            rel = str(e["relation"] or "").strip()
-            ft = str(e["from_text"] or "").strip()
-            tt = str(e["to_text"] or "").strip()
-            if rel or ft or tt:
-                edge_texts.append(" ".join([x for x in [rel, ft, tt] if x]))
-            try:
-                edge_weight_total += float(e["weight"] or 0.0)
-                edge_weight_count += 1
-            except (TypeError, ValueError):
-                pass
+        node_texts = self._collect_node_texts(node_rows)
 
-        node_corpus = set(self.m._tokenize(" ".join(node_texts)))
-        edge_corpus = set(self.m._tokenize(" ".join(edge_texts)))
-        corpus = set(keywords) | set(self.m._tokenize(skeleton)) | node_corpus | edge_corpus
+        semantic_text = self._semantic_text(
+            skeleton=skeleton,
+            detail_idx=detail_idx,
+            node_texts=node_texts,
+        )
+        corpus = set(keywords) | set(self.m._tokenize(semantic_text))
         overlap_count, keyword_score = self.m._keyword_overlap_features(q_tokens, corpus)
-        _, node_keyword_score = self.m._keyword_overlap_features(q_tokens, node_corpus)
-        _, node_edge_keyword_score = self.m._keyword_overlap_features(q_tokens, edge_corpus)
         emb_score = self.m._cosine(q_emb, self.m.store.blob_to_arr(row["skeleton_embedding"]))
+
         delta = max(0, self.m.current_step - int(row["last_seen_step"] or 0))
         recency = 1.0 / (1.0 + float(delta))
-
         if overlap_count >= self.m.keyword_primary_min_overlap:
-            base_score = (
+            score = (
                 self.m.lexical_weight * keyword_score
                 + self.m.embedding_weight * emb_score
                 + self.m.recency_weight * recency
             )
         else:
-            base_score = (
+            score = (
                 self.m.embedding_fallback_weight * emb_score
                 + self.m.recency_weight * recency
             )
-        if self.m.node_graph_enabled:
-            base_score += self.m.node_boost_weight * node_keyword_score
-            edge_strength = (
-                edge_weight_total / float(edge_weight_count)
-                if edge_weight_count > 0
-                else 0.0
-            )
-            base_score += self.m.node_edge_boost_weight * node_edge_keyword_score * edge_strength
 
-        score = float(channel_weight) * float(base_score)
-        if score < self.m.retrieval_min_score:
-            return None
+        value_type = (detail_idx.get("value_type", []) or [""])[0].strip().lower()
+        has_location = bool(detail_idx.get("location", []) or node_texts.get("location", []))
+        has_time = bool(self._event_time_tokens(detail_idx))
+        has_value = bool(detail_idx.get("value", []) or node_texts.get("value", []))
+        if query_intent.get("asks_where") and has_location:
+            score += self.m.node_boost_weight
+        if query_intent.get("asks_when") and has_time:
+            score += self.m.node_boost_weight
+        if query_intent.get("asks_how_many") and has_value and value_type == "number":
+            score += self.m.node_boost_weight
+        if query_intent.get("asks_current") and channel == "active":
+            score += self.m.node_edge_boost_weight
 
-        details = self.m.store.fetch_event_details(event_id, self.m.details_per_event)
-        detail_idx = self._build_detail_index(details)
         if self.m.temporal_filter_enabled:
             query_time_tokens = set(time_constraints.get("time_tokens", set()))
             event_time_tokens = self._event_time_tokens(detail_idx)
@@ -218,12 +226,15 @@ class LongMemoryQueryEngine:
                     score *= float(self.m.temporal_query_time_boost)
                 else:
                     score *= float(self.m.temporal_query_no_time_penalty)
-            if score < self.m.retrieval_min_score:
-                return None
+
+        score = float(channel_weight) * float(score)
+        if score < self.m.retrieval_min_score:
+            return None
+
         text = self._compose_context_text(
             skeleton=skeleton,
-            node_rows=node_rows,
-            details=details,
+            detail_idx=detail_idx,
+            node_texts=node_texts,
         )
         return {
             "event_id": event_id,
@@ -232,7 +243,7 @@ class LongMemoryQueryEngine:
             "keywords": keywords,
             "fact_type": fact_type,
             "channel": channel,
-            "status": "active" if channel == "active" else "superseded",
+            "status": "active" if channel == "active" else "history",
             "fact_key": str(row["fact_key"] or "").strip(),
         }
 
@@ -245,6 +256,7 @@ class LongMemoryQueryEngine:
         q_tokens: Set[str],
         q_emb: Any,
         time_constraints: Dict[str, Any],
+        query_intent: Dict[str, bool],
         score_map: Dict[str, Dict[str, Any]],
     ) -> None:
         for row in rows:
@@ -255,6 +267,7 @@ class LongMemoryQueryEngine:
                 q_tokens=q_tokens,
                 q_emb=q_emb,
                 time_constraints=time_constraints,
+                query_intent=query_intent,
             )
             if item is None:
                 continue
@@ -265,61 +278,39 @@ class LongMemoryQueryEngine:
 
     def _inject_neighbor_events(self, score_map: Dict[str, Dict[str, Any]]) -> None:
         base_ranked = sorted(
-            [x for x in score_map.values() if str(x.get("channel")) == "active"],
-            key=lambda x: float(x["score"]),
+            [item for item in score_map.values() if str(item.get("channel")) == "active"],
+            key=lambda item: float(item["score"]),
             reverse=True,
         )
-        seed_ids = [str(x["event_id"]) for x in base_ranked[: self.m.graph_neighbor_limit]]
+        seed_ids = [str(item["event_id"]) for item in base_ranked[: self.m.graph_neighbor_limit]]
         for seed_id in seed_ids:
             for edge in self.m.store.fetch_edges_from(seed_id, self.m.graph_neighbor_limit):
+                relation = str(edge["relation"] or "").strip().lower()
+                if relation not in {"updates", "extends"}:
+                    continue
                 neighbor_id = str(edge["to_event_id"])
                 edge_weight = float(edge["weight"] or 0.0)
                 if neighbor_id in score_map:
                     score_map[neighbor_id]["score"] = float(score_map[neighbor_id]["score"]) + (
                         self.m.graph_neighbor_weight * edge_weight
                     )
-                    continue
-                rows = self.m.store.fetch_events_by_ids([neighbor_id])
-                if not rows:
-                    continue
-                row = rows[0]
-                skeleton = str(row["skeleton_text"] or "").strip()
-                if not skeleton:
-                    continue
-                keywords = self._parse_keywords(row["keywords"])
-                details = self.m.store.fetch_event_details(neighbor_id, self.m.details_per_event)
-                node_rows = self.m.store.fetch_event_nodes(
-                    neighbor_id,
-                    self.m.node_context_per_event if self.m.node_graph_enabled else 0,
-                )
-                text = self._compose_context_text(
-                    skeleton=skeleton,
-                    node_rows=node_rows,
-                    details=details,
-                )
-                score_map[neighbor_id] = {
-                    "event_id": neighbor_id,
-                    "text": text,
-                    "score": self.m.graph_neighbor_weight * edge_weight,
-                    "keywords": keywords,
-                    "fact_type": str(row["fact_type"] or "event"),
-                    "channel": "active",
-                    "status": "active",
-                }
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         query = str(query_text).strip()
         if not query:
             return []
         q_struct = self.m._extract_query_struct(query)
-        q_tokens = set(self.m._keyword_candidates_from_text(" ".join(list(q_struct.get("keywords", [])))))
+        q_tokens = set(
+            self.m._keyword_candidates_from_text(" ".join(list(q_struct.get("keywords", []))))
+        )
         if not q_tokens:
             q_tokens = set(self.m._tokenize(query))
-        time_constraints = self._extract_time_constraints(query)
         q_skeleton = str(q_struct.get("skeleton", "")).strip() or query
         q_emb = self.m._safe_embed(q_skeleton)
-        score_map: Dict[str, Dict[str, Any]] = {}
+        time_constraints = self._extract_time_constraints(query)
+        query_intent = self._extract_query_intent(query)
 
+        score_map: Dict[str, Dict[str, Any]] = {}
         self._add_rows(
             rows=self.m.store.fetch_active_events(),
             channel="active",
@@ -327,6 +318,7 @@ class LongMemoryQueryEngine:
             q_tokens=q_tokens,
             q_emb=q_emb,
             time_constraints=time_constraints,
+            query_intent=query_intent,
             score_map=score_map,
         )
         if self.m.history_enabled:
@@ -337,9 +329,10 @@ class LongMemoryQueryEngine:
                 q_tokens=q_tokens,
                 q_emb=q_emb,
                 time_constraints=time_constraints,
+                query_intent=query_intent,
                 score_map=score_map,
             )
 
         self._inject_neighbor_events(score_map)
-        ranked = sorted(score_map.values(), key=lambda x: float(x["score"]), reverse=True)
+        ranked = sorted(score_map.values(), key=lambda item: float(item["score"]), reverse=True)
         return ranked[: self.m.retrieval_top_k]

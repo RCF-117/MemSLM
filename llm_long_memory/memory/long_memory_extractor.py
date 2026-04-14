@@ -1,4 +1,4 @@
-"""Structured event extraction engine for LongMemory."""
+"""Structured fact extraction engine for LongMemory."""
 
 from __future__ import annotations
 
@@ -10,13 +10,17 @@ from llm_long_memory.utils.logger import logger
 
 
 class LongMemoryExtractor:
-    """Run structured extraction using LongMemory config/runtime state."""
+    """Run structured fact extraction using LongMemory config/runtime state."""
 
     def __init__(self, memory: Any) -> None:
         self.m = memory
 
-    def extract_events_structured(self, message: Dict[str, Any], force: bool = False) -> List[Dict[str, Any]]:
-        """Extract minimal event skeletons using local model."""
+    def extract_events_structured(
+        self,
+        message: Dict[str, Any],
+        force: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Extract atomic factual memories using the configured local model."""
         if not self.m.extractor_enabled:
             return []
         role = str(message.get("role", "user")).strip().lower() or "user"
@@ -37,7 +41,9 @@ class LongMemoryExtractor:
         out = self._extract_once(role=role, trimmed=trimmed)
         if out:
             return out
-        if (not self.m.extractor_compact_retry_enabled) or (len(trimmed) <= self.m.extractor_compact_window_chars):
+        if (not self.m.extractor_compact_retry_enabled) or (
+            len(trimmed) <= self.m.extractor_compact_window_chars
+        ):
             self.m._extractor_empty_payload += 1
             return []
         compact = self._compact_window(trimmed, self.m.extractor_compact_window_chars)
@@ -58,17 +64,18 @@ class LongMemoryExtractor:
 
     def _build_prompt(self, trimmed: str) -> str:
         return (
-            "Task: extract factual memory events from one message.\n"
+            "Task: extract atomic factual memories from one message.\n"
             "Output: JSON only, valid UTF-8, no markdown.\n"
             "Schema (strict):\n"
-            '{"events":[{"subject":"","action":"","object":"","time":"","location":"","evidence_span":"","event_text":"","keywords":[],"confidence":0.0}]}\n'
+            '{"events":[{"subject":"","action":"","value":"","time":"","location":"","evidence_span":"","confidence":0.0}]}\n'
             "Hard rules:\n"
-            "- Keep only completed or observed facts.\n"
-            "- Keep personal preferences and stated choices if they are user-specific facts.\n"
-            "- Exclude pure instruction/chitchat/meta text without stable facts.\n"
-            "- evidence_span must be an exact short quote from the message.\n"
-            "- event_text must be concise and factual.\n"
-            "- confidence range [0,1].\n"
+            "- Extract stable answer-bearing facts, not generic topics.\n"
+            "- Prefer names, counts, owned items, locations, certifications, dates, preferences, updates, and completed actions.\n"
+            "- Exclude pure chitchat, instructions, meta statements, or vague summaries.\n"
+            "- Prefer the most answer-bearing fact in each sentence window.\n"
+            "- value should contain the answer-bearing value when possible.\n"
+            "- evidence_span must be a short exact quote from the message.\n"
+            "- confidence is optional but should be in [0,1] when present.\n"
             "- If no event, return {\"events\":[]}.\n"
             f"Max events: {self.m.extractor_max_events_per_message}\n"
             f"Message:\n{trimmed}\n"
@@ -118,48 +125,95 @@ class LongMemoryExtractor:
                 if not self._schema_valid(item):
                     continue
                 self.m._extractor_schema_pass += 1
-                subject = str(item.get("subject", "")).strip()
-                action = str(item.get("action", "")).strip()
-                obj = str(item.get("object", "")).strip()
-                subject = self.m._entity_norm.normalize_subject(subject, role)
-                obj = self.m._entity_norm.normalize_object(obj, role)
+
+                subject = self.m._entity_norm.normalize_subject(
+                    str(item.get("subject", "")).strip(),
+                    role,
+                )
+                action = str(item.get("action", item.get("predicate", ""))).strip()
+                obj = self.m._entity_norm.normalize_object(
+                    str(item.get("object", "")).strip(),
+                    role,
+                )
+                value_text = self.m._entity_norm.normalize_object(
+                    str(item.get("value", "")).strip(),
+                    role,
+                ) or obj
+                time_text = str(item.get("time", "")).strip()
+                location_text = str(item.get("location", "")).strip()
+                value_type = str(item.get("value_type", "")).strip().lower()
+                fact_slot = str(item.get("fact_slot", "")).strip().lower()
+                canonical_fact = str(item.get("canonical_fact", "")).strip()
                 event_text = str(item.get("event_text", "")).strip()
                 raw_span = str(item.get("evidence_span", "")).strip()
                 if not raw_span:
                     raw_span = str(item.get("raw_span", "")).strip()
-                if subject and action:
-                    event_text = f"{subject} | {action} | {obj}".strip()
-                elif (not event_text) and subject and action and obj:
-                    event_text = f"{subject} | {action} | {obj}"
+                if (not value_text) and raw_span:
+                    value_text = self.m._entity_norm.normalize_object(raw_span, role)
+
+                if not value_type:
+                    value_type = self._infer_value_type(
+                        value_text=value_text,
+                        time_text=time_text,
+                        location_text=location_text,
+                    )
+                if not fact_slot:
+                    fact_slot = self._infer_fact_slot(
+                        action=action,
+                        value_type=value_type,
+                        time_text=time_text,
+                        location_text=location_text,
+                    )
+                if not canonical_fact:
+                    canonical_fact = self._build_canonical_fact(
+                        subject=subject,
+                        action=action,
+                        value_text=value_text,
+                        time_text=time_text,
+                        location_text=location_text,
+                    )
+                if canonical_fact:
+                    event_text = canonical_fact
+                elif subject and action and value_text:
+                    event_text = f"{subject} | {action} | {value_text}"
                 if not event_text:
                     continue
-                if raw_span and (not self._span_grounded(raw_span, trimmed)):
-                    continue
-                confidence = float(item.get("confidence", 0.0) or 0.0)
+
+                grounding_ratio = 0.0
+                if raw_span:
+                    grounding_ratio = self.m._span_overlap_ratio(raw_span, trimmed)
+
+                confidence_default = max(
+                    float(self.m.gating_hard_min_confidence),
+                    float(self.m.extractor_min_confidence),
+                )
+                confidence = float(item.get("confidence", confidence_default) or confidence_default)
                 confidence = max(0.0, min(1.0, confidence))
+                if raw_span and grounding_ratio < float(self.m.extractor_span_grounding_min_overlap):
+                    confidence *= max(0.5, grounding_ratio + 0.2)
+
                 raw_keywords = item.get("keywords", [])
                 if isinstance(raw_keywords, list):
                     model_keywords = [str(x).strip().lower() for x in raw_keywords if str(x).strip()]
                 else:
                     model_keywords = self.m._tokenize(str(raw_keywords))
-                time_text = str(item.get("time", "")).strip()
-                location_text = str(item.get("location", "")).strip()
                 keywords = self.m._build_keywords(
                     model_keywords=model_keywords,
                     subject=subject,
                     action=action,
-                    obj=obj,
+                    obj=value_text,
                     event_text=event_text,
                     raw_span=raw_span,
                     source_content=trimmed,
                     time_text=time_text,
                     location_text=location_text,
                 )
+
                 if self.m.gating_enabled:
                     accepted, reason, _score = self.m._gate.evaluate(
                         subject=subject,
                         action=action,
-                        obj=obj,
+                        obj=value_text,
                         confidence=confidence,
                         time_text=time_text,
                         location_text=location_text,
@@ -173,7 +227,7 @@ class LongMemoryExtractor:
                             reason=reason,
                             subject=subject,
                             action=action,
-                            obj=obj,
+                            obj=value_text,
                             event_text=event_text,
                             keywords=keywords,
                             role=role,
@@ -187,7 +241,7 @@ class LongMemoryExtractor:
                     if not self.m._event_is_valid(
                         subject=subject,
                         action=action,
-                        obj=obj,
+                        obj=value_text,
                         confidence=confidence,
                         evidence_span=raw_span,
                         source_content=trimmed,
@@ -197,7 +251,7 @@ class LongMemoryExtractor:
                             reason="legacy_gate_reject",
                             subject=subject,
                             action=action,
-                            obj=obj,
+                            obj=value_text,
                             event_text=event_text,
                             keywords=keywords,
                             role=role,
@@ -207,11 +261,16 @@ class LongMemoryExtractor:
                             source_content=trimmed,
                         )
                         continue
+
                 out.append(
                     {
                         "subject": subject,
                         "action": action,
-                        "object": obj,
+                        "object": value_text,
+                        "value": value_text,
+                        "value_type": value_type,
+                        "fact_slot": fact_slot,
+                        "canonical_fact": canonical_fact or event_text,
                         "event_text": event_text,
                         "keywords": keywords,
                         "time": time_text,
@@ -240,15 +299,20 @@ class LongMemoryExtractor:
 
     @staticmethod
     def _schema_valid(item: Dict[str, Any]) -> bool:
-        required = ["subject", "action", "object", "time", "location", "event_text", "confidence"]
-        for key in required:
-            if key not in item:
-                return False
+        action = str(item.get("action", item.get("predicate", "")) or "").strip()
+        subject = str(item.get("subject", "") or "").strip()
+        value = str(item.get("value", item.get("object", "")) or "").strip()
+        evidence = str(item.get("evidence_span", item.get("raw_span", "")) or "").strip()
+        if not action:
+            return False
+        if not any([subject, value, evidence]):
+            return False
         keywords = item.get("keywords", [])
         if (not isinstance(keywords, list)) and (not isinstance(keywords, str)):
             return False
         try:
-            float(item.get("confidence", 0.0) or 0.0)
+            if "confidence" in item and str(item.get("confidence", "")).strip() != "":
+                float(item.get("confidence", 0.0) or 0.0)
         except (ValueError, TypeError):
             return False
         return True
@@ -256,3 +320,52 @@ class LongMemoryExtractor:
     def _span_grounded(self, span: str, content: str) -> bool:
         ratio = self.m._gate.span_overlap_ratio(span, content)
         return ratio >= float(self.m.extractor_span_grounding_min_overlap)
+
+    @staticmethod
+    def _infer_value_type(*, value_text: str, time_text: str, location_text: str) -> str:
+        value = str(value_text).strip()
+        if str(location_text).strip():
+            return "location"
+        if str(time_text).strip():
+            return "time"
+        if not value:
+            return "text"
+        if any(ch.isdigit() for ch in value):
+            return "number"
+        if len(value.split()) <= 4 and any(ch.isupper() for ch in value):
+            return "entity"
+        return "text"
+
+    @staticmethod
+    def _infer_fact_slot(
+        *,
+        action: str,
+        value_type: str,
+        time_text: str,
+        location_text: str,
+    ) -> str:
+        if str(location_text).strip():
+            return "location"
+        if str(time_text).strip():
+            return "time"
+        if value_type == "number":
+            return "count"
+        cleaned = "_".join([tok for tok in str(action).strip().lower().split() if tok])
+        return cleaned or "fact"
+
+    @staticmethod
+    def _build_canonical_fact(
+        *,
+        subject: str,
+        action: str,
+        value_text: str,
+        time_text: str,
+        location_text: str,
+    ) -> str:
+        core = " ".join([x for x in [subject, action, value_text] if str(x).strip()]).strip()
+        extras: List[str] = []
+        if location_text:
+            extras.append(f"at {location_text}")
+        if time_text:
+            extras.append(f"on {time_text}")
+        return " ".join([core] + extras).strip()

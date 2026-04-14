@@ -94,16 +94,6 @@ class LongMemory:
         self.graph_neighbor_limit = int(graph_cfg.get("neighbor_limit", 4))
         self.graph_neighbor_weight = float(graph_cfg.get("neighbor_weight", 0.15))
         self.graph_max_edges_per_event = int(graph_cfg.get("max_edges_per_event", 6))
-        self.graph_edge_weight_same_fact = float(graph_cfg.get("edge_weight_same_fact", 1.0))
-        self.graph_edge_weight_same_subject = float(graph_cfg.get("edge_weight_same_subject", 0.7))
-        self.graph_edge_weight_same_object = float(graph_cfg.get("edge_weight_same_object", 0.6))
-        self.graph_edge_weight_subject_object = float(
-            graph_cfg.get("edge_weight_subject_object", 0.8)
-        )
-        self.graph_edge_weight_shared_keywords = float(
-            graph_cfg.get("edge_weight_shared_keywords", 0.35)
-        )
-        self.graph_edge_min_shared_keywords = int(graph_cfg.get("edge_min_shared_keywords", 2))
         self.offline_pack_enabled = bool(offline_graph_cfg.get("evidence_pack_enabled", True))
         self.offline_pack_max_packs = int(offline_graph_cfg.get("evidence_pack_max_packs", 4))
         self.offline_pack_max_chars = int(offline_graph_cfg.get("evidence_pack_max_chars", 220))
@@ -397,6 +387,64 @@ class LongMemory:
             max_chars=max_chars,
         )
 
+    def _build_sentence_window_pieces(self, text: str, max_chars: int) -> List[str]:
+        sentences = [
+            self._normalize_space(sent)
+            for sent in self._split_sentences(text)
+            if len(self._normalize_space(sent)) >= int(self.offline_pack_min_sentence_chars)
+        ]
+        if not sentences:
+            fallback = self._normalize_space(str(text))
+            return [fallback[: max(64, int(max_chars))]] if fallback else []
+
+        candidates: List[Dict[str, Any]] = []
+        for idx, sent in enumerate(sentences):
+            score = float(self._sentence_feature_score(sent))
+            candidates.append({"idx": idx, "text": sent, "score": score})
+        candidates.sort(key=lambda item: float(item["score"]), reverse=True)
+
+        top_k = max(1, int(self.offline_pack_top_sentences_per_chunk))
+        radius = max(0, int(self.extractor_sentence_overlap))
+        selected = sorted(candidates[:top_k], key=lambda item: int(item["idx"]))
+        out: List[str] = []
+        seen = set()
+        max_len = max(64, int(max_chars))
+
+        for item in selected:
+            idx = int(item["idx"])
+            start = max(0, idx - radius)
+            end = min(len(sentences), idx + radius + 1)
+            window = self._normalize_space(" ".join(sentences[start:end])).strip()
+            if not window:
+                continue
+            if len(window) > max_len:
+                window = window[:max_len].rsplit(" ", 1)[0].strip() or window[:max_len].strip()
+            key = window.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(window)
+        return out
+
+    def _build_sentence_window_source_items(
+        self,
+        source_items: List[Dict[str, str]],
+        max_chars: int,
+    ) -> List[Dict[str, str]]:
+        out: List[Dict[str, str]] = []
+        for item in source_items:
+            role = str(item.get("role", "user")).strip().lower() or "user"
+            text = str(item.get("text", "")).strip()
+            session_date = str(item.get("session_date", "")).strip()
+            if not text:
+                continue
+            pieces = self._build_sentence_window_pieces(text, max_chars)
+            if not pieces:
+                continue
+            for piece in pieces:
+                out.append({"role": role, "text": piece, "session_date": session_date})
+        return out
+
     def _build_anchor_sentence_pieces(self, text: str, max_chars: int) -> List[str]:
         return select_anchor_sentences(
             text=text,
@@ -586,8 +634,8 @@ class LongMemory:
         *,
         event_id: str,
         subject: str,
-        action: str,
-        obj: str,
+        predicate: str,
+        value: str,
         time_text: str,
         location_text: str,
         keywords: List[str],
@@ -599,8 +647,8 @@ class LongMemory:
             store=self.store,
             event_id=event_id,
             subject=subject,
-            action=action,
-            obj=obj,
+            predicate=predicate,
+            value=value,
             time_text=time_text,
             location_text=location_text,
             keywords=keywords,
@@ -710,8 +758,8 @@ class LongMemory:
             node_by_kind.setdefault(kind, text)
 
         subject = node_by_kind.get("subject", "")
-        action = node_by_kind.get("action", "")
-        obj = node_by_kind.get("object", "")
+        action = node_by_kind.get("predicate", "") or node_by_kind.get("action", "")
+        obj = node_by_kind.get("value", "") or node_by_kind.get("object", "")
         time_text = node_by_kind.get("time", "")
         location = node_by_kind.get("location", "")
         evidence = node_by_kind.get("evidence", "")
@@ -925,59 +973,33 @@ class LongMemory:
         if not source_items:
             return 0
 
-        if self.offline_anchor_filter_enabled:
-            pieces = source_items
-            anchor_pieces: List[Dict[str, str]] = []
-            for item in pieces:
+        pieces = self._build_sentence_window_source_items(
+            source_items,
+            int(max_chars_per_chunk),
+        )
+        if len(pieces) < max(0, self.offline_min_pieces_per_query):
+            supplement: List[Dict[str, str]] = []
+            for item in source_items:
                 role = str(item.get("role", "user")).strip().lower() or "user"
                 text = str(item.get("text", "")).strip()
                 session_date = str(item.get("session_date", "")).strip()
                 if not text:
                     continue
-                selected_sentences = self._build_anchor_sentence_pieces(
-                    text,
-                    int(max_chars_per_chunk),
-                )
-                if selected_sentences:
-                    for sent in selected_sentences:
-                        anchor_pieces.append({"role": role, "text": sent, "session_date": session_date})
-                elif self.offline_anchor_keep_full_if_empty:
-                    limit = max(32, min(int(max_chars_per_chunk), self.offline_anchor_sentence_max_chars))
-                    anchor_pieces.append(
-                        {"role": role, "text": text[:limit], "session_date": session_date}
-                    )
-            pieces = anchor_pieces
-            if len(pieces) < max(0, self.offline_min_pieces_per_query):
-                fill_pieces: List[Dict[str, str]] = []
-                for item in source_items:
-                    role = str(item.get("role", "user")).strip().lower() or "user"
-                    text = str(item.get("text", "")).strip()
-                    session_date = str(item.get("session_date", "")).strip()
-                    if not text:
-                        continue
-                    for packed in self._build_evidence_packs([text], int(max_chars_per_chunk)):
-                        fill_pieces.append(
-                            {"role": role, "text": packed, "session_date": session_date}
-                        )
-                pieces.extend(fill_pieces)
-        elif self.offline_use_full_chunk_text:
-            pieces = source_items
-        elif self.offline_pack_enabled:
-            pieces = []
-            for item in source_items:
-                role = str(item.get("role", "user")).strip().lower() or "user"
-                text = str(item.get("text", "")).strip()
-                session_date = str(item.get("session_date", "")).strip()
-                for packed in self._build_evidence_packs([text], int(max_chars_per_chunk)):
-                    pieces.append({"role": role, "text": packed, "session_date": session_date})
-        else:
-            pieces = []
-            for item in source_items:
-                role = str(item.get("role", "user")).strip().lower() or "user"
-                text = str(item.get("text", "")).strip()
-                session_date = str(item.get("session_date", "")).strip()
-                for packed in self._pack_sentences(text, int(max_chars_per_chunk)):
-                    pieces.append({"role": role, "text": packed, "session_date": session_date})
+                if self.offline_pack_enabled:
+                    packs = self._build_evidence_packs([text], int(max_chars_per_chunk))
+                else:
+                    packs = self._pack_sentences(text, int(max_chars_per_chunk))
+                for packed in packs:
+                    supplement.append({"role": role, "text": packed, "session_date": session_date})
+            merged: List[Dict[str, str]] = []
+            seen_piece_keys = set()
+            for item in pieces + supplement:
+                key = self._normalize_space(str(item.get("text", ""))).lower()
+                if not key or key in seen_piece_keys:
+                    continue
+                seen_piece_keys.add(key)
+                merged.append(item)
+            pieces = merged
         if not pieces:
             return 0
         accepted = 0

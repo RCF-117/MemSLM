@@ -235,6 +235,7 @@ class LongMemoryStoreWriteMixin:
         *,
         fact_key: str,
         keep_event_id: str,
+        new_value_text: str,
         new_time_text: str,
         new_raw_span: str,
         min_evidence_overlap: float,
@@ -243,7 +244,8 @@ class LongMemoryStoreWriteMixin:
         if not fact_key:
             return []
         normalized_new_time = str(new_time_text).strip().lower()
-        if not normalized_new_time:
+        normalized_new_value = str(new_value_text).strip().lower()
+        if (not normalized_new_time) and (not normalized_new_value):
             return []
 
         def norm_tokens(text: str) -> set[str]:
@@ -277,8 +279,21 @@ class LongMemoryStoreWriteMixin:
                 """,
                 (event_id,),
             ).fetchone()
+            value_row = self.conn.execute(
+                """
+                SELECT text
+                FROM details
+                WHERE event_id=? AND kind='value'
+                ORDER BY created_step DESC
+                LIMIT 1
+                """,
+                (event_id,),
+            ).fetchone()
             old_time = str(time_row["text"]).strip().lower() if time_row else ""
-            if (not old_time) or (old_time == normalized_new_time):
+            old_value = str(value_row["text"]).strip().lower() if value_row else ""
+            time_changed = bool(normalized_new_time) and bool(old_time) and (old_time != normalized_new_time)
+            value_changed = bool(normalized_new_value) and bool(old_value) and (old_value != normalized_new_value)
+            if (not time_changed) and (not value_changed):
                 continue
             if new_span_tokens:
                 old_tokens = norm_tokens(str(row["raw_span"] or ""))

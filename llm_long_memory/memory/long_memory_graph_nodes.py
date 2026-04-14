@@ -10,8 +10,8 @@ def upsert_event_nodes(
     store: object,
     event_id: str,
     subject: str,
-    action: str,
-    obj: str,
+    predicate: str,
+    value: str,
     time_text: str,
     location_text: str,
     keywords: List[str],
@@ -23,36 +23,38 @@ def upsert_event_nodes(
     stable_id_fn: Callable[[str, str], str],
     safe_embed_fn: Callable[[str], object],
 ) -> None:
+    """Write a minimal fact-centric node graph for one event."""
     store.clear_event_node_edges_for_event(event_id)
     node_ids: Dict[str, str] = {}
     keyword_node_ids: List[str] = []
 
     def add_node(kind: str, text: str, is_core: bool) -> str:
-        val = normalize_space_fn(text)
-        if not val:
+        value_text = normalize_space_fn(text)
+        if not value_text:
             return ""
-        node_id = stable_id_fn("node", f"{event_id}|{kind}|{val}")
+        node_id = stable_id_fn("node", f"{event_id}|{kind}|{value_text}")
         store.upsert_event_node(
             node_id=node_id,
             event_id=event_id,
             node_kind=kind,
-            node_text=val,
+            node_text=value_text,
             is_core=is_core,
-            node_embedding=safe_embed_fn(val),
+            node_embedding=safe_embed_fn(value_text),
             current_step=current_step,
         )
         return node_id
 
     node_ids["subject"] = add_node("subject", subject, True)
-    node_ids["action"] = add_node("action", action, True)
-    node_ids["object"] = add_node("object", obj, True)
-    node_ids["time"] = add_node("time", time_text, True)
-    node_ids["location"] = add_node("location", location_text, True)
+    node_ids["predicate"] = add_node("predicate", predicate, True)
+    node_ids["value"] = add_node("value", value, True)
+    node_ids["time"] = add_node("time", time_text, False)
+    node_ids["location"] = add_node("location", location_text, False)
     node_ids["evidence"] = add_node("evidence", raw_span[:context_max_chars_per_item], False)
-    for kw in keywords[: max(0, int(node_keyword_limit))]:
-        kid = add_node("keyword", kw, False)
-        if kid:
-            keyword_node_ids.append(kid)
+
+    for keyword in keywords[: max(0, int(node_keyword_limit))]:
+        keyword_id = add_node("keyword", keyword, False)
+        if keyword_id:
+            keyword_node_ids.append(keyword_id)
 
     def add_node_edge(src_kind: str, dst_kind: str, relation: str, weight: float) -> None:
         src = str(node_ids.get(src_kind, "")).strip()
@@ -70,23 +72,21 @@ def upsert_event_nodes(
             current_step=current_step,
         )
 
-    add_node_edge("subject", "action", "agent_of", 1.0)
-    add_node_edge("action", "object", "acts_on", 1.0)
-    add_node_edge("action", "time", "happens_at", 0.9)
-    add_node_edge("action", "location", "happens_in", 0.9)
-    add_node_edge("action", "evidence", "grounded_by", 0.8)
+    add_node_edge("predicate", "value", "has_value", 1.0)
+    add_node_edge("predicate", "time", "has_time", 0.9)
+    add_node_edge("predicate", "location", "has_location", 0.9)
+    add_node_edge("predicate", "evidence", "supported_by", 0.8)
 
-    action_node = str(node_ids.get("action", "")).strip()
-    if action_node:
-        for kid in keyword_node_ids:
-            edge_id = stable_id_fn("node_edge", f"{event_id}|{action_node}|{kid}|has_keyword")
+    predicate_node = str(node_ids.get("predicate", "")).strip()
+    if predicate_node:
+        for keyword_id in keyword_node_ids:
+            edge_id = stable_id_fn("node_edge", f"{event_id}|{predicate_node}|{keyword_id}|has_keyword")
             store.upsert_event_node_edge(
                 node_edge_id=edge_id,
                 event_id=event_id,
-                from_node_id=action_node,
-                to_node_id=kid,
+                from_node_id=predicate_node,
+                to_node_id=keyword_id,
                 relation="has_keyword",
-                weight=0.5,
+                weight=0.4,
                 current_step=current_step,
             )
-

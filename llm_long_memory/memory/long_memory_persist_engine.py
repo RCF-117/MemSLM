@@ -1,14 +1,13 @@
-"""Event persistence and fact-edge linking engine for LongMemory."""
+"""Fact persistence and minimal edge-linking engine for LongMemory."""
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List
 
 
 class LongMemoryPersistEngine:
-    """Persist extracted events and maintain fact-link graph edges."""
+    """Persist extracted atomic facts and maintain minimal update links."""
 
     def __init__(self, memory: Any) -> None:
         self.m = memory
@@ -27,8 +26,8 @@ class LongMemoryPersistEngine:
         out: List[str] = []
         low = text.lower()
         for pat in patterns:
-            for m in re.findall(pat, low):
-                token = str(m).strip()
+            for match in re.findall(pat, low):
+                token = str(match).strip()
                 if token and token not in out:
                     out.append(token)
         return out
@@ -50,14 +49,67 @@ class LongMemoryPersistEngine:
             return "duration"
         return "unknown"
 
+    def _normalize_slot(self, fact_slot: str, value_type: str, action: str) -> str:
+        slot = self.m._normalize_fact_component(fact_slot)
+        if slot:
+            return slot
+        if value_type == "location":
+            return "location"
+        if value_type == "time":
+            return "time"
+        if value_type == "number":
+            return "count"
+        action_norm = self.m._normalize_fact_component(action)
+        return action_norm or "fact"
+
+    def _build_atomic_fact_key(
+        self,
+        *,
+        subject: str,
+        action: str,
+        fact_slot: str,
+    ) -> str:
+        subject_norm = self.m._normalize_fact_component(subject)
+        action_norm = self.m._normalize_fact_component(action)
+        slot_norm = self._normalize_slot(fact_slot, "", action)
+        return f"{subject_norm}|{action_norm}|{slot_norm}".strip("|")
+
+    def _build_skeleton_text(
+        self,
+        *,
+        subject: str,
+        action: str,
+        value_text: str,
+        canonical_fact: str,
+    ) -> str:
+        if str(canonical_fact).strip():
+            return str(canonical_fact).strip()
+        return " ".join([x for x in [subject, action, value_text] if str(x).strip()]).strip()
+
     def persist_event(self, event: Dict[str, Any]) -> None:
         subject = str(event.get("subject", "")).strip()
         action = str(event.get("action", "")).strip()
-        obj = str(event.get("object", "")).strip()
-        event_text = str(event.get("event_text", "")).strip()
+        value_text = str(event.get("value", event.get("object", ""))).strip()
+        canonical_fact = str(event.get("canonical_fact", event.get("event_text", ""))).strip()
+        event_text = self._build_skeleton_text(
+            subject=subject,
+            action=action,
+            value_text=value_text,
+            canonical_fact=canonical_fact,
+        )
+        if not event_text:
+            self.m._record_reject("empty_event_text")
+            return
+
         keywords = [str(x).strip().lower() for x in list(event.get("keywords", [])) if str(x).strip()]
         time_text = str(event.get("time", "")).strip()
         location_text = str(event.get("location", "")).strip()
+        value_type = str(event.get("value_type", "")).strip().lower() or "text"
+        fact_slot = self._normalize_slot(
+            str(event.get("fact_slot", "")).strip().lower(),
+            value_type,
+            action,
+        )
         role = str(event.get("role", "user")).strip().lower() or "user"
         fact_type = str(event.get("fact_type", "event")).strip().lower() or "event"
         confidence = float(event.get("confidence", 0.0) or 0.0)
@@ -66,47 +118,62 @@ class LongMemoryPersistEngine:
         source_content = str(event.get("source_content", "")).strip()
         source_date = str(event.get("source_date", "")).strip()
 
-        if not event_text:
-            self.m._record_reject("empty_event_text")
-            return
         if not keywords:
             keywords = self.m._build_keywords(
                 model_keywords=[],
                 subject=subject,
                 action=action,
-                obj=obj,
+                obj=value_text,
                 event_text=event_text,
                 raw_span=raw_span,
                 source_content=source_content,
                 time_text=time_text,
                 location_text=location_text,
             )
+
         self.m._ingest_event_total += 1
         self.m._ingest_event_accepted += 1
         self.m.current_step += 1
 
-        core = f"{subject}|{action}|{obj}|{time_text}|{location_text}|{role}"
-        event_id = self.m._stable_id("event", core)
-        fact_key = self.m._build_fact_key(subject, action, obj) or event_id
-        if fact_key and time_text:
-            dup = self.m.conn.execute(
-                """
-                SELECT event_id FROM events
-                WHERE fact_key=? AND is_latest=1 AND event_id IN (
-                    SELECT event_id FROM details WHERE kind='time' AND text=?
-                )
-                LIMIT 1
-                """,
-                (fact_key, time_text),
-            ).fetchone()
-            if dup is not None:
-                event_id = str(dup["event_id"])
-        emb = self.m._safe_embed(" ".join([event_text, " ".join(keywords), time_text, location_text]).strip())
+        fact_key = self._build_atomic_fact_key(
+            subject=subject,
+            action=action,
+            fact_slot=fact_slot,
+        ) or self.m._stable_id("fact", event_text)
+        event_id = self.m._stable_id(
+            "event",
+            "|".join(
+                [
+                    fact_key,
+                    value_text,
+                    time_text,
+                    location_text,
+                    raw_span,
+                    role,
+                ]
+            ),
+        )
+
+        emb = self.m._safe_embed(
+            " ".join(
+                [
+                    canonical_fact,
+                    subject,
+                    action,
+                    value_text,
+                    value_type,
+                    fact_slot,
+                    time_text,
+                    location_text,
+                    " ".join(keywords),
+                ]
+            ).strip()
+        )
 
         self.m.store.upsert_event(
             event_id=event_id,
             fact_key=fact_key,
-            subject_action_key=fact_key,
+            subject_action_key=f"{self.m._normalize_fact_component(subject)}|{self.m._normalize_fact_component(action)}",
             fact_type=fact_type,
             skeleton_text=event_text,
             skeleton_embedding=emb,
@@ -118,19 +185,22 @@ class LongMemoryPersistEngine:
             raw_span=raw_span,
             current_step=self.m.current_step,
         )
+
         self.m._upsert_event_nodes(
             event_id=event_id,
             subject=subject,
-            action=action,
-            obj=obj,
+            predicate=action,
+            value=value_text,
             time_text=time_text,
             location_text=location_text,
             keywords=keywords,
             raw_span=raw_span,
         )
+
         superseded_ids = self.m.store.supersede_active_by_fact_key(
             fact_key=fact_key,
             keep_event_id=event_id,
+            new_value_text=value_text,
             new_time_text=time_text,
             new_raw_span=raw_span,
             min_evidence_overlap=self.m.supersede_min_evidence_overlap,
@@ -146,156 +216,70 @@ class LongMemoryPersistEngine:
                 weight=1.0,
                 current_step=self.m.current_step,
             )
-        if raw_span:
-            self.m.store.insert_detail(
-                detail_id=self.m._stable_id("detail", f"{event_id}|evidence|{raw_span}"),
-                event_id=event_id,
-                kind="evidence",
-                text=raw_span,
-                current_step=self.m.current_step,
-                max_per_event=self.m.details_per_event,
-            )
+
+        self._insert_detail(event_id=event_id, kind="subject", text=subject)
+        self._insert_detail(event_id=event_id, kind="predicate", text=action)
+        self._insert_detail(event_id=event_id, kind="value", text=value_text)
+        self._insert_detail(event_id=event_id, kind="value_type", text=value_type)
+        self._insert_detail(event_id=event_id, kind="fact_slot", text=fact_slot)
+        self._insert_detail(event_id=event_id, kind="canonical_fact", text=canonical_fact or event_text)
+        self._insert_detail(event_id=event_id, kind="evidence", text=raw_span)
+        self._insert_detail(event_id=event_id, kind="source_model", text=source_model)
+        if location_text:
+            self._insert_detail(event_id=event_id, kind="location", text=location_text)
         if time_text:
+            self._insert_detail(event_id=event_id, kind="time", text=time_text)
             time_vals = self._time_tokens(time_text)
             if time_vals:
-                self.m.store.insert_detail(
-                    detail_id=self.m._stable_id("detail", f"{event_id}|time_start|{time_vals[0]}"),
-                    event_id=event_id,
-                    kind="time_start",
-                    text=time_vals[0],
-                    current_step=self.m.current_step,
-                    max_per_event=self.m.details_per_event,
-                )
-                self.m.store.insert_detail(
-                    detail_id=self.m._stable_id("detail", f"{event_id}|time_end|{time_vals[-1]}"),
-                    event_id=event_id,
-                    kind="time_end",
-                    text=time_vals[-1],
-                    current_step=self.m.current_step,
-                    max_per_event=self.m.details_per_event,
-                )
+                self._insert_detail(event_id=event_id, kind="time_start", text=time_vals[0])
+                self._insert_detail(event_id=event_id, kind="time_end", text=time_vals[-1])
             granularity = self._infer_time_granularity(time_text)
             if granularity:
-                self.m.store.insert_detail(
-                    detail_id=self.m._stable_id(
-                        "detail", f"{event_id}|time_granularity|{granularity}"
-                    ),
-                    event_id=event_id,
-                    kind="time_granularity",
-                    text=granularity,
-                    current_step=self.m.current_step,
-                    max_per_event=self.m.details_per_event,
-                )
+                self._insert_detail(event_id=event_id, kind="time_granularity", text=granularity)
         if source_date:
-            self.m.store.insert_detail(
-                detail_id=self.m._stable_id("detail", f"{event_id}|source_date|{source_date}"),
-                event_id=event_id,
-                kind="source_date",
-                text=source_date,
-                current_step=self.m.current_step,
-                max_per_event=self.m.details_per_event,
-            )
+            self._insert_detail(event_id=event_id, kind="source_date", text=source_date)
         if source_content:
-            source_excerpt = source_content[: self.m.context_max_chars_per_item]
-            self.m.store.insert_detail(
-                detail_id=self.m._stable_id("detail", f"{event_id}|source|{source_excerpt}"),
+            self._insert_detail(
                 event_id=event_id,
                 kind="source",
-                text=source_excerpt,
-                current_step=self.m.current_step,
-                max_per_event=self.m.details_per_event,
+                text=source_content[: self.m.context_max_chars_per_item],
             )
+
+        self.link_fact_edges(event_id=event_id, fact_key=fact_key)
+        self.m.store.save_current_step(self.m.current_step)
+
+    def _insert_detail(self, *, event_id: str, kind: str, text: str) -> None:
+        value = str(text).strip()
+        if not value:
+            return
         self.m.store.insert_detail(
-            detail_id=self.m._stable_id("detail", f"{event_id}|source_model|{source_model}"),
+            detail_id=self.m._stable_id("detail", f"{event_id}|{kind}|{value}"),
             event_id=event_id,
-            kind="source_model",
-            text=source_model,
+            kind=kind,
+            text=value,
             current_step=self.m.current_step,
             max_per_event=self.m.details_per_event,
         )
-        self.link_fact_edges(
-            event_id=event_id,
-            fact_key=fact_key,
-            subject=subject,
-            action=action,
-            obj=obj,
-            event_keywords=keywords,
-        )
-        self.m.store.save_current_step(self.m.current_step)
 
-    def link_fact_edges(
-        self,
-        *,
-        event_id: str,
-        fact_key: str,
-        subject: str,
-        action: str,
-        obj: str,
-        event_keywords: List[str],
-    ) -> None:
-        if self.m.graph_max_edges_per_event <= 0:
+    def link_fact_edges(self, *, event_id: str, fact_key: str) -> None:
+        """Keep event-level edges minimal: only same-fact continuity links."""
+        if self.m.graph_max_edges_per_event <= 0 or (not fact_key):
             return
-        base_kw = set(self.m._keyword_candidates_from_text(" ".join(event_keywords)))
-        subj_n = self.m._normalize_fact_component(subject)
-        act_n = self.m._normalize_fact_component(action)
-        obj_n = self.m._normalize_fact_component(obj)
-
-        rows = self.m.store.fetch_active_events()
-        candidates: List[Dict[str, Any]] = []
-        for row in rows:
-            other_id = str(row["event_id"])
-            if other_id == event_id:
-                continue
+        linked = 0
+        for row in self.m.store.fetch_superseded_events(self.m.history_max_candidates):
+            other_id = str(row["event_id"] or "").strip()
             other_fact_key = str(row["fact_key"] or "").strip()
-            other_subject, other_action, other_object = self.m._split_skeleton_components(
-                str(row["skeleton_text"] or "")
-            )
-            other_subj_n = self.m._normalize_fact_component(other_subject)
-            other_act_n = self.m._normalize_fact_component(other_action)
-            other_obj_n = self.m._normalize_fact_component(other_object)
-            relation = ""
-            weight = 0.0
-            if fact_key and (other_fact_key == fact_key):
-                relation = "extends"
-                weight = self.m.graph_edge_weight_same_fact
-            elif subj_n and obj_n and (subj_n == other_subj_n) and (obj_n == other_obj_n):
-                relation = "same_subject_object"
-                weight = self.m.graph_edge_weight_subject_object
-            elif subj_n and (subj_n == other_subj_n) and act_n and (act_n == other_act_n):
-                relation = "same_subject_action"
-                weight = self.m.graph_edge_weight_subject_object
-            elif subj_n and (subj_n == other_subj_n):
-                relation = "same_subject"
-                weight = self.m.graph_edge_weight_same_subject
-            elif obj_n and (obj_n == other_obj_n):
-                relation = "same_object"
-                weight = self.m.graph_edge_weight_same_object
-            else:
-                try:
-                    other_keywords = {
-                        str(x).strip().lower()
-                        for x in list(json.loads(str(row["keywords"] or "[]")))
-                        if str(x).strip()
-                    }
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    other_keywords = set(self.m._tokenize(str(row["keywords"] or "")))
-                shared_keywords = len(base_kw.intersection(other_keywords))
-                if shared_keywords >= self.m.graph_edge_min_shared_keywords:
-                    relation = "shared_keywords"
-                    weight = self.m.graph_edge_weight_shared_keywords
-            if relation:
-                candidates.append({"other_id": other_id, "weight": float(weight), "relation": relation})
-        candidates.sort(key=lambda x: float(x["weight"]), reverse=True)
-        for item in candidates[: self.m.graph_max_edges_per_event]:
-            other_id = str(item["other_id"])
-            weight = float(item["weight"])
-            relation = str(item["relation"])
-            eid = self.m._stable_id("edge", f"{event_id}|{other_id}|{relation}")
+            if (not other_id) or other_id == event_id or other_fact_key != fact_key:
+                continue
+            edge_id = self.m._stable_id("edge", f"{other_id}|{event_id}|extends")
             self.m.store.insert_edge(
-                edge_id=eid,
-                from_event_id=event_id,
-                to_event_id=other_id,
-                relation=relation,
-                weight=weight,
+                edge_id=edge_id,
+                from_event_id=other_id,
+                to_event_id=event_id,
+                relation="extends",
+                weight=0.6,
                 current_step=self.m.current_step,
             )
+            linked += 1
+            if linked >= self.m.graph_max_edges_per_event:
+                break
