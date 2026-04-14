@@ -150,18 +150,15 @@ class MemoryManagerChatRuntime:
     def build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
         if not self.m.graph_refiner_enabled:
             return ""
-        if self.m.graph_context_from_store_enabled:
-            snippets = self.m.long_memory.build_context_snippets(query)
-            if not snippets:
-                return ""
-            return "[Long Memory Graph]\n" + "\n".join(f"- {line}" for line in snippets)
-        snippets = self.m.long_memory.retrieve_from_chunks(
-            query=query,
-            chunks=[dict(x) for x in chunks],
-            top_chunks=self.m.graph_refiner_top_chunks,
-            max_chars_per_chunk=self.m.graph_refiner_chunk_max_chars,
-            top_events=self.m.graph_refiner_top_events,
-        )
+        if not bool(getattr(self.m, "long_memory_enabled", False)):
+            return ""
+        if not bool(getattr(self.m, "offline_graph_build_enabled", False)):
+            return ""
+        # Enforce offline-first long-memory usage:
+        # graph extraction is completed before answering; chat only reads stored graph evidence.
+        if not self.m.graph_context_from_store_enabled:
+            return ""
+        snippets = self.m.long_memory.build_context_snippets(query)
         if not snippets:
             return ""
         return "[Long Memory Graph]\n" + "\n".join(f"- {line}" for line in snippets)
@@ -276,4 +273,3 @@ class MemoryManagerChatRuntime:
             ai_response, query, evidence_candidate=evidence_candidate
         )
         return ai_response, fallback_path, not_found_reason
-

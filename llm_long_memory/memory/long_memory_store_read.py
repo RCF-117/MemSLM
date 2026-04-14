@@ -14,7 +14,7 @@ class LongMemoryStoreReadMixin:
             """
             SELECT event_id, fact_key, skeleton_text, skeleton_embedding, keywords, role, salience, last_seen_step, fact_type
             FROM events
-            WHERE status='active'
+            WHERE is_latest=1
             """
         ).fetchall()
 
@@ -24,7 +24,7 @@ class LongMemoryStoreReadMixin:
                 """
                 SELECT event_id, fact_key, skeleton_text, skeleton_embedding, keywords, role, salience, last_seen_step, fact_type
                 FROM events
-                WHERE status='superseded'
+                WHERE is_latest=0
                 ORDER BY last_seen_step DESC
                 LIMIT ?
                 """,
@@ -34,7 +34,7 @@ class LongMemoryStoreReadMixin:
             """
             SELECT event_id, fact_key, skeleton_text, skeleton_embedding, keywords, role, salience, last_seen_step, fact_type
             FROM events
-            WHERE status='superseded'
+            WHERE is_latest=0
             """
         ).fetchall()
 
@@ -128,7 +128,7 @@ class LongMemoryStoreReadMixin:
             f"""
             SELECT event_id, fact_key, skeleton_text, skeleton_embedding, keywords, role, salience, last_seen_step, fact_type
             FROM events
-            WHERE status='active' AND event_id IN ({marks})
+            WHERE is_latest=1 AND event_id IN ({marks})
             """,
             tuple(event_ids),
         ).fetchall()
@@ -140,8 +140,8 @@ class LongMemoryStoreReadMixin:
         node_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM event_nodes").fetchone()
         node_edge_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM event_node_edges").fetchone()
         staging_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM events_staging").fetchone()
-        active_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM events WHERE status='active'").fetchone()
-        superseded_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM events WHERE status='superseded'").fetchone()
+        active_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM events WHERE is_latest=1").fetchone()
+        superseded_row = self.conn.execute("SELECT COUNT(*) AS cnt FROM events WHERE is_latest=0").fetchone()
         return {
             "events": int(event_row["cnt"] if event_row else 0),
             "event_nodes": int(node_row["cnt"] if node_row else 0),

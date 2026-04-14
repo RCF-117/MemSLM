@@ -35,8 +35,8 @@ class LongMemoryStoreWriteMixin:
                 INSERT INTO events(
                   event_id, fact_key, subject_action_key, fact_type, skeleton_text, skeleton_embedding, keywords,
                   role, boundary_flag, extract_confidence, source_model, raw_span,
-                  status, salience, first_seen_step, last_seen_step
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1.0, ?, ?)
+                  is_latest, salience, first_seen_step, last_seen_step
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1.0, ?, ?)
                 """,
                 (
                     event_id,
@@ -61,7 +61,7 @@ class LongMemoryStoreWriteMixin:
             UPDATE events
             SET fact_key=?, subject_action_key=?, fact_type=?, skeleton_text=?, skeleton_embedding=?,
                 keywords=?, role=?, boundary_flag=?, extract_confidence=?, source_model=?, raw_span=?,
-                status='active', salience=salience+1.0, last_seen_step=?
+                is_latest=1, salience=salience+1.0, last_seen_step=?
             WHERE event_id=?
             """,
             (
@@ -258,7 +258,7 @@ class LongMemoryStoreWriteMixin:
             """
             SELECT event_id, raw_span
             FROM events
-            WHERE status='active' AND fact_key=? AND event_id<>?
+            WHERE is_latest=1 AND fact_key=? AND event_id<>?
             """,
             (fact_key, keep_event_id),
         ).fetchall()
@@ -294,10 +294,9 @@ class LongMemoryStoreWriteMixin:
             self.conn.execute(
                 f"""
                 UPDATE events
-                SET status='superseded', last_seen_step=?
+                SET is_latest=0, last_seen_step=?
                 WHERE event_id IN ({marks})
                 """,
                 (int(current_step), *old_ids),
             )
         return old_ids
-

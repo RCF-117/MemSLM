@@ -92,7 +92,7 @@ class LongMemoryPersistEngine:
             dup = self.m.conn.execute(
                 """
                 SELECT event_id FROM events
-                WHERE fact_key=? AND status='active' AND event_id IN (
+                WHERE fact_key=? AND is_latest=1 AND event_id IN (
                     SELECT event_id FROM details WHERE kind='time' AND text=?
                 )
                 LIMIT 1
@@ -137,12 +137,12 @@ class LongMemoryPersistEngine:
             current_step=self.m.current_step,
         )
         for old_id in superseded_ids:
-            edge_id = self.m._stable_id("edge", f"{old_id}|{event_id}|superseded_by")
+            edge_id = self.m._stable_id("edge", f"{old_id}|{event_id}|updates")
             self.m.store.insert_edge(
                 edge_id=edge_id,
                 from_event_id=old_id,
                 to_event_id=event_id,
-                relation="superseded_by",
+                relation="updates",
                 weight=1.0,
                 current_step=self.m.current_step,
             )
@@ -256,7 +256,7 @@ class LongMemoryPersistEngine:
             relation = ""
             weight = 0.0
             if fact_key and (other_fact_key == fact_key):
-                relation = "same_fact"
+                relation = "extends"
                 weight = self.m.graph_edge_weight_same_fact
             elif subj_n and obj_n and (subj_n == other_subj_n) and (obj_n == other_obj_n):
                 relation = "same_subject_object"

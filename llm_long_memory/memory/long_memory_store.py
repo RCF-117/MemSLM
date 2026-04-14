@@ -32,6 +32,7 @@ class LongMemoryStore(LongMemoryStoreWriteMixin, LongMemoryStoreReadMixin):
         self.conn.execute(f"PRAGMA journal_mode={str(sqlite_journal_mode)}")
         self.conn.execute(f"PRAGMA synchronous={str(sqlite_synchronous)}")
         self._create_tables()
+        self._ensure_schema_migrations()
         self._create_indexes()
         self.conn.commit()
 
@@ -60,6 +61,7 @@ class LongMemoryStore(LongMemoryStoreWriteMixin, LongMemoryStoreReadMixin):
               source_model TEXT,
               raw_span TEXT,
               status TEXT,
+              is_latest INTEGER,
               salience REAL,
               first_seen_step INTEGER,
               last_seen_step INTEGER
@@ -136,6 +138,10 @@ class LongMemoryStore(LongMemoryStoreWriteMixin, LongMemoryStoreReadMixin):
 
     def _create_indexes(self) -> None:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_latest ON events(is_latest)")
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_status_latest ON events(status, is_latest)"
+        )
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_last_seen ON events(last_seen_step)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_events_fact_key ON events(fact_key)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_staging_created ON events_staging(created_step)")
@@ -147,6 +153,25 @@ class LongMemoryStore(LongMemoryStoreWriteMixin, LongMemoryStoreReadMixin):
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_event_node_edges_to ON event_node_edges(to_node_id)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_event_id)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_event_id)")
+
+    def _ensure_schema_migrations(self) -> None:
+        """Apply lightweight additive schema migrations for existing DB files."""
+        cols = self.conn.execute("PRAGMA table_info(events)").fetchall()
+        col_names = {str(row["name"]).strip().lower() for row in cols}
+        if "is_latest" not in col_names:
+            self.conn.execute(
+                "ALTER TABLE events ADD COLUMN is_latest INTEGER DEFAULT 1"
+            )
+            self.conn.execute(
+                """
+                UPDATE events
+                SET is_latest = CASE
+                  WHEN status='active' THEN 1
+                  ELSE 0
+                END
+                WHERE is_latest IS NULL
+                """
+            )
 
     @staticmethod
     def _arr_to_blob(arr: np.ndarray) -> bytes:
@@ -191,4 +216,3 @@ class LongMemoryStore(LongMemoryStoreWriteMixin, LongMemoryStoreReadMixin):
 
     def close(self) -> None:
         self.conn.close()
-
