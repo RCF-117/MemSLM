@@ -9,6 +9,39 @@ from typing import Iterable, List
 class LongMemoryTextUtils:
     """Pure text helpers used by long-memory extraction and indexing."""
 
+    NUMBER_WORDS = {
+        "zero": "zero",
+        "one": "one",
+        "two": "two",
+        "three": "three",
+        "four": "four",
+        "five": "five",
+        "six": "six",
+        "seven": "seven",
+        "eight": "eight",
+        "nine": "nine",
+        "ten": "ten",
+        "eleven": "eleven",
+        "twelve": "twelve",
+        "thirteen": "thirteen",
+        "fourteen": "fourteen",
+        "fifteen": "fifteen",
+        "sixteen": "sixteen",
+        "seventeen": "seventeen",
+        "eighteen": "eighteen",
+        "nineteen": "nineteen",
+        "twenty": "twenty",
+        "thirty": "thirty",
+        "forty": "forty",
+        "fifty": "fifty",
+        "sixty": "sixty",
+        "seventy": "seventy",
+        "eighty": "eighty",
+        "ninety": "ninety",
+        "hundred": "hundred",
+        "thousand": "thousand",
+    }
+
     def __init__(
         self,
         *,
@@ -55,6 +88,37 @@ class LongMemoryTextUtils:
                 continue
             out.append(tok)
         return out
+
+    def first_number_token(self, text: str) -> str:
+        value = self.normalize_space(text).lower()
+        if not value:
+            return ""
+        for raw in value.split():
+            token = "".join(ch for ch in raw if ch.isalnum())
+            if not token:
+                continue
+            if token.isdigit():
+                return token
+            if token in self.NUMBER_WORDS:
+                return self.NUMBER_WORDS[token]
+        return ""
+
+    def normalize_value_text(
+        self,
+        text: str,
+        *,
+        fact_slot: str,
+        value_type: str,
+    ) -> str:
+        value = self.normalize_space(text)
+        if not value:
+            return ""
+        slot = self.normalize_space(fact_slot).lower()
+        vtype = self.normalize_space(value_type).lower()
+        if (slot != "count") and (vtype != "number"):
+            return value
+        num = self.first_number_token(value)
+        return num or value
 
     def build_keywords(
         self,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List
 
 from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
@@ -67,10 +68,12 @@ class LongMemoryExtractor:
             "Task: extract atomic factual memories from one message.\n"
             "Output: JSON only, valid UTF-8, no markdown.\n"
             "Schema (strict):\n"
-            '{"events":[{"subject":"","action":"","value":"","time":"","location":"","evidence_span":"","confidence":0.0}]}\n'
+            '{"events":[{"subject":"","action":"","value":"","time":"","location":"","evidence_span":"","fact_type":"state_fact|episodic_fact","confidence":0.0}]}\n'
             "Hard rules:\n"
             "- Extract stable answer-bearing facts, not generic topics.\n"
             "- Prefer names, counts, owned items, locations, certifications, dates, preferences, updates, and completed actions.\n"
+            "- Use fact_type=state_fact for stable facts that may update over time, such as counts, ownership, locations, certifications, current status, preferences, scores, ratios, and latest values.\n"
+            "- Use fact_type=episodic_fact for one-off happenings, meetings, visits, actions, and comparisons that should coexist rather than overwrite each other.\n"
             "- Exclude pure chitchat, instructions, meta statements, or vague summaries.\n"
             "- Prefer the most answer-bearing fact in each sentence window.\n"
             "- value should contain the answer-bearing value when possible.\n"
@@ -143,6 +146,7 @@ class LongMemoryExtractor:
                 location_text = str(item.get("location", "")).strip()
                 value_type = str(item.get("value_type", "")).strip().lower()
                 fact_slot = str(item.get("fact_slot", "")).strip().lower()
+                fact_type = self._normalize_fact_type(str(item.get("fact_type", "")).strip().lower())
                 canonical_fact = str(item.get("canonical_fact", "")).strip()
                 event_text = str(item.get("event_text", "")).strip()
                 raw_span = str(item.get("evidence_span", "")).strip()
@@ -164,6 +168,11 @@ class LongMemoryExtractor:
                         time_text=time_text,
                         location_text=location_text,
                     )
+                value_text = self.m._text.normalize_value_text(
+                    value_text,
+                    fact_slot=fact_slot,
+                    value_type=value_type,
+                )
                 if not canonical_fact:
                     canonical_fact = self._build_canonical_fact(
                         subject=subject,
@@ -208,6 +217,20 @@ class LongMemoryExtractor:
                     time_text=time_text,
                     location_text=location_text,
                 )
+                if not fact_type:
+                    fact_type = self._infer_fact_type(
+                        subject=subject,
+                        action=action,
+                        value_text=value_text,
+                        value_type=value_type,
+                        fact_slot=fact_slot,
+                        time_text=time_text,
+                        location_text=location_text,
+                        keywords=keywords,
+                        event_text=event_text,
+                    )
+                if not fact_type:
+                    fact_type = "episodic_fact"
 
                 if self.m.gating_enabled:
                     accepted, reason, _score = self.m._gate.evaluate(
@@ -280,11 +303,7 @@ class LongMemoryExtractor:
                         "source_model": self.m.extractor_model,
                         "raw_span": raw_span or event_text,
                         "source_content": trimmed,
-                        "fact_type": self.m._classify_fact_type(
-                            action=action,
-                            event_text=event_text,
-                            keywords=keywords,
-                        ),
+                        "fact_type": fact_type,
                     }
                 )
             if out:
@@ -317,6 +336,120 @@ class LongMemoryExtractor:
             return False
         return True
 
+    @staticmethod
+    def _normalize_fact_type(fact_type: str) -> str:
+        value = str(fact_type or "").strip().lower()
+        if value in {"state", "state_fact", "state-fact", "latest", "current"}:
+            return "state_fact"
+        if value in {"episodic", "episodic_fact", "episodic-fact", "event", "fact"}:
+            return "episodic_fact"
+        return ""
+
+    def _infer_fact_type(
+        self,
+        *,
+        subject: str,
+        action: str,
+        value_text: str,
+        value_type: str,
+        fact_slot: str,
+        time_text: str,
+        location_text: str,
+        keywords: List[str],
+        event_text: str,
+    ) -> str:
+        bag = set(self.m._tokenize(action))
+        bag.update(self.m._tokenize(value_text))
+        bag.update(self.m._tokenize(event_text))
+        bag.update({str(x).strip().lower() for x in keywords if str(x).strip()})
+        slot = str(fact_slot or "").strip().lower()
+        vtype = str(value_type or "").strip().lower()
+        state_terms = {
+            "current",
+            "currently",
+            "latest",
+            "now",
+            "own",
+            "owned",
+            "have",
+            "has",
+            "is",
+            "are",
+            "was",
+            "were",
+            "live",
+            "lives",
+            "reside",
+            "resides",
+            "located",
+            "location",
+            "degree",
+            "graduated",
+            "graduate",
+            "graduation",
+            "certification",
+            "certificate",
+            "completed",
+            "finish",
+            "finished",
+            "preference",
+            "prefer",
+            "favorite",
+            "favourite",
+            "best",
+            "score",
+            "ratio",
+            "count",
+            "total",
+            "number",
+            "age",
+            "price",
+            "cost",
+            "weight",
+            "height",
+            "status",
+        }
+        episodic_terms = {
+            "met",
+            "meet",
+            "visited",
+            "visit",
+            "bought",
+            "buy",
+            "traveled",
+            "travel",
+            "went",
+            "go",
+            "called",
+            "sent",
+            "received",
+            "booked",
+            "scheduled",
+            "started",
+            "finished",
+            "planned",
+            "moved",
+            "attended",
+            "walked",
+            "played",
+            "watched",
+            "ate",
+            "had",
+        }
+        if slot in {"count", "location", "time"}:
+            return "state_fact"
+        if vtype in {"number", "location", "time"}:
+            return "state_fact"
+        if bag.intersection(state_terms):
+            return "state_fact"
+        if bag.intersection(episodic_terms):
+            return "episodic_fact"
+        if time_text and location_text:
+            return "episodic_fact"
+        if subject and value_text:
+            return "episodic_fact"
+        return "episodic_fact"
+
     def _span_grounded(self, span: str, content: str) -> bool:
         ratio = self.m._gate.span_overlap_ratio(span, content)
         return ratio >= float(self.m.extractor_span_grounding_min_overlap)
@@ -332,6 +465,41 @@ class LongMemoryExtractor:
             return "text"
         if any(ch.isdigit() for ch in value):
             return "number"
+        number_words = {
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "thirteen",
+            "fourteen",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen",
+            "twenty",
+            "thirty",
+            "forty",
+            "fifty",
+            "sixty",
+            "seventy",
+            "eighty",
+            "ninety",
+            "hundred",
+            "thousand",
+        }
+        for tok in re.findall(r"[a-z]+", value.lower()):
+            if tok in number_words:
+                return "number"
         if len(value.split()) <= 4 and any(ch.isupper() for ch in value):
             return "entity"
         return "text"

@@ -209,7 +209,7 @@ class LongMemoryQueryEngine:
             score += self.m.node_boost_weight
         if query_intent.get("asks_how_many") and has_value and value_type == "number":
             score += self.m.node_boost_weight
-        if query_intent.get("asks_current") and channel == "active":
+        if query_intent.get("asks_current") and channel == "active" and fact_type == "state_fact":
             score += self.m.node_edge_boost_weight
 
         if self.m.temporal_filter_enabled:

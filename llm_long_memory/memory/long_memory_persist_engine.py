@@ -74,6 +74,26 @@ class LongMemoryPersistEngine:
         slot_norm = self._normalize_slot(fact_slot, "", action)
         return f"{subject_norm}|{action_norm}|{slot_norm}".strip("|")
 
+    def _build_episodic_fact_key(
+        self,
+        *,
+        subject: str,
+        action: str,
+        value_text: str,
+        time_text: str,
+        location_text: str,
+        raw_span: str,
+    ) -> str:
+        subject_norm = self.m._normalize_fact_component(subject)
+        action_norm = self.m._normalize_fact_component(action)
+        value_norm = self.m._normalize_fact_component(value_text)
+        time_norm = self.m._normalize_fact_component(time_text)
+        location_norm = self.m._normalize_fact_component(location_text)
+        parts = [x for x in [subject_norm, action_norm, value_norm, time_norm, location_norm] if x]
+        if parts:
+            return "|".join(parts)
+        return self.m._stable_id("fact", raw_span or f"{subject}|{action}|{value_text}")
+
     def _build_skeleton_text(
         self,
         *,
@@ -97,10 +117,6 @@ class LongMemoryPersistEngine:
             value_text=value_text,
             canonical_fact=canonical_fact,
         )
-        if not event_text:
-            self.m._record_reject("empty_event_text")
-            return
-
         keywords = [str(x).strip().lower() for x in list(event.get("keywords", [])) if str(x).strip()]
         time_text = str(event.get("time", "")).strip()
         location_text = str(event.get("location", "")).strip()
@@ -111,7 +127,11 @@ class LongMemoryPersistEngine:
             action,
         )
         role = str(event.get("role", "user")).strip().lower() or "user"
-        fact_type = str(event.get("fact_type", "event")).strip().lower() or "event"
+        fact_type = str(event.get("fact_type", "episodic_fact")).strip().lower() or "episodic_fact"
+        if fact_type in {"state", "state_fact", "state-fact", "latest", "current"}:
+            fact_type = "state_fact"
+        else:
+            fact_type = "episodic_fact"
         confidence = float(event.get("confidence", 0.0) or 0.0)
         source_model = str(event.get("source_model", self.m.extractor_model)).strip()
         raw_span = str(event.get("raw_span", event_text)).strip() or event_text
@@ -131,15 +151,47 @@ class LongMemoryPersistEngine:
                 location_text=location_text,
             )
 
+        value_text = self.m._text.normalize_value_text(
+            value_text,
+            fact_slot=fact_slot,
+            value_type=value_type,
+        )
+        if not canonical_fact:
+            canonical_fact = self._build_skeleton_text(
+                subject=subject,
+                action=action,
+                value_text=value_text,
+                canonical_fact="",
+            )
+        event_text = self._build_skeleton_text(
+            subject=subject,
+            action=action,
+            value_text=value_text,
+            canonical_fact=canonical_fact,
+        )
+        if not event_text:
+            self.m._record_reject("empty_event_text")
+            return
+
         self.m._ingest_event_total += 1
         self.m._ingest_event_accepted += 1
         self.m.current_step += 1
 
-        fact_key = self._build_atomic_fact_key(
-            subject=subject,
-            action=action,
-            fact_slot=fact_slot,
-        ) or self.m._stable_id("fact", event_text)
+        if fact_type == "state_fact":
+            fact_key = self._build_atomic_fact_key(
+                subject=subject,
+                action=action,
+                fact_slot=fact_slot,
+            ) or self.m._stable_id("fact", event_text)
+        else:
+            fact_key = self._build_episodic_fact_key(
+                subject=subject,
+                action=action,
+                value_text=value_text,
+                time_text=time_text,
+                location_text=location_text,
+                raw_span=raw_span,
+            )
         event_id = self.m._stable_id(
             "event",
             "|".join(
@@ -197,25 +249,26 @@ class LongMemoryPersistEngine:
             raw_span=raw_span,
         )
 
-        superseded_ids = self.m.store.supersede_active_by_fact_key(
-            fact_key=fact_key,
-            keep_event_id=event_id,
-            new_value_text=value_text,
-            new_time_text=time_text,
-            new_raw_span=raw_span,
-            min_evidence_overlap=self.m.supersede_min_evidence_overlap,
-            current_step=self.m.current_step,
-        )
-        for old_id in superseded_ids:
-            edge_id = self.m._stable_id("edge", f"{old_id}|{event_id}|updates")
-            self.m.store.insert_edge(
-                edge_id=edge_id,
-                from_event_id=old_id,
-                to_event_id=event_id,
-                relation="updates",
-                weight=1.0,
+        if fact_type == "state_fact":
+            superseded_ids = self.m.store.supersede_active_by_fact_key(
+                fact_key=fact_key,
+                keep_event_id=event_id,
+                new_value_text=value_text,
+                new_time_text=time_text,
+                new_raw_span=raw_span,
+                min_evidence_overlap=self.m.supersede_min_evidence_overlap,
                 current_step=self.m.current_step,
             )
+            for old_id in superseded_ids:
+                edge_id = self.m._stable_id("edge", f"{old_id}|{event_id}|updates")
+                self.m.store.insert_edge(
+                    edge_id=edge_id,
+                    from_event_id=old_id,
+                    to_event_id=event_id,
+                    relation="updates",
+                    weight=1.0,
+                    current_step=self.m.current_step,
+                )
 
         self._insert_detail(event_id=event_id, kind="subject", text=subject)
         self._insert_detail(event_id=event_id, kind="predicate", text=action)
@@ -245,7 +298,8 @@ class LongMemoryPersistEngine:
                 text=source_content[: self.m.context_max_chars_per_item],
             )
 
-        self.link_fact_edges(event_id=event_id, fact_key=fact_key)
+        if fact_type == "state_fact":
+            self.link_fact_edges(event_id=event_id, fact_key=fact_key)
         self.m.store.save_current_step(self.m.current_step)
 
     def _insert_detail(self, *, event_id: str, kind: str, text: str) -> None:

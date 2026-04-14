@@ -661,19 +661,112 @@ class LongMemory:
             safe_embed_fn=self._safe_embed,
         )
 
-    def _classify_fact_type(self, *, action: str, event_text: str, keywords: List[str]) -> str:
-        if not self.fact_filter_enabled:
-            return "event"
+    def _classify_fact_type(
+        self,
+        *,
+        action: str,
+        event_text: str,
+        keywords: List[str],
+        value_type: str = "",
+        fact_slot: str = "",
+        time_text: str = "",
+        location_text: str = "",
+    ) -> str:
         bag = set(self._tokenize(action)) | set(self._tokenize(event_text))
         bag.update({str(x).strip().lower() for x in keywords if str(x).strip()})
-        action_tokens = set(self._tokenize(action))
-        has_fact = bool(bag.intersection(self.fact_filter_fact_keywords))
-        has_hint = bool(bag.intersection(self.fact_filter_hint_keywords))
-        if action_tokens.intersection({"is", "was", "feel", "feels", "felt"}) and has_hint:
-            return "hint"
-        if has_hint and (not has_fact):
-            return "hint"
-        return "event"
+        slot = str(fact_slot).strip().lower()
+        vtype = str(value_type).strip().lower()
+
+        state_terms = {
+            "current",
+            "currently",
+            "latest",
+            "now",
+            "own",
+            "owned",
+            "have",
+            "has",
+            "is",
+            "are",
+            "was",
+            "were",
+            "live",
+            "lives",
+            "reside",
+            "resides",
+            "located",
+            "location",
+            "degree",
+            "graduated",
+            "graduate",
+            "graduation",
+            "certification",
+            "certificate",
+            "completed",
+            "finish",
+            "finished",
+            "preference",
+            "prefer",
+            "favorite",
+            "favourite",
+            "best",
+            "score",
+            "ratio",
+            "count",
+            "total",
+            "number",
+            "age",
+            "price",
+            "cost",
+            "weight",
+            "height",
+            "status",
+        }
+        episodic_terms = {
+            "met",
+            "meet",
+            "visited",
+            "visit",
+            "bought",
+            "buy",
+            "traveled",
+            "travel",
+            "went",
+            "go",
+            "called",
+            "sent",
+            "received",
+            "booked",
+            "scheduled",
+            "started",
+            "finished",
+            "planned",
+            "moved",
+            "attended",
+            "walked",
+            "played",
+            "watched",
+            "ate",
+            "had",
+        }
+        if slot in {"count", "location", "time"}:
+            return "state_fact"
+        if vtype in {"number", "location", "time"}:
+            return "state_fact"
+        if bag.intersection(state_terms):
+            return "state_fact"
+        if bag.intersection(episodic_terms):
+            return "episodic_fact"
+        if time_text and location_text:
+            return "episodic_fact"
+        if self.fact_filter_enabled:
+            has_fact = bool(bag.intersection(self.fact_filter_fact_keywords))
+            has_hint = bool(bag.intersection(self.fact_filter_hint_keywords))
+            if has_fact and (not has_hint):
+                return "state_fact"
+            if has_hint and (not has_fact):
+                return "episodic_fact"
+        return "episodic_fact"
 
     @staticmethod
     def _split_sentences(text: str) -> List[str]:
