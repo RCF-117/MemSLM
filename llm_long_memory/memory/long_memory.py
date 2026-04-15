@@ -75,6 +75,12 @@ class LongMemory:
         self.embedding_fallback_weight = float(
             retrieval_cfg.get("embedding_fallback_weight", self.embedding_weight)
         )
+        self.value_overlap_weight = float(retrieval_cfg.get("value_overlap_weight", 0.0))
+        self.evidence_overlap_weight = float(retrieval_cfg.get("evidence_overlap_weight", 0.0))
+        self.value_overlap_min_tokens = int(retrieval_cfg.get("value_overlap_min_tokens", 1))
+        self.evidence_overlap_min_tokens = int(
+            retrieval_cfg.get("evidence_overlap_min_tokens", 1)
+        )
         self.temporal_filter_enabled = bool(retrieval_cfg.get("temporal_filter_enabled", True))
         self.temporal_query_time_boost = float(retrieval_cfg.get("temporal_query_time_boost", 1.15))
         self.temporal_query_no_time_penalty = float(
@@ -138,6 +144,17 @@ class LongMemory:
         self.offline_assistant_signal_threshold = float(
             offline_graph_cfg.get("assistant_signal_threshold", 0.45)
         )
+        self.offline_assistant_hard_filter_enabled = bool(
+            offline_graph_cfg.get("assistant_hard_filter_enabled", False)
+        )
+        self.offline_assistant_hard_filter_when_user_exists = bool(
+            offline_graph_cfg.get("assistant_hard_filter_when_user_exists", True)
+        )
+        self.offline_assistant_answer_cue_keywords = {
+            str(x).strip().lower()
+            for x in list(offline_graph_cfg.get("assistant_answer_cue_keywords", []))
+            if str(x).strip()
+        }
         self.offline_adaptive_top_chunks_enabled = bool(
             offline_graph_cfg.get("adaptive_top_chunks_enabled", True)
         )
@@ -1157,6 +1174,14 @@ class LongMemory:
             score += 0.15
         return min(1.0, score)
 
+    def _source_item_has_answer_cue(self, text: str) -> bool:
+        lowered = str(text).strip().lower()
+        if not lowered:
+            return False
+        if re.search(r"\b\d+\b", lowered):
+            return True
+        return any(tok in lowered for tok in self.offline_assistant_answer_cue_keywords)
+
     def _prioritize_source_items(self, source_items: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Prefer user evidence and cap assistant/system noise in a configurable, generic way."""
         if (not self.offline_user_priority_enabled) or (not source_items):
@@ -1192,6 +1217,19 @@ class LongMemory:
             )
             max_assistant = max(max_assistant, high_signal_count)
             assistants = [item for _score, item in scored_assistants]
+            if self.offline_assistant_hard_filter_enabled and (
+                (not self.offline_assistant_hard_filter_when_user_exists) or len(users) > 0
+            ):
+                filtered_assistants: List[Dict[str, str]] = []
+                for item in assistants:
+                    text = str(item.get("text", ""))
+                    signal = self._source_item_signal_score(text)
+                    if signal >= float(self.offline_assistant_signal_threshold):
+                        filtered_assistants.append(item)
+                        continue
+                    if self._source_item_has_answer_cue(text):
+                        filtered_assistants.append(item)
+                assistants = filtered_assistants
 
         prioritized: List[Dict[str, str]] = []
         prioritized.extend(users)

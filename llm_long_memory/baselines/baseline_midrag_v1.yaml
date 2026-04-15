@@ -83,6 +83,10 @@ memory:
       use_embedding: true
       lexical_weight: 0.4
       embedding_weight: 0.5
+      value_overlap_weight: 0.2
+      evidence_overlap_weight: 0.15
+      value_overlap_min_tokens: 1
+      evidence_overlap_min_tokens: 1
       recency_weight: 0.1
     query_rewrite:
       enabled: true

@@ -65,20 +65,20 @@ class LongMemoryExtractor:
 
     def _build_prompt(self, trimmed: str) -> str:
         return (
-            "Task: extract atomic factual memories from one message.\n"
+            "Task: extract answer-bearing atomic facts from one message.\n"
             "Output: JSON only, valid UTF-8, no markdown.\n"
             "Schema (strict):\n"
             '{"events":[{"subject":"","action":"","value":"","time":"","location":"","evidence_span":"","fact_type":"state_fact|episodic_fact","confidence":0.0}]}\n'
             "Hard rules:\n"
-            "- Extract stable answer-bearing facts, not generic topics.\n"
-            "- A single message may yield multiple events; extract each distinct answer-bearing fact as a separate event, even if they are independent or only loosely related.\n"
+            "- Extract answer-bearing facts, not generic summaries.\n"
+            "- A single message may yield multiple events; return all distinct answer-bearing facts.\n"
+            "- Keep each event atomic: one subject-action-value triple per event.\n"
             "- Prefer names, counts, owned items, locations, certifications, dates, preferences, updates, and completed actions.\n"
             "- Use fact_type=state_fact for stable facts that may update over time, such as counts, ownership, locations, certifications, current status, preferences, scores, ratios, and latest values.\n"
             "- Use fact_type=episodic_fact for one-off happenings, meetings, visits, actions, and comparisons that should coexist rather than overwrite each other.\n"
             "- Exclude pure chitchat, instructions, meta statements, or vague summaries.\n"
-            "- Prefer the most answer-bearing fact in each sentence window.\n"
-            "- value should contain the answer-bearing value when possible.\n"
-            "- evidence_span must be a short exact quote from the message.\n"
+            "- value should be the exact answer-bearing value phrase from the message whenever possible.\n"
+            "- evidence_span must be an exact quote from the message (no paraphrase).\n"
             "- confidence is optional but should be in [0,1] when present.\n"
             "- If no event, return {\"events\":[]}.\n"
             f"Max events: {self.m.extractor_max_events_per_message}\n"
@@ -292,6 +292,8 @@ class LongMemoryExtractor:
                         "action": action,
                         "object": value_text,
                         "value": value_text,
+                        "raw_value": str(item.get("value", item.get("object", ""))).strip()
+                        or value_text,
                         "value_type": value_type,
                         "fact_slot": fact_slot,
                         "canonical_fact": canonical_fact or event_text,
@@ -303,6 +305,7 @@ class LongMemoryExtractor:
                         "role": role,
                         "source_model": self.m.extractor_model,
                         "raw_span": raw_span or event_text,
+                        "answer_span_raw": raw_span or event_text,
                         "source_content": trimmed,
                         "fact_type": fact_type,
                     }

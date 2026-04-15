@@ -49,6 +49,38 @@ class LongMemoryPersistEngine:
             return "duration"
         return "unknown"
 
+    @staticmethod
+    def _normalize_space(text: str) -> str:
+        return " ".join(str(text or "").split()).strip()
+
+    def _extract_numeric_value(self, value_text: str) -> str:
+        value = str(value_text or "").strip()
+        if not value:
+            return ""
+        match = re.search(r"[-+]?\d+(?:\.\d+)?", value)
+        if match:
+            return str(match.group(0))
+        word_to_num = {
+            "zero": "0",
+            "one": "1",
+            "two": "2",
+            "three": "3",
+            "four": "4",
+            "five": "5",
+            "six": "6",
+            "seven": "7",
+            "eight": "8",
+            "nine": "9",
+            "ten": "10",
+            "eleven": "11",
+            "twelve": "12",
+        }
+        low = value.lower()
+        for word, num in word_to_num.items():
+            if re.search(rf"\b{word}\b", low):
+                return num
+        return ""
+
     def _normalize_slot(self, fact_slot: str, value_type: str, action: str) -> str:
         slot = self.m._normalize_fact_component(fact_slot)
         if slot:
@@ -109,6 +141,7 @@ class LongMemoryPersistEngine:
     def persist_event(self, event: Dict[str, Any]) -> None:
         subject = str(event.get("subject", "")).strip()
         action = str(event.get("action", "")).strip()
+        raw_value = str(event.get("raw_value", event.get("value", event.get("object", "")))).strip()
         value_text = str(event.get("value", event.get("object", ""))).strip()
         canonical_fact = str(event.get("canonical_fact", event.get("event_text", ""))).strip()
         event_text = self._build_skeleton_text(
@@ -135,6 +168,11 @@ class LongMemoryPersistEngine:
         confidence = float(event.get("confidence", 0.0) or 0.0)
         source_model = str(event.get("source_model", self.m.extractor_model)).strip()
         raw_span = str(event.get("raw_span", event_text)).strip() or event_text
+        answer_span_raw = (
+            str(event.get("answer_span_raw", "")).strip()
+            or raw_span
+            or event_text
+        )
         source_content = str(event.get("source_content", "")).strip()
         source_date = str(event.get("source_date", "")).strip()
 
@@ -156,6 +194,8 @@ class LongMemoryPersistEngine:
             fact_slot=fact_slot,
             value_type=value_type,
         )
+        value_text_norm = self._normalize_space(value_text).lower()
+        value_num_norm = self._extract_numeric_value(value_text)
         if not canonical_fact:
             canonical_fact = self._build_skeleton_text(
                 subject=subject,
@@ -272,11 +312,16 @@ class LongMemoryPersistEngine:
 
         self._insert_detail(event_id=event_id, kind="subject", text=subject)
         self._insert_detail(event_id=event_id, kind="predicate", text=action)
+        self._insert_detail(event_id=event_id, kind="raw_value", text=raw_value)
         self._insert_detail(event_id=event_id, kind="value", text=value_text)
+        self._insert_detail(event_id=event_id, kind="value_norm", text=value_text_norm)
+        if value_num_norm:
+            self._insert_detail(event_id=event_id, kind="value_number", text=value_num_norm)
         self._insert_detail(event_id=event_id, kind="value_type", text=value_type)
         self._insert_detail(event_id=event_id, kind="fact_slot", text=fact_slot)
         self._insert_detail(event_id=event_id, kind="canonical_fact", text=canonical_fact or event_text)
         self._insert_detail(event_id=event_id, kind="evidence", text=raw_span)
+        self._insert_detail(event_id=event_id, kind="answer_span_raw", text=answer_span_raw)
         self._insert_detail(event_id=event_id, kind="source_model", text=source_model)
         if location_text:
             self._insert_detail(event_id=event_id, kind="location", text=location_text)
@@ -286,6 +331,8 @@ class LongMemoryPersistEngine:
             if time_vals:
                 self._insert_detail(event_id=event_id, kind="time_start", text=time_vals[0])
                 self._insert_detail(event_id=event_id, kind="time_end", text=time_vals[-1])
+                for token in time_vals:
+                    self._insert_detail(event_id=event_id, kind="time_norm_token", text=token)
             granularity = self._infer_time_granularity(time_text)
             if granularity:
                 self._insert_detail(event_id=event_id, kind="time_granularity", text=granularity)

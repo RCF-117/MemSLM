@@ -183,6 +183,22 @@ class LongMemoryQueryEngine:
         )
         corpus = set(keywords) | set(self.m._tokenize(semantic_text))
         overlap_count, keyword_score = self.m._keyword_overlap_features(q_tokens, corpus)
+        value_text = " ".join(detail_idx.get("value", []) + detail_idx.get("value_norm", []))
+        evidence_text = " ".join(
+            detail_idx.get("answer_span_raw", [])
+            + detail_idx.get("evidence", [])
+            + detail_idx.get("raw_value", [])
+        )
+        value_tokens = set(self.m._tokenize(value_text))
+        evidence_tokens = set(self.m._tokenize(evidence_text))
+        value_overlap_count = len(q_tokens.intersection(value_tokens))
+        evidence_overlap_count = len(q_tokens.intersection(evidence_tokens))
+        value_overlap_score = (
+            float(value_overlap_count) / float(max(1, len(q_tokens))) if q_tokens else 0.0
+        )
+        evidence_overlap_score = (
+            float(evidence_overlap_count) / float(max(1, len(q_tokens))) if q_tokens else 0.0
+        )
         emb_score = self.m._cosine(q_emb, self.m.store.blob_to_arr(row["skeleton_embedding"]))
 
         delta = max(0, self.m.current_step - int(row["last_seen_step"] or 0))
@@ -198,6 +214,10 @@ class LongMemoryQueryEngine:
                 self.m.embedding_fallback_weight * emb_score
                 + self.m.recency_weight * recency
             )
+        if value_overlap_count >= int(self.m.value_overlap_min_tokens):
+            score += float(self.m.value_overlap_weight) * float(value_overlap_score)
+        if evidence_overlap_count >= int(self.m.evidence_overlap_min_tokens):
+            score += float(self.m.evidence_overlap_weight) * float(evidence_overlap_score)
 
         value_type = (detail_idx.get("value_type", []) or [""])[0].strip().lower()
         has_location = bool(detail_idx.get("location", []) or node_texts.get("location", []))
