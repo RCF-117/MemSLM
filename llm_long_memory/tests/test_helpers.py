@@ -53,8 +53,6 @@ class TestHelpers(unittest.TestCase):
                 evidence_top_n_sentences: 5
                 evidence_sentence_max_chars: 200
                 candidate_top_n: 3
-                short_circuit_enabled: false
-                short_circuit_min_sentence_score: 0.5
                 llm_fallback_to_top_candidate: true
                 fallback_min_score: 0.5
                 response_evidence_min_token_overlap: 0.5

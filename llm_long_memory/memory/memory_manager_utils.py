@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Set
 
-from llm_long_memory.memory.answering_temporal import extract_choice_options
+from llm_long_memory.memory.answering_temporal import extract_choice_options, parse_choice_query
 
 
 def dedup_chunks_keep_best(chunks: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -51,7 +51,14 @@ def build_temporal_anchor_queries(
         not is_temporal_query(query, temporal_anchor_cue_keywords)
     ):
         return []
-    options = extract_choice_options(query, max_options=max(2, temporal_anchor_max_options))
+    parsed = parse_choice_query(
+        query,
+        max_options=max(2, temporal_anchor_max_options),
+        default_target_k=temporal_anchor_max_options,
+    )
+    options = parsed if parsed is not None else extract_choice_options(
+        query, max_options=max(2, temporal_anchor_max_options)
+    )
     out: List[str] = []
     seen: Set[str] = set()
     for opt in options[: max(1, temporal_anchor_max_options)]:
@@ -97,43 +104,4 @@ def merge_anchor_chunks(
         if added >= additive_limit:
             break
     return dedup_chunks_keep_best(merged)
-
-
-def build_recent_context(
-    short_messages: List[Dict[str, str]],
-    prompt_recent_max_messages: int,
-) -> str:
-    """Serialize recent short-memory context for final prompt."""
-    recent_messages = list(short_messages)
-    if prompt_recent_max_messages > 0:
-        recent_messages = recent_messages[-prompt_recent_max_messages:]
-    return "\n".join(
-        f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in recent_messages
-    )
-
-
-def build_prompt_eval_chunks(
-    generation_context: str, evidence_sentences: List[Dict[str, object]]
-) -> List[Dict[str, str]]:
-    """Build eval chunks grounded to final generation context and evidence snippets."""
-    out: List[Dict[str, str]] = []
-    if generation_context.strip():
-        out.append({"text": generation_context})
-    out.extend(
-        {"text": str(item.get("text", ""))}
-        for item in evidence_sentences
-        if str(item.get("text", "")).strip()
-    )
-    return out
-
-
-def build_evidence_only_eval_chunks(
-    evidence_sentences: List[Dict[str, object]],
-) -> List[Dict[str, str]]:
-    """Build eval chunks containing only extracted evidence snippets."""
-    return [
-        {"text": str(item.get("text", ""))}
-        for item in evidence_sentences
-        if str(item.get("text", "")).strip()
-    ]
 

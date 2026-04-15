@@ -10,9 +10,6 @@ from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
 from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
 from llm_long_memory.memory.memory_manager_utils import (
-    build_evidence_only_eval_chunks,
-    build_prompt_eval_chunks,
-    build_recent_context,
     build_temporal_anchor_queries,
     dedup_chunks_keep_best,
     is_temporal_query,
@@ -126,36 +123,16 @@ class MemoryManager:
         )
         answering_cfg = dict(self.config["retrieval"]["answering"])
         self.answering = AnsweringPipeline(answering_cfg)
-        self.refiner_enabled = bool(answering_cfg.get("refiner_enabled", False))
-        self.refiner_model = str(answering_cfg.get("refiner_model", "qwen3:4b"))
-        self.refiner_top_chunks = int(answering_cfg.get("refiner_top_chunks", 6))
-        self.refiner_max_chars_per_chunk = int(
-            answering_cfg.get("refiner_max_chars_per_chunk", 280)
-        )
-        self.refiner_output_items = int(answering_cfg.get("refiner_output_items", 6))
-        self.refiner_llm: Optional[LLM] = None
-        if self.refiner_enabled:
-            self.refiner_llm = LLM(model_name=self.refiner_model)
         self.graph_refiner_enabled = bool(answering_cfg.get("graph_refiner_enabled", False))
         self.graph_context_from_store_enabled = bool(
             answering_cfg.get("graph_context_from_store_enabled", False)
         )
-        self.graph_refiner_top_chunks = int(answering_cfg.get("graph_refiner_top_chunks", 6))
-        self.graph_refiner_chunk_max_chars = int(
-            answering_cfg.get("graph_refiner_chunk_max_chars", 260)
-        )
-        self.graph_refiner_top_events = int(answering_cfg.get("graph_refiner_top_events", 6))
         offline_graph_cfg = dict(self.config["memory"]["long_memory"].get("offline_graph", {}))
         self.offline_graph_build_enabled = bool(offline_graph_cfg.get("enabled", False))
         self.offline_graph_build_top_chunks = int(offline_graph_cfg.get("build_top_chunks", 6))
         self.offline_graph_build_chunk_max_chars = int(
             offline_graph_cfg.get("build_chunk_max_chars", 260)
         )
-
-        self.prompt_context_max_chunks = int(answering_cfg["prompt_context_max_chunks"])
-        self.prompt_context_max_chars_per_chunk = int(answering_cfg["prompt_context_max_chars_per_chunk"])
-        self.prompt_context_max_total_chars = int(answering_cfg["prompt_context_max_total_chars"])
-        self.prompt_recent_max_messages = int(answering_cfg["prompt_recent_max_messages"])
 
         temporal_anchor_cfg = dict(self.config["retrieval"].get("temporal_anchor_retrieval", {}))
         self.temporal_anchor_enabled = bool(temporal_anchor_cfg.get("enabled", False))
@@ -456,35 +433,23 @@ class MemoryManager:
         logger.info(f"MemoryManager.chat: user input='{input_text}'")
         query = retrieval_query if retrieval_query is not None else input_text
         (
-            retrieved_context,
-            topics,
+            _topics,
             chunks,
             evidence_sentences,
             candidates,
-            option_evidence_chains,
+            fallback_answer,
             evidence_candidate,
             best_evidence,
             best_candidate,
         ) = self._prepare_answer_inputs(query, precomputed_context)
-        fast_answer = self._try_fast_paths(
-            input_text=input_text,
-            query=query,
-            chunks=chunks,
-            evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
-            evidence_candidate=evidence_candidate,
-        )
-        if fast_answer is not None:
-            return fast_answer
 
         prompt_text = self._build_generation_prompt(
             input_text=input_text,
-            retrieved_context=retrieved_context,
             chunks=chunks,
-            evidence_sentences=evidence_sentences,
             candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
+            best_evidence=best_evidence,
+            fallback_answer=fallback_answer,
+            evidence_candidate=evidence_candidate,
         )
         ai_response, fallback_path, not_found_reason = self._generate_with_fallback(
             input_text=input_text,
@@ -492,7 +457,7 @@ class MemoryManager:
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
+            fallback_answer=fallback_answer,
             evidence_candidate=evidence_candidate,
         )
         logger.info(
@@ -501,6 +466,7 @@ class MemoryManager:
             f"not_found_reason={not_found_reason or 'none'}, "
             f"best_evidence='{best_evidence}', "
             f"best_candidate='{best_candidate}', "
+            f"fallback_answer='{fallback_answer}', "
             f"evidence_candidate='{(evidence_candidate or {}).get('answer', '')}'."
         )
         logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
@@ -512,12 +478,10 @@ class MemoryManager:
         query: str,
         precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]],
     ) -> Tuple[
+        List[Dict[str, object]],
+        List[Dict[str, object]],
+        List[Dict[str, object]],
         str,
-        List[Dict[str, object]],
-        List[Dict[str, object]],
-        List[Dict[str, object]],
-        List[Dict[str, object]],
-        Optional[Dict[str, object]],
         Optional[Dict[str, str]],
         str,
         str,
@@ -527,59 +491,42 @@ class MemoryManager:
             precomputed_context=precomputed_context,
         )
 
-    def _set_prompt_eval_chunks(self, generation_context: str, evidence_sentences: List[Dict[str, object]]) -> None:
-        self.last_prompt_eval_chunks = build_prompt_eval_chunks(
-            generation_context,
-            evidence_sentences,
-        )
-
-    def _set_evidence_only_eval_chunks(self, evidence_sentences: List[Dict[str, object]]) -> None:
-        self.last_prompt_eval_chunks = build_evidence_only_eval_chunks(evidence_sentences)
-
-    def _try_fast_paths(
-        self,
-        *,
-        input_text: str,
-        query: str,
-        chunks: List[Dict[str, object]],
-        evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]],
-        evidence_candidate: Optional[Dict[str, str]],
-    ) -> Optional[str]:
-        return self.chat_runtime.try_fast_paths(
-            input_text=input_text,
-            query=query,
-            chunks=chunks,
-            evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
-            evidence_candidate=evidence_candidate,
-        )
-
-    def _build_recent_context(self) -> str:
-        return build_recent_context(
-            self.short_memory.get(),
-            self.prompt_recent_max_messages,
-        )
+    def _set_prompt_eval_chunks(
+        self, generation_context: List[Dict[str, str]] | str
+    ) -> None:
+        if isinstance(generation_context, str):
+            text = str(generation_context).strip()
+            self.last_prompt_eval_chunks = [{"section": "prompt", "text": text}] if text else []
+            return
+        sections: List[Dict[str, str]] = []
+        for item in generation_context:
+            section = str(item.get("section", "")).strip()
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            payload = {"text": text}
+            if section:
+                payload["section"] = section
+            sections.append(payload)
+        self.last_prompt_eval_chunks = sections
 
     def _build_generation_prompt(
         self,
         *,
         input_text: str,
-        retrieved_context: str,
         chunks: List[Dict[str, object]],
-        evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]],
+        best_evidence: str,
+        fallback_answer: str,
+        evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
         return self.chat_runtime.build_generation_prompt(
             input_text=input_text,
-            retrieved_context=retrieved_context,
             chunks=chunks,
-            evidence_sentences=evidence_sentences,
             candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
+            best_evidence=best_evidence,
+            fallback_answer=fallback_answer,
+            evidence_candidate=evidence_candidate,
         )
 
     def _build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
@@ -650,9 +597,6 @@ class MemoryManager:
         )
         return retry_accepted
 
-    def _build_refined_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
-        return self.chat_runtime.build_refined_context(query, chunks)
-
     def _generate_with_fallback(
         self,
         *,
@@ -661,7 +605,7 @@ class MemoryManager:
         prompt_text: str,
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]],
+        fallback_answer: str,
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
         return self.chat_runtime.generate_with_fallback(
@@ -670,13 +614,19 @@ class MemoryManager:
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
+            fallback_answer=fallback_answer,
             evidence_candidate=evidence_candidate,
         )
 
     def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
         """Return prompt-grounded chunks used by the most recent chat call."""
-        return [{"text": str(item.get("text", ""))} for item in self.last_prompt_eval_chunks]
+        return [
+            {
+                "section": str(item.get("section", "")),
+                "text": str(item.get("text", "")),
+            }
+            for item in self.last_prompt_eval_chunks
+        ]
 
     def close(self) -> None:
         """Close owned resources."""

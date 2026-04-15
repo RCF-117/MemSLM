@@ -28,6 +28,7 @@ from llm_long_memory.memory.long_memory_pack_utils import build_evidence_packs
 from llm_long_memory.memory.long_memory_persist_engine import LongMemoryPersistEngine
 from llm_long_memory.memory.long_memory_store import LongMemoryStore
 from llm_long_memory.memory.long_memory_text_utils import LongMemoryTextUtils
+from llm_long_memory.memory.memory_manager_utils import dedup_chunks_keep_best
 from llm_long_memory.utils.embedding import embed
 from llm_long_memory.utils.helpers import load_config
 from llm_long_memory.utils.logger import logger
@@ -346,8 +347,8 @@ class LongMemory:
         self._extractor_retry_compact = 0
         self.staging_enabled = bool(self.cfg.get("staging_enabled", True))
 
-        self.query_rewrite_enabled = False
-        self.query_rewrite_max = 0
+        self.query_rewrite_enabled = bool(self.cfg.get("query_rewrite_enabled", False))
+        self.query_rewrite_max = max(0, int(self.cfg.get("query_rewrite_max", 2)))
 
         self.store = LongMemoryStore(
             database_file=str(self.cfg["database_file"]),
@@ -374,6 +375,10 @@ class LongMemory:
     @staticmethod
     def _sentence_feature_score(text: str) -> float:
         return sentence_feature_score(text)
+
+    @staticmethod
+    def _dedup_chunks_keep_best(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return dedup_chunks_keep_best(chunks)
 
     def _build_evidence_packs(self, texts: List[str], max_chars: int) -> List[str]:
         return build_evidence_packs(
@@ -1218,7 +1223,25 @@ class LongMemory:
                 break
             keep += 1
 
-        return ranked[:keep]
+        chosen = ranked[:keep]
+        tail_budget = min(2, max(1, keep // 4))
+        if tail_budget > 0 and keep < len(ranked):
+            tail_candidates: List[tuple[float, float, Dict[str, Any]]] = []
+            for item in ranked[keep:]:
+                text = str(item.get("text", "")).strip()
+                if not text:
+                    continue
+                signal = self._source_item_signal_score(text)
+                # Pull in only a tiny tail of high-signal chunks so that
+                # answer-bearing lower-ranked chunks can still enter extraction.
+                if signal < 0.30:
+                    continue
+                tail_candidates.append((signal, float(item.get("score", 0.0)), item))
+            tail_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            for _signal, _score, item in tail_candidates[:tail_budget]:
+                chosen.append(dict(item))
+
+        return self._dedup_chunks_keep_best(chosen)
 
     def _persist_event(self, event: Dict[str, Any]) -> None:
         self._persist_engine.persist_event(event)

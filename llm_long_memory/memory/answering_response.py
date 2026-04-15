@@ -55,68 +55,36 @@ class AnswerResponseHandler:
     def build_answer_prompt(
         self,
         input_text: str,
-        retrieved_context: str,
-        recent_context: str,
-        evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]] = None,
+        graph_context: str,
+        rag_evidence: str = "",
+        fallback_answer: str = "",
     ) -> str:
-        evidence_text = "\n".join(
-            f"- {str(item.get('text', ''))}" for item in evidence_sentences
-        )
-        candidate_text = "\n".join(
-            f"- {str(item.get('text', ''))} (score={float(item.get('score', 0.0)):.2f})"
-            for item in candidates
-        )
+        graph_text = self._normalize_space(graph_context).strip()
+        if not graph_text:
+            graph_text = "None"
+        rag_text = self._normalize_space(rag_evidence).strip()
+        if not rag_text:
+            rag_text = "None"
+        fallback_text = self._normalize_space(fallback_answer).strip()
+        if not fallback_text:
+            fallback_text = "None"
         rules = (
-            "Answer using only the retrieved context and evidence sentences.\n"
-            "If the answer is not in the evidence, say exactly: Not found in retrieved context.\n"
+            "Use Graph Evidence first.\n"
+            "If Graph Evidence is weak or empty, use the Fallback Answer as the compact backup clue.\n"
+            "Do not repeat long evidence blocks.\n"
+            "Do not say Not found unless both Graph Evidence and the fallback cues are insufficient.\n"
             "Keep key qualifiers (for example: each way, round trip, per day).\n"
-            "Final answer must be answer of query.\n"
             "Return only the final answer."
             if self.answer_context_only
             else "Return only the final answer."
         )
-        option_block = ""
-        if option_evidence_chains is not None:
-            parts: List[str] = []
-            target_k = int(option_evidence_chains.get("selection_target_k", 1))
-            parts.append(f"selection_target_k={target_k}")
-            for row in list(option_evidence_chains.get("options", [])):
-                if not isinstance(row, dict):
-                    continue
-                option = str(row.get("option", ""))
-                parts.append(f"\nOption: {option}")
-                time_items = list(row.get("time_evidence", []))
-                other_items = list(row.get("other_evidence", []))
-                cand_items = list(row.get("candidates", []))
-                parts.append("  Time Evidence:")
-                for item in time_items:
-                    text = str(item.get("text", ""))
-                    date = str(item.get("date", ""))
-                    score = float(item.get("score", 0.0))
-                    parts.append(f"  - [{date}] {text} (score={score:.3f})")
-                parts.append("  Other Evidence:")
-                for item in other_items:
-                    text = str(item.get("text", ""))
-                    score = float(item.get("score", 0.0))
-                    parts.append(f"  - {text} (score={score:.3f})")
-                parts.append("  Option Candidates:")
-                for item in cand_items:
-                    text = str(item.get("text", ""))
-                    score = float(item.get("score", 0.0))
-                    parts.append(f"  - {text} (score={score:.3f})")
-            option_block = "\n\n[Option Evidence Chains]\n" + "\n".join(parts)
         return (
-            "[Retrieved Context]\n"
-            f"{retrieved_context}\n\n"
-            "[Evidence Sentences]\n"
-            f"{evidence_text}\n\n"
-            "[Candidate Answers]\n"
-            f"{candidate_text}\n\n"
-            f"{option_block}\n\n"
-            "[Recent Context]\n"
-            f"{recent_context}\n\n"
+            "[Graph Evidence]\n"
+            f"{graph_text}\n\n"
+            "[RAG Evidence]\n"
+            f"{rag_text}\n\n"
+            "[Fallback Answer]\n"
+            f"{fallback_text}\n\n"
             "[Answer Rules]\n"
             f"{rules}\n\n"
             f"User: {input_text}"
@@ -160,14 +128,22 @@ class AnswerResponseHandler:
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]] = None,
+        fallback_answer: Optional[str] = None,
     ) -> Dict[str, str]:
         if not self.answer_context_only:
             return {"response": response, "fallback_path": "context_free"}
         top_evidence_score = (
             float(evidence_sentences[0].get("score", 0.0)) if evidence_sentences else 0.0
         )
+        fallback_text = self._normalize_space(str(fallback_answer or "")).strip()
         normalized_response = self._normalize_space(response).lower()
         if normalized_response == "not found in retrieved context.":
+            if fallback_text:
+                return {
+                    "response": fallback_text,
+                    "fallback_path": "fallback_to_reasoning_fallback",
+                    "not_found_reason": "reasoning_fallback_available",
+                }
             if (
                 self.not_found_force_evidence_candidate_when_available
                 and evidence_candidate is not None
@@ -216,6 +192,12 @@ class AnswerResponseHandler:
                             "fallback_path": "compress_supported_response_to_evidence_candidate",
                         }
             return {"response": response, "fallback_path": "llm_supported_by_evidence"}
+        if fallback_text:
+            return {
+                "response": fallback_text,
+                "fallback_path": "fallback_to_reasoning_fallback",
+                "not_found_reason": "reasoning_fallback_used_for_unsupported_response",
+            }
         if self.second_pass_use_evidence_candidate and evidence_candidate is not None:
             return {
                 "response": evidence_candidate["answer"],
@@ -236,37 +218,27 @@ class AnswerResponseHandler:
 
     def build_second_pass_prompt(
         self,
-        input_text: str,
-        evidence_sentences: List[Dict[str, object]],
+        prompt_text: str,
         evidence_candidate: Optional[Dict[str, str]],
-        option_evidence_chains: Optional[Dict[str, object]] = None,
     ) -> str:
-        evidence_text = "\n".join(f"- {str(item.get('text', ''))}" for item in evidence_sentences)
         candidate_text = (
             str(evidence_candidate.get("answer", "")) if evidence_candidate is not None else ""
         )
         guidance = (
-            "You must answer using only the evidence sentences.\n"
-            "Do not say Not found unless evidence is empty.\n"
-            "Prefer the shortest exact phrase from evidence.\n"
+            "Re-check the same compact prompt.\n"
+            "Use the Graph Evidence and Fallback Answer if available.\n"
+            "Do not say Not found unless both are insufficient.\n"
+            "Prefer the shortest exact phrase from the fallback cues.\n"
             "Return only the final answer."
         )
         if candidate_text:
             guidance += f"\nPreferred evidence candidate: {candidate_text}"
-        option_block = ""
-        if option_evidence_chains is not None:
-            option_block = (
-                "\n[Option Evidence Chains]\n"
-                + str(option_evidence_chains)
-                + "\n"
-            )
         return (
-            "[Evidence Sentences]\n"
-            f"{evidence_text}\n\n"
-            f"{option_block}"
+            "[Original Prompt]\n"
+            f"{prompt_text}\n\n"
             "[Rules]\n"
             f"{guidance}\n\n"
-            f"Question: {input_text}"
+            "Question: Re-check the answer above."
         )
 
     def postprocess_final_answer(

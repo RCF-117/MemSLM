@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from llm_long_memory.memory.prompt_context import PromptContextLimits, build_generation_context
 from llm_long_memory.utils.logger import logger
 
 
@@ -22,130 +21,94 @@ class MemoryManagerChatRuntime:
             Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]
         ],
     ) -> Tuple[
+        List[Dict[str, object]],
+        List[Dict[str, object]],
+        List[Dict[str, object]],
         str,
-        List[Dict[str, object]],
-        List[Dict[str, object]],
-        List[Dict[str, object]],
-        List[Dict[str, object]],
-        Optional[Dict[str, object]],
         Optional[Dict[str, str]],
         str,
         str,
     ]:
         if precomputed_context is not None:
-            retrieved_context, topics, chunks = precomputed_context
+            _, topics, chunks = precomputed_context
         else:
-            retrieved_context, topics, chunks = self.m.retrieve_context(query)
+            _, topics, chunks = self.m.retrieve_context(query)
         retrieved_ids = [str(topic["topic_id"]) for topic in topics]
         logger.info(f"MemoryManager.chat: retrieved topics={retrieved_ids}")
 
         evidence_sentences = self.m.answering.collect_evidence_sentences(query, chunks)
         candidates = self.m.answering.extract_candidates(query, evidence_sentences)
-        option_evidence_chains = self.m.answering.build_option_evidence_chains(
+        self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
+        fallback_answer = self.m.answering.resolve_fallback_answer(
             query,
             evidence_sentences,
             candidates,
+            chunks,
         )
-        self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
         evidence_candidate = self.m.answering.extract_evidence_candidate(
             query, evidence_sentences, candidates
         )
         best_evidence = str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
         best_candidate = str(candidates[0].get("text", "")) if candidates else ""
         return (
-            retrieved_context,
             topics,
             chunks,
             evidence_sentences,
             candidates,
-            option_evidence_chains,
+            fallback_answer,
             evidence_candidate,
             best_evidence,
             best_candidate,
         )
 
-    def try_fast_paths(
-        self,
-        *,
-        input_text: str,
-        query: str,
-        chunks: List[Dict[str, object]],
-        evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]],
-        evidence_candidate: Optional[Dict[str, str]],
-    ) -> Optional[str]:
-        decided = self.m.answering.decide_answer(
-            query,
-            evidence_sentences,
-            candidates,
-            reranked_chunks=chunks,
-            option_evidence_chains=option_evidence_chains,
-        )
-        if decided is not None:
-            final = str(decided.get("answer", "")).strip()
-            reason = str(decided.get("reason", "deterministic"))
-            if final:
-                final = self.m.answering.postprocess_final_answer(
-                    final, query, evidence_candidate=evidence_candidate
-                )
-                self.m._set_evidence_only_eval_chunks(evidence_sentences)
-                logger.info(
-                    "MemoryManager.chat: deterministic decision "
-                    f"(reason={reason}, answer='{final}')."
-                )
-                self.m._record_turn(input_text, final)
-                return final
-
-        short_answer = self.m.answering.maybe_short_circuit(candidates, evidence_sentences)
-        if short_answer is not None:
-            self.m._set_evidence_only_eval_chunks(evidence_sentences)
-            top_score = f"{float(candidates[0]['score']):.4f}" if candidates else "n/a"
-            logger.info(
-                "MemoryManager.chat: short-circuit answer from extracted candidates "
-                f"(candidate='{short_answer}', score={top_score})."
-            )
-            self.m._record_turn(input_text, short_answer)
-            return short_answer
-        return None
-
     def build_generation_prompt(
         self,
         *,
         input_text: str,
-        retrieved_context: str,
         chunks: List[Dict[str, object]],
-        evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]],
+        best_evidence: str,
+        fallback_answer: str,
+        evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
-        recent_context = self.m._build_recent_context()
         graph_context = self.build_graph_context(query=input_text, chunks=chunks)
-        refined_context = self.build_refined_context(query=input_text, chunks=chunks)
-        fallback_context = refined_context if refined_context else retrieved_context
-        if graph_context:
-            fallback_context = (
-                f"{graph_context}\n\n{fallback_context}" if fallback_context else graph_context
-            )
-        generation_context = build_generation_context(
-            reranked_chunks=chunks,
-            evidence_sentences=evidence_sentences,
-            fallback_context=fallback_context,
-            limits=PromptContextLimits(
-                max_chunks=self.m.prompt_context_max_chunks,
-                max_chars_per_chunk=self.m.prompt_context_max_chars_per_chunk,
-                max_total_chars=self.m.prompt_context_max_total_chars,
-            ),
+        fallback_text = str(fallback_answer).strip()
+        if not fallback_text and evidence_candidate is not None:
+            fallback_text = str(evidence_candidate.get("answer", "")).strip()
+        if not fallback_text and candidates:
+            fallback_text = str(candidates[0].get("text", "")).strip()
+        if not fallback_text and best_evidence.strip():
+            fallback_text = best_evidence.strip()
+        prompt_sections: List[Dict[str, str]] = []
+        if graph_context.strip():
+            prompt_sections.append({"section": "graph_evidence", "text": graph_context.strip()})
+        if best_evidence.strip():
+            prompt_sections.append({"section": "rag_evidence", "text": best_evidence.strip()})
+        if fallback_text:
+            prompt_sections.append({"section": "fallback_answer", "text": fallback_text})
+        prompt_sections.append(
+            {
+                "section": "answer_rules",
+                "text": (
+                    "Use Graph Evidence first.\n"
+                    "If Graph Evidence is weak or empty, use the Fallback Answer as the compact backup clue.\n"
+                    "Do not repeat long evidence blocks.\n"
+                    "Do not say Not found unless both Graph Evidence and the fallback cues are insufficient.\n"
+                    "Keep key qualifiers (for example: each way, round trip, per day).\n"
+                    "Return only the final answer."
+                    if self.m.answering.answer_context_only
+                    else "Return only the final answer."
+                ),
+            }
         )
-        self.m._set_prompt_eval_chunks(generation_context, evidence_sentences)
-        return self.m.answering.build_answer_prompt(
+        compact_prompt = self.m.answering.build_answer_prompt(
             input_text=input_text,
-            retrieved_context=generation_context,
-            recent_context=recent_context,
-            evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            option_evidence_chains=option_evidence_chains,
+            graph_context=graph_context,
+            rag_evidence=best_evidence,
+            fallback_answer=fallback_text,
         )
+        self.m._set_prompt_eval_chunks(prompt_sections)
+        return compact_prompt
 
     def build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
         if not self.m.graph_refiner_enabled:
@@ -161,47 +124,24 @@ class MemoryManagerChatRuntime:
         snippets = self.m.long_memory.build_context_snippets(query)
         if not snippets:
             return ""
+        query_tokens = {
+            tok
+            for tok in re.findall(r"[a-z0-9]+", str(query).lower())
+            if tok and tok not in {"the", "a", "an", "to", "of", "and", "or", "in", "on", "my"}
+        }
+        if query_tokens:
+            filtered: List[str] = []
+            for snippet in snippets:
+                snippet_tokens = set(re.findall(r"[a-z0-9]+", str(snippet).lower()))
+                if not snippet_tokens:
+                    continue
+                shared = len(query_tokens.intersection(snippet_tokens))
+                overlap_ratio = float(shared) / float(max(1, len(query_tokens)))
+                if shared >= 2 or overlap_ratio >= 0.20:
+                    filtered.append(snippet)
+            max_items = min(3, max(1, int(getattr(self.m.long_memory, "context_max_items", 4))))
+            snippets = (filtered[:max_items] if filtered else snippets[:max_items])
         return "[Long Memory Graph]\n" + "\n".join(f"- {line}" for line in snippets)
-
-    def build_refined_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
-        if (not self.m.refiner_enabled) or (self.m.refiner_llm is None):
-            return ""
-        if not chunks:
-            return ""
-        selected = chunks[: max(1, self.m.refiner_top_chunks)]
-        compact: List[str] = []
-        for i, item in enumerate(selected, start=1):
-            text = str(item.get("text", "")).strip()
-            if not text:
-                continue
-            compact.append(f"{i}. {text[: self.m.refiner_max_chars_per_chunk]}")
-        if not compact:
-            return ""
-        prompt = (
-            "You are an evidence refiner.\n"
-            "Given a question and retrieved text snippets, extract only the most relevant factual evidence.\n"
-            "Return strict JSON only with format:\n"
-            '{"evidence":["...", "..."]}\n'
-            f"Maximum evidence items: {self.m.refiner_output_items}\n"
-            "No explanation.\n\n"
-            f"Question: {query}\n"
-            "Snippets:\n"
-            + "\n".join(compact)
-        )
-        try:
-            raw = self.m.refiner_llm.chat([{"role": "user", "content": prompt}])
-            payload = json.loads(str(raw).strip())
-            rows = payload.get("evidence", [])
-            if not isinstance(rows, list):
-                return ""
-            picked = [str(x).strip() for x in rows if str(x).strip()]
-            if not picked:
-                return ""
-            return "[Refined Retrieved Evidence]\n" + "\n".join(
-                f"- {line}" for line in picked[: self.m.refiner_output_items]
-            )
-        except (RuntimeError, ValueError, TypeError, json.JSONDecodeError):
-            return ""
 
     def generate_with_fallback(
         self,
@@ -211,7 +151,7 @@ class MemoryManagerChatRuntime:
         prompt_text: str,
         evidence_sentences: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
-        option_evidence_chains: Optional[Dict[str, object]],
+        fallback_answer: str,
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
         prompt_messages: List[Dict[str, str]] = [{"role": "user", "content": prompt_text}]
@@ -226,6 +166,7 @@ class MemoryManagerChatRuntime:
             evidence_sentences=evidence_sentences,
             candidates=candidates,
             evidence_candidate=evidence_candidate,
+            fallback_answer=fallback_answer,
         )
         ai_response = str(fallback_result.get("response", "")).strip()
         fallback_path = str(fallback_result.get("fallback_path", "none"))
@@ -249,10 +190,8 @@ class MemoryManagerChatRuntime:
                 f"(model={model_name})."
             )
             second_prompt = self.m.answering.build_second_pass_prompt(
-                input_text=input_text,
-                evidence_sentences=evidence_sentences,
+                prompt_text=prompt_text,
                 evidence_candidate=evidence_candidate,
-                option_evidence_chains=option_evidence_chains,
             )
             second_response = self.m.llm.chat([{"role": "user", "content": second_prompt}])
             second_result = self.m.answering.evaluate_response_fallback(
@@ -260,6 +199,7 @@ class MemoryManagerChatRuntime:
                 evidence_sentences=evidence_sentences,
                 candidates=candidates,
                 evidence_candidate=evidence_candidate,
+                fallback_answer=fallback_answer,
             )
             second_path = str(second_result.get("fallback_path", "none"))
             ai_response = str(second_result.get("response", "")).strip()

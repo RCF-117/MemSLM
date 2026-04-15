@@ -38,14 +38,6 @@ class TestAnsweringPipeline(unittest.TestCase):
             self.assertIn("text", candidates[0])
             self.assertIn("score", candidates[0])
 
-    def test_short_circuit_disabled_returns_none(self) -> None:
-        # Config currently disables short-circuit by default.
-        out = self.pipeline.maybe_short_circuit(
-            candidates=[{"text": "Boston", "score": 0.9}],
-            evidence_sentences=[{"text": "She moved to Boston.", "score": 0.95}],
-        )
-        self.assertIsNone(out)
-
     def test_apply_response_fallback_to_not_found(self) -> None:
         result = self.pipeline.apply_response_fallback(
             response="Completely unrelated answer",
@@ -57,54 +49,17 @@ class TestAnsweringPipeline(unittest.TestCase):
         else:
             self.assertEqual(result, "Completely unrelated answer")
 
-    def test_temporal_choice_prefers_latest_option(self) -> None:
-        evidence = [
-            {"text": "I bought marigolds on 2023/05/10.", "score": 0.8},
-            {"text": "I bought tomatoes on 2023/05/18.", "score": 0.7},
-        ]
-        out = self.pipeline.decide_answer(
-            query="Which did I buy later, marigolds or tomatoes?",
-            evidence_sentences=evidence,
-            candidates=[],
-            reranked_chunks=[],
+    def test_build_answer_prompt_is_compact(self) -> None:
+        prompt = self.pipeline.build_answer_prompt(
+            input_text="where did she move?",
+            graph_context="[Long Memory Graph]\n- location: Boston",
+            fallback_answer="Boston",
         )
-        self.assertIsNotNone(out)
-        self.assertEqual(str(out.get("answer", "")).lower(), "tomatoes")
-
-    def test_list_count_uses_query_focus(self) -> None:
-        evidence = [
-            {"text": "I bought apples, oranges, and pears today.", "score": 0.9},
-            {"text": "I met Alice and Bob after work.", "score": 0.9},
-        ]
-        out = self.pipeline.decide_answer(
-            query="How many items did I buy?",
-            evidence_sentences=evidence,
-            candidates=[],
-            reranked_chunks=[],
-        )
-        self.assertIsNotNone(out)
-        self.assertEqual(str(out.get("answer", "")), "3")
-
-    def test_option_evidence_chain_builds_per_option_pools(self) -> None:
-        evidence = [
-            {"text": "I visited Boston on 2023/05/10.", "score": 0.9, "session_date": "2023/05/10"},
-            {"text": "I visited Chicago on 2023/05/12.", "score": 0.8, "session_date": "2023/05/12"},
-        ]
-        candidates = [
-            {"text": "Boston", "score": 0.8, "support": 1},
-            {"text": "Chicago", "score": 0.75, "support": 1},
-        ]
-        chains = self.pipeline.build_option_evidence_chains(
-            query="Which city did I visit later, Boston or Chicago?",
-            evidence_sentences=evidence,
-            candidates=candidates,
-        )
-        self.assertIsNotNone(chains)
-        options = list((chains or {}).get("options", []))
-        self.assertGreaterEqual(len(options), 2)
-        self.assertTrue(any(str(x.get("option")) == "boston" for x in options))
-        self.assertTrue(any(str(x.get("option")) == "chicago" for x in options))
-
+        self.assertIn("[Graph Evidence]", prompt)
+        self.assertIn("[Fallback Answer]", prompt)
+        self.assertIn("[Answer Rules]", prompt)
+        self.assertNotIn("[Retrieved Context]", prompt)
+        self.assertNotIn("[Evidence Sentences]", prompt)
 
 if __name__ == "__main__":
     unittest.main()

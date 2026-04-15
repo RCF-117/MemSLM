@@ -186,8 +186,6 @@ retrieval:
     evidence_top_n_sentences: 8
     evidence_sentence_max_chars: 220
     candidate_top_n: 3
-    short_circuit_enabled: false
-    short_circuit_min_sentence_score: 0.55
     context_only: true
     log_decision_details: true
     llm_fallback_to_top_candidate: true
@@ -277,27 +275,6 @@ retrieval:
         - but
         - then
         - inbox
-    decision:
-      temporal_choice_enabled: true
-      temporal_min_confidence_gap: 0.08
-      temporal_require_both_options: true
-      temporal_overlap_floor: 0.4
-      temporal_contains_bonus: 0.15
-      temporal_date_bonus: 0.08
-      temporal_event_anchor_enabled: true
-      temporal_event_anchor_min_overlap: 0.5
-      temporal_event_anchor_min_score: 0.2
-      temporal_event_anchor_pair_min_score: 0.6
-      temporal_event_anchor_use_session_date_fallback: true
-      temporal_event_anchor_fallback_to_sentence_score: true
-      temporal_delegate_to_llm_when_option_chain: true
-      option_chain_enabled: true
-      option_chain_max_options: 6
-      option_chain_default_target_k: 1
-      option_chain_min_option_overlap: 0.4
-      option_chain_top_evidence_per_option: 4
-      option_chain_top_time_evidence_per_option: 3
-      option_chain_top_candidates_per_option: 3
     counting:
       enabled: true
       count_query_keywords:

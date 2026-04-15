@@ -71,6 +71,7 @@ class LongMemoryExtractor:
             '{"events":[{"subject":"","action":"","value":"","time":"","location":"","evidence_span":"","fact_type":"state_fact|episodic_fact","confidence":0.0}]}\n'
             "Hard rules:\n"
             "- Extract stable answer-bearing facts, not generic topics.\n"
+            "- A single message may yield multiple events; extract each distinct answer-bearing fact as a separate event, even if they are independent or only loosely related.\n"
             "- Prefer names, counts, owned items, locations, certifications, dates, preferences, updates, and completed actions.\n"
             "- Use fact_type=state_fact for stable facts that may update over time, such as counts, ownership, locations, certifications, current status, preferences, scores, ratios, and latest values.\n"
             "- Use fact_type=episodic_fact for one-off happenings, meetings, visits, actions, and comparisons that should coexist rather than overwrite each other.\n"

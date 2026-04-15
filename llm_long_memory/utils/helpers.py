@@ -73,8 +73,6 @@ def _validate_config(data: Dict[str, Any]) -> None:
         "evidence_top_n_sentences",
         "evidence_sentence_max_chars",
         "candidate_top_n",
-        "short_circuit_enabled",
-        "short_circuit_min_sentence_score",
         "llm_fallback_to_top_candidate",
         "fallback_min_score",
         "response_evidence_min_token_overlap",
