@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, List
 
@@ -345,8 +346,19 @@ class LongMemoryPersistEngine:
                 text=source_content[: self.m.context_max_chars_per_item],
             )
 
-        if fact_type == "state_fact":
-            self.link_fact_edges(event_id=event_id, fact_key=fact_key)
+        self.link_fact_edges(
+            event_id=event_id,
+            fact_key=fact_key,
+            subject_action_key=f"{self.m._normalize_fact_component(subject)}|{self.m._normalize_fact_component(action)}",
+            subject=subject,
+            action=action,
+            obj=value_text,
+            event_keywords=keywords,
+            raw_span=raw_span,
+            time_text=time_text,
+            location_text=location_text,
+            fact_type=fact_type,
+        )
         self.m.store.save_current_step(self.m.current_step)
 
     def _insert_detail(self, *, event_id: str, kind: str, text: str) -> None:
@@ -362,23 +374,60 @@ class LongMemoryPersistEngine:
             max_per_event=self.m.details_per_event,
         )
 
-    def link_fact_edges(self, *, event_id: str, fact_key: str) -> None:
-        """Keep event-level edges minimal: only same-fact continuity links."""
-        if self.m.graph_max_edges_per_event <= 0 or (not fact_key):
+    @staticmethod
+    def _keyword_tokens(value: str) -> set[str]:
+        try:
+            return {
+                str(x).strip().lower()
+                for x in list(json.loads(str(value or "[]")))
+                if str(x).strip()
+            }
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return set(re.findall(r"[a-z0-9]+", str(value).lower()))
+
+    def link_fact_edges(
+        self,
+        *,
+        event_id: str,
+        fact_key: str,
+        subject_action_key: str,
+        subject: str,
+        action: str,
+        obj: str,
+        event_keywords: List[str],
+        raw_span: str,
+        time_text: str,
+        location_text: str,
+        fact_type: str,
+    ) -> None:
+        """Connect only factual update chains; do not invent similarity-based event links."""
+        if self.m.graph_max_edges_per_event <= 0:
             return
+        if fact_type != "state_fact":
+            return
+        rows = self.m.store.fetch_recent_events(
+            self.m.history_max_candidates,
+            exclude_event_id=event_id,
+        )
+        seen_targets: set[str] = set()
         linked = 0
-        for row in self.m.store.fetch_superseded_events(self.m.history_max_candidates):
+        for row in rows:
             other_id = str(row["event_id"] or "").strip()
             other_fact_key = str(row["fact_key"] or "").strip()
-            if (not other_id) or other_id == event_id or other_fact_key != fact_key:
+            if (not other_id) or other_id == event_id:
                 continue
-            edge_id = self.m._stable_id("edge", f"{other_id}|{event_id}|extends")
+            if not fact_key or not other_fact_key or fact_key != other_fact_key:
+                continue
+            if other_id in seen_targets:
+                continue
+            seen_targets.add(other_id)
+            edge_id = self.m._stable_id("edge", f"{other_id}|{event_id}|updates")
             self.m.store.insert_edge(
                 edge_id=edge_id,
                 from_event_id=other_id,
                 to_event_id=event_id,
-                relation="extends",
-                weight=0.6,
+                relation="updates",
+                weight=1.0,
                 current_step=self.m.current_step,
             )
             linked += 1

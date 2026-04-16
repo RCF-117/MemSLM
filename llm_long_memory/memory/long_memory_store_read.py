@@ -9,6 +9,30 @@ from typing import Dict, List
 class LongMemoryStoreReadMixin:
     """SQLite read operations for long-memory persistence."""
 
+    def fetch_recent_events(
+        self,
+        limit: int,
+        exclude_event_id: str | None = None,
+    ) -> List[sqlite3.Row]:
+        params: List[object] = []
+        sql = """
+            SELECT event_id, fact_key, subject_action_key, fact_type, skeleton_text,
+                   keywords, role, boundary_flag, extract_confidence, source_model,
+                   raw_span, status, is_latest, salience, first_seen_step, last_seen_step
+            FROM events
+        """
+        where_clauses = []
+        if exclude_event_id:
+            where_clauses.append("event_id <> ?")
+            params.append(str(exclude_event_id))
+        if where_clauses:
+            sql += " WHERE " + " AND ".join(where_clauses)
+        sql += " ORDER BY is_latest DESC, last_seen_step DESC, salience DESC"
+        if int(limit) > 0:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        return self.conn.execute(sql, tuple(params)).fetchall()
+
     def fetch_active_events(self) -> List[sqlite3.Row]:
         return self.conn.execute(
             """
@@ -131,6 +155,53 @@ class LongMemoryStoreReadMixin:
             WHERE is_latest=1 AND event_id IN ({marks})
             """,
             tuple(event_ids),
+        ).fetchall()
+
+    def fetch_all_events(self) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT event_id, fact_key, subject_action_key, fact_type, skeleton_text,
+                   skeleton_embedding, keywords, role, boundary_flag, extract_confidence,
+                   source_model, raw_span, status, is_latest, salience, first_seen_step, last_seen_step
+            FROM events
+            ORDER BY is_latest DESC, last_seen_step DESC, salience DESC
+            """
+        ).fetchall()
+
+    def fetch_all_details(self) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT detail_id, event_id, kind, text, created_step
+            FROM details
+            ORDER BY created_step DESC
+            """
+        ).fetchall()
+
+    def fetch_all_event_nodes(self) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT node_id, event_id, node_kind, node_text, is_core, node_embedding, created_step
+            FROM event_nodes
+            ORDER BY created_step DESC
+            """
+        ).fetchall()
+
+    def fetch_all_event_node_edges(self) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT node_edge_id, event_id, from_node_id, to_node_id, relation, weight, created_step
+            FROM event_node_edges
+            ORDER BY created_step DESC
+            """
+        ).fetchall()
+
+    def fetch_all_edges(self) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT edge_id, from_event_id, to_event_id, relation, weight, created_step
+            FROM edges
+            ORDER BY created_step DESC
+            """
         ).fetchall()
 
     def debug_counts(self) -> Dict[str, int]:

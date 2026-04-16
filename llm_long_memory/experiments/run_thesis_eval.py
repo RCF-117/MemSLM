@@ -10,6 +10,7 @@ from typing import List
 from llm_long_memory.baselines.run_baseline import run_one_dataset
 from llm_long_memory.experiments.build_eval_subset import build_subset
 from llm_long_memory.experiments.export_eval_report import export_report
+from llm_long_memory.experiments.export_graph import export_graph
 from llm_long_memory.utils.helpers import load_config, resolve_project_path
 
 
@@ -63,6 +64,11 @@ def parse_args() -> argparse.Namespace:
         help="Where to write the final report artifacts.",
     )
     parser.add_argument(
+        "--graph-output-dir",
+        default="data/graphs_thesis",
+        help="Where to write the full-run graph visualization artifacts.",
+    )
+    parser.add_argument(
         "--judge",
         action="store_true",
         help="Use a local LLM judge when exporting the final report.",
@@ -87,13 +93,20 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional existing eval run_id to resume.",
     )
+    parser.add_argument(
+        "--swap-roles",
+        action="store_true",
+        help="Swap the experiment model and judge model roles for the run.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
+    default_model = str(config["llm"]["default_model"])
     source_dataset = _resolve_dataset_path(config, args.dataset.strip() or None, args.split.strip() or None)
+    swap_roles = bool(args.swap_roles)
 
     subset_path = source_dataset
     keep_types = _parse_csv(args.keep_types) or _parse_csv(args.include_types)
@@ -115,20 +128,40 @@ def main() -> None:
             drop_types=drop_types,
         )
 
+    model_override = args.model.strip() or default_model
+    judge_override = args.judge_model.strip() or default_model
+    if swap_roles:
+        model_override, judge_override = judge_override, model_override
+
     run_id = run_one_dataset(
         args.config,
         subset_path,
         int(args.max_total) if int(args.max_total) > 0 else 0,
-        model_name=(args.model.strip() or None),
+        model_name=model_override,
         resume_run_id=(args.resume_run_id.strip() or None),
     )
     report_db_path = str(config["memory"]["mid_memory"]["database_file"])
+    graph_json_path = ""
+    node_graph_json_path = ""
+    if bool(config["evaluation"].get("offline_graph_build_enabled", False)):
+        graph_db_path = resolve_project_path("data/processed/thesis_graph_runs") / f"{run_id}.db"
+        if graph_db_path.exists():
+            export_result = export_graph(
+                db_path=str(graph_db_path),
+                output_dir=args.graph_output_dir,
+                active_only=False,
+            )
+            export_dir = resolve_project_path(str(export_result["output_dir"]))
+            graph_json_path = str(export_dir / "event_graph.json")
+            node_graph_json_path = str(export_dir / "node_graph.json")
     export_report(
         db_path=report_db_path,
         output_dir=args.report_dir,
         run_id=(run_id if run_id else (args.resume_run_id.strip() or None)),
+        graph_json_path=(graph_json_path or None),
+        node_graph_json_path=(node_graph_json_path or None),
         judge_enabled=bool(args.judge),
-        judge_model=(args.judge_model.strip() or None),
+        judge_model=judge_override,
     )
 
 

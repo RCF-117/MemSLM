@@ -68,6 +68,9 @@ class LLMJudge:
         self.retry_on_timeout = bool(retry_on_timeout if retry_on_timeout is not None else retry_cfg.get("retry_on_timeout", True))
         self.retry_on_http_502 = bool(retry_on_http_502 if retry_on_http_502 is not None else retry_cfg.get("retry_on_http_502", True))
         self.retry_on_url_error = bool(retry_on_url_error if retry_on_url_error is not None else retry_cfg.get("retry_on_url_error", False))
+        judge_cfg = dict(llm_cfg.get("judge", {}))
+        self.judge_think = bool(judge_cfg.get("think", False))
+        self.judge_response_format = str(judge_cfg.get("response_format", "json")).strip() or "json"
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     @staticmethod
@@ -108,6 +111,8 @@ class LLMJudge:
             retry_on_http_502=self.retry_on_http_502,
             retry_on_url_error=self.retry_on_url_error,
             max_output_tokens=self.max_output_tokens if self.max_output_tokens > 0 else None,
+            think=self.judge_think,
+            response_format=self.judge_response_format,
         )
         payload = _extract_json_object(raw)
         verdict = str(payload.get("verdict", "")).strip().lower()
@@ -118,4 +123,3 @@ class LLMJudge:
         if not reason:
             reason = raw.strip()[:240]
         return JudgeResult(is_correct=is_correct, verdict=verdict or ("correct" if is_correct else "incorrect"), reason=reason)
-

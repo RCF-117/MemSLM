@@ -11,6 +11,25 @@ It is built for thesis work, but the code is organized with a stronger engineeri
 
 The goal is not to be a production chatbot. The goal is to provide a stable, inspectable research platform for studying short memory, mid memory, and long-memory graph construction under local compute constraints.
 
+## Motivation
+
+Long-conversation systems fail for reasons that are easy to blur together:
+- the model does not see the right context
+- the retrieval layer returns the wrong evidence
+- the memory representation is too coarse
+- the final answer step over-trusts noisy evidence
+
+This repository exists to separate those failure modes and make them measurable on a local machine.
+
+The design is intentionally conservative:
+- keep short-memory handling simple so immediate context remains faithful
+- keep mid-memory as the main retrieval workhorse so the baseline stays fast and reproducible
+- keep long-memory as a structured research module so we can inspect whether graph-style memory actually adds value
+- keep generation and judge separate so answer quality, retrieval quality, and latency can be reported independently
+
+In other words, the project is trying to answer a practical research question:
+if we keep the system local and lightweight, how far can modular memory, retrieval, and graph construction go before we need heavier model reasoning?
+
 ## Core Design
 
 The repository follows one guiding idea:

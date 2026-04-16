@@ -1413,6 +1413,114 @@ class LongMemory:
             ),
         }
 
+    def export_snapshot_to_store(self, target_store: LongMemoryStore) -> None:
+        """Copy the current long-memory snapshot into another SQLite store."""
+        if target_store is None:
+            return
+        target_store.conn.executemany(
+            """
+            INSERT OR REPLACE INTO events(
+              event_id, fact_key, subject_action_key, fact_type, skeleton_text, skeleton_embedding,
+              keywords, role, boundary_flag, extract_confidence, source_model, raw_span,
+              status, is_latest, salience, first_seen_step, last_seen_step
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(row["event_id"] or ""),
+                    str(row["fact_key"] or ""),
+                    str(row["subject_action_key"] or ""),
+                    str(row["fact_type"] or ""),
+                    str(row["skeleton_text"] or ""),
+                    row["skeleton_embedding"],
+                    str(row["keywords"] or "[]"),
+                    str(row["role"] or ""),
+                    int(row["boundary_flag"] or 0),
+                    float(row["extract_confidence"] or 0.0),
+                    str(row["source_model"] or ""),
+                    str(row["raw_span"] or ""),
+                    str(row["status"] or ""),
+                    int(row["is_latest"] or 0),
+                    float(row["salience"] or 0.0),
+                    int(row["first_seen_step"] or 0),
+                    int(row["last_seen_step"] or 0),
+                )
+                for row in self.store.fetch_all_events()
+            ],
+        )
+        target_store.conn.executemany(
+            """
+            INSERT OR REPLACE INTO details(detail_id, event_id, kind, text, created_step)
+            VALUES(?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(row["detail_id"] or ""),
+                    str(row["event_id"] or ""),
+                    str(row["kind"] or ""),
+                    str(row["text"] or ""),
+                    int(row["created_step"] or 0),
+                )
+                for row in self.store.fetch_all_details()
+            ],
+        )
+        target_store.conn.executemany(
+            """
+            INSERT OR REPLACE INTO event_nodes(
+              node_id, event_id, node_kind, node_text, is_core, node_embedding, created_step
+            ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(row["node_id"] or ""),
+                    str(row["event_id"] or ""),
+                    str(row["node_kind"] or ""),
+                    str(row["node_text"] or ""),
+                    int(row["is_core"] or 0),
+                    row["node_embedding"],
+                    int(row["created_step"] or 0),
+                )
+                for row in self.store.fetch_all_event_nodes()
+            ],
+        )
+        target_store.conn.executemany(
+            """
+            INSERT OR REPLACE INTO event_node_edges(
+              node_edge_id, event_id, from_node_id, to_node_id, relation, weight, created_step
+            ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(row["node_edge_id"] or ""),
+                    str(row["event_id"] or ""),
+                    str(row["from_node_id"] or ""),
+                    str(row["to_node_id"] or ""),
+                    str(row["relation"] or ""),
+                    float(row["weight"] or 0.0),
+                    int(row["created_step"] or 0),
+                )
+                for row in self.store.fetch_all_event_node_edges()
+            ],
+        )
+        target_store.conn.executemany(
+            """
+            INSERT OR REPLACE INTO edges(edge_id, from_event_id, to_event_id, relation, weight, created_step)
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(row["edge_id"] or ""),
+                    str(row["from_event_id"] or ""),
+                    str(row["to_event_id"] or ""),
+                    str(row["relation"] or ""),
+                    float(row["weight"] or 0.0),
+                    int(row["created_step"] or 0),
+                )
+                for row in self.store.fetch_all_edges()
+            ],
+        )
+        target_store.commit()
+
     def clear_all(self) -> None:
         self.store.clear_all()
         self.current_step = 0

@@ -271,7 +271,9 @@ def export_graph(
         }
 
         event_graphml = out_dir / "event_graph.graphml"
+        node_graphml = out_dir / "node_graph.graphml"
         nx.write_graphml(event_graph, event_graphml)
+        nx.write_graphml(node_graph, node_graphml)
         (out_dir / "event_graph.json").write_text(
             json.dumps({"summary": summary, **event_json}, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -300,12 +302,29 @@ def export_graph(
             graph_json=preview_graph,
             note=f"Exported from {db_file.name}. Open the GraphML in Gephi/Cytoscape for the full graph.",
         )
+        node_preview_graph = {
+            "nodes": node_json["nodes"][: max(1, int(preview_limit))],
+            "edges": [
+                edge
+                for edge in node_json["edges"]
+                if edge["from"] in {node["id"] for node in node_json["nodes"][: max(1, int(preview_limit))]}
+                and edge["to"] in {node["id"] for node in node_json["nodes"][: max(1, int(preview_limit))]}
+            ],
+        }
+        _write_html_preview(
+            out_path=out_dir / "node_graph_preview.html",
+            title="Long Memory Node Graph Preview",
+            graph_json=node_preview_graph,
+            note=f"Exported from {db_file.name}. This view shows the intra-event node structure.",
+        )
 
         print(f"output_dir: {out_dir}")
         print(f"event_graphml: {event_graphml}")
+        print(f"node_graphml: {node_graphml}")
         print(f"event_graph_json: {out_dir / 'event_graph.json'}")
         print(f"node_graph_json: {out_dir / 'node_graph.json'}")
         print(f"preview_html: {out_dir / 'event_graph_preview.html'}")
+        print(f"node_preview_html: {out_dir / 'node_graph_preview.html'}")
         return {"summary": summary, "output_dir": str(out_dir)}
     finally:
         conn.close()
@@ -356,4 +375,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

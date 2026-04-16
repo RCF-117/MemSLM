@@ -84,6 +84,7 @@ def export_report(
     output_dir: str,
     run_id: str | None = None,
     graph_json_path: str | None = None,
+    node_graph_json_path: str | None = None,
     judge_enabled: bool = False,
     judge_model: str | None = None,
 ) -> Dict[str, Any]:
@@ -154,6 +155,11 @@ def export_report(
             graph_file = resolve_project_path(graph_json_path)
             if graph_file.exists():
                 graph_payload = json.loads(graph_file.read_text(encoding="utf-8"))
+        node_graph_payload: Dict[str, Any] = {}
+        if node_graph_json_path:
+            node_graph_file = resolve_project_path(node_graph_json_path)
+            if node_graph_file.exists():
+                node_graph_payload = json.loads(node_graph_file.read_text(encoding="utf-8"))
 
         payload = {
             "run": summary,
@@ -162,6 +168,8 @@ def export_report(
         }
         if graph_payload:
             payload["graph_eval"] = graph_payload
+        if node_graph_payload:
+            payload["node_graph_eval"] = node_graph_payload
 
         out_dir = resolve_project_path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -246,8 +254,67 @@ def export_report(
                     f"- avg_accepted_events: `{_safe_float(graph_summary.get('avg_accepted_events')) or 0.0:.4f}`",
                 ]
             )
+        if node_graph_payload:
+            node_graph_summary = node_graph_payload.get("summary", {})
+            md_lines.extend(
+                [
+                    "",
+                    "## Node Graph Summary",
+                    "",
+                    f"- event_nodes: `{node_graph_summary.get('event_nodes', 0)}`",
+                    f"- event_edges: `{node_graph_summary.get('event_edges', 0)}`",
+                    f"- node_nodes: `{node_graph_summary.get('node_nodes', 0)}`",
+                    f"- node_edges: `{node_graph_summary.get('node_edges', 0)}`",
+                ]
+            )
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
 
+        print("Thesis eval summary:")
+        print(f"- final_answer_acc: {summary.get('final_answer_acc', 0.0):.4f}")
+        if judge_enabled:
+            print("- type_answer_acc:")
+            for row in grouped:
+                type_answer_acc = row.get("type_answer_acc")
+                if type_answer_acc is None:
+                    continue
+                print(
+                    f"  - {row['question_type']}: {float(type_answer_acc or 0.0):.4f}"
+                )
+        print(
+            "- retrieval_answer_span_hit_rate: "
+            f"{_safe_float(summary.get('retrieval_answer_span_hit_rate')) or 0.0:.4f}"
+        )
+        print(
+            "- retrieval_support_sentence_hit_rate: "
+            f"{_safe_float(summary.get('retrieval_support_sentence_hit_rate')) or 0.0:.4f}"
+        )
+        print(
+            "- graph_answer_span_hit_rate: "
+            f"{_safe_float(summary.get('graph_answer_span_hit_rate')) or 0.0:.4f}"
+        )
+        print(
+            "- graph_support_sentence_hit_rate: "
+            f"{_safe_float(summary.get('graph_support_sentence_hit_rate')) or 0.0:.4f}"
+        )
+        print(
+            "- graph_ingest_accept_rate: "
+            f"{_safe_float(summary.get('graph_ingest_accept_rate')) or 0.0:.4f}"
+        )
+        print(f"- avg_latency_sec: {_safe_float(summary.get('avg_latency_sec')) or 0.0:.4f}")
+        print("- type_latency_sec:")
+        for row in grouped:
+            print(
+                f"  - {row['question_type']}: {float(row.get('type_latency_sec') or 0.0):.4f}"
+            )
+        if node_graph_payload:
+            node_graph_summary = node_graph_payload.get("summary", {})
+            print("- node_graph_summary:")
+            print(
+                f"  - event_nodes: {node_graph_summary.get('event_nodes', 0)} | "
+                f"event_edges: {node_graph_summary.get('event_edges', 0)} | "
+                f"node_nodes: {node_graph_summary.get('node_nodes', 0)} | "
+                f"node_edges: {node_graph_summary.get('node_edges', 0)}"
+            )
         print(f"run_id: {resolved_run_id}")
         print(f"json: {json_path}")
         print(f"markdown: {md_path}")
@@ -276,6 +343,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional offline graph eval JSON to merge into the report.",
     )
     parser.add_argument(
+        "--node-graph-json",
+        default="",
+        help="Optional node graph JSON to merge into the report.",
+    )
+    parser.add_argument(
         "--judge",
         action="store_true",
         help="Use a local LLM judge for the final answer accuracy.",
@@ -295,6 +367,7 @@ def main() -> None:
         output_dir=args.output_dir,
         run_id=(args.run_id.strip() or None),
         graph_json_path=(args.graph_json.strip() or None),
+        node_graph_json_path=(args.node_graph_json.strip() or None),
         judge_enabled=bool(args.judge),
         judge_model=(args.judge_model.strip() or None),
     )

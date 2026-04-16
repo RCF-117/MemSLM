@@ -16,8 +16,24 @@ from llm_long_memory.evaluation.metrics_runtime import (
     update_group_stats,
 )
 from llm_long_memory.evaluation.eval_reporting import EvalCounters, finalize_eval_run
+from llm_long_memory.memory.long_memory_store import LongMemoryStore
 from llm_long_memory.memory.memory_manager import MemoryManager
+from llm_long_memory.utils.helpers import resolve_project_path
 from llm_long_memory.utils.logger import logger
+
+
+def _create_graph_accumulator_store(config: Dict[str, Any], run_id: str) -> LongMemoryStore:
+    long_cfg = dict(config["memory"]["long_memory"])
+    graph_root = resolve_project_path("data/processed/thesis_graph_runs")
+    graph_root.mkdir(parents=True, exist_ok=True)
+    db_path = graph_root / f"{run_id}.db"
+    return LongMemoryStore(
+        database_file=str(db_path),
+        sqlite_busy_timeout_ms=int(long_cfg.get("sqlite_busy_timeout_ms", 5000)),
+        sqlite_journal_mode=str(long_cfg.get("sqlite_journal_mode", "WAL")),
+        sqlite_synchronous=str(long_cfg.get("sqlite_synchronous", "NORMAL")),
+        embedding_dim=int(config["embedding"]["dim"]),
+    )
 
 
 def run_eval(
@@ -44,6 +60,11 @@ def run_eval(
     oracle_temporal_disable = bool(oracle_temporal_cfg.get("disable_temporal_weight", False))
     oracle_dataset_keyword = str(oracle_temporal_cfg.get("dataset_keyword", "")).strip().lower()
     offline_graph_build_enabled = bool(eval_cfg.get("offline_graph_build_enabled", False))
+    graph_metric_enabled = bool(
+        offline_graph_build_enabled
+        or bool(getattr(manager, "long_memory_enabled", False))
+        or bool(getattr(manager, "long_memory_query_graph_enabled", False))
+    )
 
     prev_temporal_disabled = bool(getattr(manager.mid_memory, "temporal_weight_disabled", False))
     should_disable_temporal = (
@@ -86,6 +107,9 @@ def run_eval(
     processed_now = 0
     counters = EvalCounters()
     grouped: Dict[str, Dict[str, int]] = {}
+    graph_accumulator_store: LongMemoryStore | None = None
+    if offline_graph_build_enabled and bool(getattr(manager, "long_memory_enabled", False)):
+        graph_accumulator_store = _create_graph_accumulator_store(config, run_id)
 
     eval_error: Exception | None = None
     try:
@@ -127,11 +151,13 @@ def run_eval(
             graph_support_sentence_hit = None
             retrieved_session_ids: List[str] = []
             precomputed_context = None
+            graph_context_chunks: List[Dict[str, str]] = []
             if (
                 compute_evidence_recall
                 or compute_answer_span_hit_enabled
                 or compute_support_sentence_hit_enabled
                 or offline_graph_build_enabled
+                or graph_metric_enabled
             ):
                 precomputed_context = manager.retrieve_context(question)
                 _ctx, _topics, chunks = precomputed_context
@@ -142,8 +168,15 @@ def run_eval(
                     )
                     logger.info(
                         "Eval offline graph build: "
-                        f"question_id={qid}, accepted_events={built}."
-                    )
+                            f"question_id={qid}, accepted_events={built}."
+                        )
+                    if graph_accumulator_store is not None and hasattr(
+                        manager.long_memory, "export_snapshot_to_store"
+                    ):
+                        manager.long_memory.export_snapshot_to_store(graph_accumulator_store)
+                if graph_metric_enabled and hasattr(manager.long_memory, "build_context_snippets"):
+                    graph_snippets = manager.long_memory.build_context_snippets(question)
+                    graph_context_chunks = [{"text": snippet} for snippet in graph_snippets if str(snippet).strip()]
                 if compute_evidence_recall:
                     retrieved_session_ids = sorted(
                         {
@@ -171,10 +204,14 @@ def run_eval(
                         else (1.0 if hit_turn else 0.0)
                     )
                     counters.retrieval_evidence_hits += int(bool(evidence_hit))
-                if compute_answer_span_hit_enabled:
-                    answer_span_hit = None
-                if compute_support_sentence_hit_enabled:
-                    support_sentence_hit = None
+                if graph_metric_enabled:
+                    graph_answer_span_hit = compute_answer_span_hit(expected, graph_context_chunks, eval_cfg)
+                    counters.graph_span_hits += int(bool(graph_answer_span_hit))
+                if graph_metric_enabled:
+                    graph_support_sentence_hit = compute_support_sentence_hit(expected, graph_context_chunks, eval_cfg)
+                    counters.graph_support_hits += int(bool(graph_support_sentence_hit))
+                if graph_context_chunks:
+                    counters.graph_retrieval_total += 1
 
             processed_now += 1
             counters.total += 1
@@ -228,6 +265,8 @@ def run_eval(
                 f"Latency: {latency_sec:.3f}s\n"
                 "Retrieval Quality: "
                 f"support_sentence_hit={support_sentence_hit}, answer_span_hit={answer_span_hit}\n"
+                "Graph Quality: "
+                f"support_sentence_hit={graph_support_sentence_hit}, answer_span_hit={graph_answer_span_hit}\n"
                 "Coverage (aux): "
                 f"evidence_hit={evidence_hit}, recall={evidence_recall}\n"
                 f"Q: {question}\n"
@@ -241,6 +280,9 @@ def run_eval(
     finally:
         if should_disable_temporal:
             manager.mid_memory.set_temporal_weight_disabled(prev_temporal_disabled)
+        if graph_accumulator_store is not None:
+            graph_accumulator_store.commit()
+            graph_accumulator_store.close()
         finalize_eval_run(
             manager=manager,
             run_id=run_id,
