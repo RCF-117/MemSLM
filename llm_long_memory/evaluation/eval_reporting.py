@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from collections import defaultdict
+from typing import Dict, List
 
 from llm_long_memory.memory.memory_manager import MemoryManager
 from llm_long_memory.utils.logger import logger
@@ -33,27 +34,42 @@ def finalize_eval_run(
     counters: EvalCounters,
 ) -> None:
     """Compute final metrics, print summary, and persist run-level results."""
-    total = int(counters.total)
-    matched = int(counters.matched)
-    retrieval_total = int(counters.retrieval_total)
-    graph_retrieval_total = int(counters.graph_retrieval_total)
-
+    store = manager.mid_memory.eval_store
+    result_rows: List[Dict[str, object]] = [dict(row) for row in store.get_eval_result_rows(run_id)]
+    total = len(result_rows)
+    matched = sum(1 for row in result_rows if int(row.get("is_match") or 0) == 1)
     accuracy = (float(matched) / float(total)) if total else 0.0
-    retrieval_span_rate = (
-        (float(counters.retrieval_span_hits) / float(retrieval_total)) if retrieval_total else 0.0
-    )
-    retrieval_support_rate = (
-        float(counters.retrieval_support_hits) / float(retrieval_total)
-    ) if retrieval_total else 0.0
-    retrieval_evidence_rate = (
-        float(counters.retrieval_evidence_hits) / float(retrieval_total)
-    ) if retrieval_total else 0.0
-    graph_span_rate = (
-        float(counters.graph_span_hits) / float(graph_retrieval_total)
-    ) if graph_retrieval_total else 0.0
-    graph_support_rate = (
-        float(counters.graph_support_hits) / float(graph_retrieval_total)
-    ) if graph_retrieval_total else 0.0
+
+    def _avg(column: str) -> float:
+        values = []
+        for row in result_rows:
+            value = row.get(column)
+            if value is None:
+                continue
+            try:
+                values.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        return (sum(values) / float(len(values))) if values else 0.0
+
+    retrieval_span_rate = _avg("answer_span_hit")
+    retrieval_support_rate = _avg("support_sentence_hit")
+    retrieval_evidence_rate = _avg("evidence_hit")
+    graph_span_rate = _avg("graph_answer_span_hit")
+    graph_support_rate = _avg("graph_support_sentence_hit")
+    avg_latency_sec = _avg("latency_sec")
+
+    grouped_from_db: Dict[str, Dict[str, int]] = {}
+    if group_by_type and result_rows:
+        buckets: Dict[str, List[Dict[str, object]]] = defaultdict(list)
+        for row in result_rows:
+            key = str(row.get("question_type") or "unknown").strip() or "unknown"
+            buckets[key].append(row)
+        for key, bucket in buckets.items():
+            grouped_from_db[key] = {
+                "total": len(bucket),
+                "matched": sum(1 for row in bucket if int(row.get("is_match") or 0) == 1),
+            }
 
     long_stats = manager.long_memory.debug_stats()
     ingest_total = int(long_stats.get("ingest_event_total", 0))
@@ -79,12 +95,14 @@ def finalize_eval_run(
         f"accepted={ingest_accepted}, total={ingest_total}, "
         f"graph_ingest_accept_rate={graph_ingest_accept_rate:.4f}"
     )
+    print(f"Latency summary: avg_latency_sec={avg_latency_sec:.4f}")
 
-    if group_by_type and grouped:
+    store.delete_group_results(run_id)
+    if group_by_type and grouped_from_db:
         print("Eval by question_type:")
-        for key in sorted(grouped.keys()):
-            g_total = grouped[key]["total"]
-            g_matched = grouped[key]["matched"]
+        for key in sorted(grouped_from_db.keys()):
+            g_total = grouped_from_db[key]["total"]
+            g_matched = grouped_from_db[key]["matched"]
             g_acc = (float(g_matched) / float(g_total)) if g_total else 0.0
             manager.mid_memory.eval_store.log_eval_group_result(
                 run_id, key, g_total, g_matched, g_acc, commit=False
@@ -102,6 +120,7 @@ def finalize_eval_run(
         graph_answer_span_hit_rate=graph_span_rate,
         graph_support_sentence_hit_rate=graph_support_rate,
         graph_ingest_accept_rate=graph_ingest_accept_rate,
+        avg_latency_sec=avg_latency_sec,
         commit=False,
     )
     manager.mid_memory.commit()

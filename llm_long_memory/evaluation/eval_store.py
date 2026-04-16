@@ -42,6 +42,7 @@ class EvalStore:
               graph_answer_span_hit_rate REAL,
               graph_support_sentence_hit_rate REAL,
               graph_ingest_accept_rate REAL,
+              avg_latency_sec REAL,
               isolated INTEGER
             )
             """
@@ -63,6 +64,7 @@ class EvalStore:
               support_sentence_hit INTEGER,
               graph_answer_span_hit INTEGER,
               graph_support_sentence_hit INTEGER,
+              latency_sec REAL,
               retrieved_session_ids TEXT
             )
             """
@@ -106,6 +108,8 @@ class EvalStore:
             )
         if "graph_ingest_accept_rate" not in run_names:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN graph_ingest_accept_rate REAL")
+        if "avg_latency_sec" not in run_names:
+            self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN avg_latency_sec REAL")
 
         cols = self.conn.execute(f"PRAGMA table_info({self.result_table})").fetchall()
         names = {str(row["name"]) for row in cols}
@@ -125,7 +129,32 @@ class EvalStore:
             self.conn.execute(
                 f"ALTER TABLE {self.result_table} ADD COLUMN graph_support_sentence_hit INTEGER"
             )
+        if "latency_sec" not in names:
+            self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN latency_sec REAL")
         self.conn.commit()
+
+    def run_exists(self, run_id: str) -> bool:
+        row = self.conn.execute(
+            f"SELECT 1 FROM {self.run_table} WHERE run_id = ? LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        return row is not None
+
+    def get_existing_question_ids(self, run_id: str) -> set[str]:
+        rows = self.conn.execute(
+            f"SELECT question_id FROM {self.result_table} WHERE run_id = ?",
+            (run_id,),
+        ).fetchall()
+        return {str(row["question_id"] or "").strip() for row in rows if str(row["question_id"] or "").strip()}
+
+    def get_eval_result_rows(self, run_id: str) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            f"SELECT * FROM {self.result_table} WHERE run_id = ? ORDER BY id ASC",
+            (run_id,),
+        ).fetchall()
+
+    def delete_group_results(self, run_id: str) -> None:
+        self.conn.execute(f"DELETE FROM {self.group_table} WHERE run_id = ?", (run_id,))
 
     def log_eval_run_start(
         self, run_id: str, dataset_path: str, isolated: bool, commit: bool = True
@@ -139,9 +168,9 @@ class EvalStore:
              final_answer_acc,
              retrieval_answer_span_hit_rate, retrieval_support_sentence_hit_rate, retrieval_evidence_hit_rate,
              graph_answer_span_hit_rate, graph_support_sentence_hit_rate,
-             graph_ingest_accept_rate,
+             graph_ingest_accept_rate, avg_latency_sec,
              isolated)
-            VALUES(?, ?, datetime('now'), NULL, 0, 0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+            VALUES(?, ?, datetime('now'), NULL, 0, 0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
             """,
             (run_id, dataset_path, int(isolated)),
         )
@@ -163,6 +192,7 @@ class EvalStore:
         support_sentence_hit: bool | None = None,
         graph_answer_span_hit: bool | None = None,
         graph_support_sentence_hit: bool | None = None,
+        latency_sec: float | None = None,
         retrieved_session_ids: Sequence[str] | None = None,
         commit: bool = True,
     ) -> None:
@@ -176,10 +206,10 @@ class EvalStore:
               run_id, question_id, question_type, question,
               expected_answer, prediction, is_match,
               evidence_hit, evidence_recall, answer_span_hit, support_sentence_hit,
-              graph_answer_span_hit, graph_support_sentence_hit,
+              graph_answer_span_hit, graph_support_sentence_hit, latency_sec,
               retrieved_session_ids
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -199,6 +229,7 @@ class EvalStore:
                     if graph_support_sentence_hit is not None
                     else None
                 ),
+                (float(latency_sec) if latency_sec is not None else None),
                 session_ids_json,
             ),
         )
@@ -239,6 +270,7 @@ class EvalStore:
         graph_answer_span_hit_rate: float | None = None,
         graph_support_sentence_hit_rate: float | None = None,
         graph_ingest_accept_rate: float | None = None,
+        avg_latency_sec: float | None = None,
         commit: bool = True,
     ) -> None:
         if not self.save_to_db:
@@ -256,7 +288,8 @@ class EvalStore:
                 retrieval_evidence_hit_rate = ?,
                 graph_answer_span_hit_rate = ?,
                 graph_support_sentence_hit_rate = ?,
-                graph_ingest_accept_rate = ?
+                graph_ingest_accept_rate = ?,
+                avg_latency_sec = ?
             WHERE run_id = ?
             """,
             (
@@ -278,6 +311,7 @@ class EvalStore:
                     else None
                 ),
                 (float(graph_ingest_accept_rate) if graph_ingest_accept_rate is not None else None),
+                (float(avg_latency_sec) if avg_latency_sec is not None else None),
                 run_id,
             ),
         )

@@ -1,31 +1,74 @@
 # Contributing Guide
 
-## Workflow
-1. Keep `baseline/midrag_v1` frozen unless intentionally updating baseline protocol.
-2. Implement new features on `main`.
-3. Commit in small, scoped units:
-   - one concern per commit
-   - clear commit message (`type(scope): summary`)
-4. Run tests before commit:
+This repository is a research-grade engineering project. Contributions should improve clarity, reproducibility, or experimental control without weakening the frozen baseline.
+
+## Working Principles
+
+- Keep the baseline branch and baseline config frozen unless you are intentionally updating the comparison protocol.
+- Make changes on `main` unless a task explicitly targets the baseline.
+- Prefer small, focused commits.
+- Keep runtime behavior config-driven.
+- Avoid introducing hidden constants into retrieval, prompting, evaluation, or graph construction.
+
+## Branch Discipline
+
+- `main`: active development and thesis experiments
+- `baseline/midrag_v1`: frozen mid-memory baseline for controlled comparison
+
+Recommended commit style:
+- one concern per commit
+- one change set per commit
+- clear message format such as `feat(scope): summary`
+
+## Testing
+
+Before merging or pushing a meaningful change, run the relevant tests:
+
 ```bash
 pytest -q llm_long_memory/tests
 ```
 
-## What not to commit
-- Large datasets in `data/raw/*.json`
-- SQLite DB files in `data/processed/*.db*`
-- Logs and caches
+If the change touches evaluation or experiment runners, also verify the help output and a minimal dry run when possible.
 
-## Branch Naming (recommended)
-- `feat/...`
-- `fix/...`
-- `chore/...`
+## Experiment Hygiene
 
-## Baseline Discipline
-For fair evaluation:
-- do not change baseline algorithm/params in ad-hoc experiments
-- keep baseline config in `llm_long_memory/baselines/baseline_midrag_v1.yaml`
+- Use `debug` splits for iteration.
+- Freeze the `test` split before final reporting.
+- Keep judge evaluation separate from generation.
+- Resume long runs with `run_id` instead of rerunning everything.
+- When you crop question types for experiments, keep the rule explicit and documented.
+
+## Data and Artifact Hygiene
+
+Do not commit:
+- raw benchmark JSON files
+- SQLite databases
+- logs
+- generated reports
+- graph exports
+
+These are runtime artifacts and should remain outside version control.
+
+Tracked placeholders keep the directory structure stable:
+- `llm_long_memory/data/raw/.gitkeep`
+- `llm_long_memory/data/raw/LongMemEval/.gitkeep`
+- `llm_long_memory/data/raw/LoCoMo/.gitkeep`
+- `llm_long_memory/data/processed/.gitkeep`
+- `llm_long_memory/data/graphs/.gitkeep`
 
 ## Config Discipline
+
 - Treat `llm_long_memory/config/config.yaml` as the single runtime source of truth.
-- Avoid hidden constants in code paths that impact retrieval, prompting, or evaluation.
+- If a parameter affects retrieval, answering, graph construction, or evaluation, it should be explicit in config.
+- Prefer removing unused knobs over silently keeping them.
+
+## Recommended Review Standard
+
+Before merging a change, ask:
+
+1. Does it keep the baseline reproducible?
+2. Does it make the repository easier to inspect or resume?
+3. Does it avoid coupling judge, generation, and evaluation too tightly?
+4. Does it preserve the ability to run controlled ablations?
+
+If the answer to most of these is yes, the change is probably aligned with the repository’s goals.

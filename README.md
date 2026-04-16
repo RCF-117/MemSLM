@@ -1,99 +1,272 @@
 # MemSLM
 
-MemSLM is a local, modular memory-RAG research prototype for long-conversation evaluation.
+MemSLM is a local, modular memory-RAG research system for long-conversation evaluation.
 
-It is designed for thesis-style iteration: fast experiments, clear module boundaries, and reproducible baseline comparisons.
+It is built for thesis work, but the code is organized with a stronger engineering discipline:
+- clear module boundaries
+- config-driven behavior
+- reproducible evaluation
+- separate generation and judge phases
+- checkpointable experiments
 
-## What This Repo Contains
-- Local LLM chat pipeline (Ollama)
-- Short-term memory (context buffer)
-- Mid-term memory (SQLite topic/chunk memory + hybrid retrieval)
-- Long-term memory prototype (event-centric graph store, SQLite-backed)
-- Dataset streaming + eval persistence for LongMemEval-style workflows
+The goal is not to be a production chatbot. The goal is to provide a stable, inspectable research platform for studying short memory, mid memory, and long-memory graph construction under local compute constraints.
 
-## System Flow
+## Core Design
+
+The repository follows one guiding idea:
+
+> Keep retrieval and memory construction modular, keep generation separate, and keep evaluation reproducible.
+
+In practice this means:
+- short-term memory stores recent dialogue context
+- mid-term memory stores persistent conversation chunks in SQLite and performs retrieval
+- long-memory stores an event-centric graph prototype for offline structural memory
+- answering uses retrieved evidence plus a compact prompt to a local Ollama model
+- evaluation writes every instance to SQLite so runs can be resumed and audited
+- judge runs as a separate post-processing stage
+
+## System Architecture
+
 ```mermaid
 flowchart LR
-    A["Input Message"] --> B["Short Memory"]
-    B --> C["Mid Memory Ingest"]
-    C --> D["Hybrid Retrieval (Topic + Global Chunk)"]
-    D --> E["Answering Pipeline (Evidence/Candidates/Decision)"]
-    E --> F["8B LLM Generation"]
+    A["Dataset / User Input"] --> B["Short Memory"]
+    B --> C["Mid Memory Ingest (SQLite)"]
+    C --> D["Mid Retrieval: topic + global chunk"]
+    D --> E["Answering Pipeline"]
+    E --> F["8B Generation"]
     D --> G["Offline Long-Memory Graph Build"]
-    G --> H["Event Graph Store (SQLite)"]
+    G --> H["Graph Store (SQLite)"]
     H --> E
+    F --> I["Eval Result Logging"]
+    I --> J["SQLite Eval Tables"]
+    J --> K["Judge Stage (optional, separate)"]
 ```
 
-## Branch Policy
-- `main`: active development branch (current architecture evolution)
-- `baseline/midrag_v1`: frozen mid-memory RAG baseline for controlled A/B
+### What each stage does
 
-## Repo Structure
-- `llm_long_memory/main.py`: CLI entry
-- `llm_long_memory/config/config.yaml`: active runtime config
-- `llm_long_memory/cli/`: interactive command runtime
-- `llm_long_memory/memory/`: short/mid/long memory and orchestration
-  - `memory_manager.py` + `memory_manager_chat_runtime.py`
-  - `answering_pipeline.py` + extractor/response/temporal submodules
-  - `long_memory.py` + extractor/query/persist/store submodules
-- `llm_long_memory/evaluation/`: loader, runner, metrics, eval DB writer
-- `llm_long_memory/baselines/`: baseline protocol + baseline config + runner
+- **Short memory**
+  - holds the latest turns
+  - preserves immediate conversational continuity
+  - flushes old turns into mid memory when full
+
+- **Mid memory**
+  - stores conversation chunks persistently in SQLite
+  - supports retrieval over topic and chunk evidence
+  - serves as the main recall layer for the baseline and thesis experiments
+
+- **Long memory**
+  - builds a structured event graph from retrieved evidence
+  - is evaluated offline so that graph quality can be inspected without conflating it with final answer generation
+  - remains a research prototype rather than a final production module
+
+- **Answering pipeline**
+  - assembles compact evidence bundles
+  - optionally uses counting / temporal / fallback helpers
+  - always returns through the final model path unless explicitly turned off in an experiment
+
+- **Evaluation**
+  - writes one row per question into SQLite
+  - supports interruption and resumption by `run_id`
+  - can export a final report with judge-based accuracy
+
+## Repository Layout
+
+- `llm_long_memory/main.py`: interactive CLI entrypoint
+- `llm_long_memory/config/config.yaml`: runtime configuration
+- `llm_long_memory/llm/`: local Ollama client
+- `llm_long_memory/memory/`: short memory, mid memory, long memory, answering pipeline, orchestration
+- `llm_long_memory/evaluation/`: dataset loading, runtime evaluation, metrics, persistence, report export
+- `llm_long_memory/baselines/`: frozen baseline protocol and runner
+- `llm_long_memory/experiments/`: thesis-oriented subset building, split generation, judge export, graph export
 - `llm_long_memory/tests/`: unit tests
 
-## 3-Minute Quick Start
+### Experiment entry points
+
+- `build_eval_subset.py`: build a compact balanced subset
+- `build_eval_split.py`: build a debug/test split with a fixed manifest
+- `run_thesis_eval.py`: run a thesis-oriented experiment with optional judge
+- `export_eval_report.py`: export SQLite eval runs into JSON / Markdown / CSV
+- `export_graph.py`: export the long-memory graph for visualization
+- `llm_judge.py`: local judge helper used by the report exporter
+
+For a more detailed breakdown of these scripts, see:
+- [`llm_long_memory/experiments/README.md`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/README.md)
+
+## Data Sources
+
+The loader is designed to support:
+- **LongMemEval**
+- **LoCoMo**
+
+These datasets are normalized into a shared internal shape so the same evaluation and retrieval code can be reused across benchmark families.
+
+Recommended locations:
+- LongMemEval raw files: `llm_long_memory/data/raw/LongMemEval/`
+- LoCoMo raw files: `llm_long_memory/data/raw/LoCoMo/`
+
+## Reproducibility Rules
+
+The repo is structured around two kinds of runs:
+
+1. **Generation run**
+   - one question at a time
+   - results written to SQLite immediately
+   - can be resumed with `run_id`
+
+2. **Judge run**
+   - separate post-processing stage
+   - batch-evaluates completed predictions
+   - does not affect generation latency
+
+This separation is intentional. It keeps generation stable and keeps the final score audit-friendly.
+
+## Thesis Workflow
+
+### 1) Build a debug/test split
+
+If you want a stable development split and a frozen final split:
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pytest -q llm_long_memory/tests
-python llm_long_memory/main.py
+python -m llm_long_memory.experiments.build_eval_split \
+  --source llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json \
+  --debug-output llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_debug.json \
+  --test-output llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_test.json \
+  --debug-ratio 0.3 \
+  --seed 42
 ```
 
-## CLI Commands
-After starting `python llm_long_memory/main.py`:
-- `/run_dataset path/to/file.json`: ingest dataset messages into memory
-- `/run_eval path/to/file.json`: run evaluation pipeline
-- `/run_eval_split split_name`: run evaluation using configured split from `config/config.yaml`
-- `/debug`: print memory debug stats
-- `/health`: check Ollama + DB state
-- `exit`: quit
+Optional:
+- `--keep-types`
+- `--drop-types`
+- `--manifest-output`
 
-Example dataset paths:
-- LongMemEval: `llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json`
-- LoCoMo: `llm_long_memory/data/raw/LoCoMo/locomo10.json`
+These interfaces are kept for controlled experiments, but they are not enabled by default.
 
-Configured eval split examples:
-- `/run_eval_split sample20`
-- `/run_eval_split oracle`
-- `/run_eval_split locomo10`
+### 2) Run a thesis evaluation
+
+Example 1:
+
+```bash
+python -m llm_long_memory.experiments.run_thesis_eval \
+  --config llm_long_memory/config/config.yaml \
+  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_debug.json \
+  --model qwen3:8b \
+  --judge-model deepseek-r1:8b \
+  --judge \
+  --report-dir llm_long_memory/data/processed/thesis_reports
+```
+
+Example 2:
+
+```bash
+python -m llm_long_memory.experiments.run_thesis_eval \
+  --config llm_long_memory/config/config.yaml \
+  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_debug.json \
+  --model deepseek-r1:8b \
+  --judge-model qwen3:8b \
+  --judge \
+  --report-dir llm_long_memory/data/processed/thesis_reports
+```
+
+Useful options:
+- `--resume-run-id`: resume a crashed run
+- `--subset-output`: persist sampled subset
+- `--keep-types` / `--drop-types`: optional type filtering
+- `--max-total`, `--per-type`, `--seed`: subset control
+
+### 3) Export a report
+
+```bash
+python -m llm_long_memory.experiments.export_eval_report \
+  --db-path llm_long_memory/data/processed/mid_memory.db \
+  --output-dir llm_long_memory/data/processed/thesis_reports
+```
+
+You can optionally merge offline graph evaluation JSON with:
+
+```bash
+python -m llm_long_memory.experiments.export_eval_report \
+  --db-path llm_long_memory/data/processed/mid_memory.db \
+  --output-dir llm_long_memory/data/processed/thesis_reports \
+  --graph-json llm_long_memory/data/processed/graph_eval_*.json
+```
+
+### 4) Export the long-memory graph
+
+```bash
+python -m llm_long_memory.experiments.export_graph \
+  --db-path llm_long_memory/data/processed/long_memory.db \
+  --output-dir llm_long_memory/data/graphs
+```
+
+This produces graph artifacts suitable for inspection in Gephi, browser preview, or later paper figures.
+
+## Metrics
+
+The thesis report keeps the following metrics as the primary public contract:
+
+- `final_answer_acc`
+- `type_answer_acc`
+- `retrieval_answer_span_hit_rate`
+- `retrieval_support_sentence_hit_rate`
+- `graph_answer_span_hit_rate`
+- `graph_support_sentence_hit_rate`
+- `graph_ingest_accept_rate`
+- `avg_latency_sec`
+- `type_latency_sec`
+
+Interpretation:
+- `final_answer_acc` is the main end-to-end answer quality metric
+- `type_answer_acc` is the judge-based grouped accuracy by `question_type`
+- retrieval and graph hit rates are diagnostic coverage metrics
+- latency metrics measure end-to-end wall-clock answer time per question; judge time is excluded from generation latency and reported separately
+
+## Current Experimental Policy
+
+- Keep the main generation path stable while you tune retrieval and graph quality
+- Use the debug split for iteration
+- Freeze the test split for final reporting
+- Keep judge separate from generation
+- Prefer small, balanced experiments over full-benchmark reruns when you need fast feedback
+
+## Branch Policy
+
+- `main`: active development branch
+- `baseline/midrag_v1`: frozen mid-memory baseline for controlled comparison
 
 ## Data and Git Hygiene
+
 Large or runtime files are intentionally ignored:
 - `llm_long_memory/data/raw/*.json`
 - `llm_long_memory/data/raw/**/*.json`
 - `llm_long_memory/data/processed/*.db*`
 - `llm_long_memory/logs/`
 
-Tracked placeholders keep directory structure reproducible:
+Tracked placeholders keep the directory tree stable:
 - `llm_long_memory/data/raw/.gitkeep`
 - `llm_long_memory/data/raw/LongMemEval/.gitkeep`
 - `llm_long_memory/data/raw/LoCoMo/.gitkeep`
 - `llm_long_memory/data/processed/.gitkeep`
 - `llm_long_memory/data/graphs/.gitkeep`
 
-## Current Status
-- This is a research prototype, not a production system.
-- Priorities: clarity, controllable experiments, and maintainability.
-- Long-memory module is under active refinement and should be evaluated against a frozen mid-RAG baseline config.
+## Status
 
-## Engineering Notes (Current)
-- Core large modules were split into domain-focused submodules to reduce God Object risk.
-- Runtime behavior is config-driven via `llm_long_memory/config/config.yaml`.
-- Evaluation writes run/results/group summaries into mid-memory SQLite (`eval_runs`, `eval_results`, `eval_group_results`).
+This is a research prototype with strong engineering hygiene for a thesis project.
 
-## Development Notes
-- Keep baseline changes out of `main` experiments unless intentionally updating protocol.
-- Use small commits with one concern per commit.
-- Run tests before pushing.
+It is not a production service, but it is now structured enough to support:
+- reproducible ablations
+- judge-based reporting
+- checkpointable evaluation
+- graph export and qualitative inspection
+- baseline-versus-variant comparison
 
-See also: [CONTRIBUTING.md](CONTRIBUTING.md)
+## Practical Advice
+
+If you are about to run a new experiment:
+1. Generate or select the debug split
+2. Tune on debug only
+3. Freeze the test split
+4. Run the final judge once
+5. Export the report and graph artifacts
+
+That workflow keeps the repository both research-friendly and maintainable.

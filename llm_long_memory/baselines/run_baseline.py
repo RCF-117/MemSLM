@@ -37,18 +37,31 @@ def parse_args() -> argparse.Namespace:
         default="llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json",
         help="Path to LongMemEval oracle file.",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="",
+        help="Optional LLM model override. Defaults to config.llm.default_model.",
+    )
     return parser.parse_args()
 
 
-def run_one_dataset(config_path: str, dataset_path: str, sample_limit: int) -> None:
+def run_one_dataset(
+    config_path: str,
+    dataset_path: str,
+    sample_limit: int,
+    model_name: str | None = None,
+    resume_run_id: str | None = None,
+) -> str:
     config = load_config(config_path)
     config["dataset"]["eval_max_instances"] = sample_limit
 
     llm_cfg = config["llm"]
-    llm = LLM(model_name=str(llm_cfg["default_model"]), host=str(llm_cfg["host"]))
+    selected_model = (model_name or str(llm_cfg["default_model"])).strip() or str(llm_cfg["default_model"])
+    llm = LLM(model_name=selected_model, host=str(llm_cfg["host"]))
     manager = MemoryManager(llm=llm, config=config)
     try:
-        run_eval(manager, dataset_path, config)
+        return run_eval(manager, dataset_path, config, resume_run_id=resume_run_id)
     finally:
         manager.close()
 
@@ -57,12 +70,13 @@ def main() -> None:
     args = parse_args()
     sample20 = str(Path(args.sample20_path))
     oracle = str(Path(args.oracle_path))
+    model_override = args.model.strip() or None
 
     print(f"[Baseline] sample20: {sample20}")
-    run_one_dataset(args.config, sample20, args.sample_limit)
+    run_one_dataset(args.config, sample20, args.sample_limit, model_name=model_override)
 
     print(f"[Baseline] oracle: {oracle}")
-    run_one_dataset(args.config, oracle, args.sample_limit)
+    run_one_dataset(args.config, oracle, args.sample_limit, model_name=model_override)
 
 
 if __name__ == "__main__":

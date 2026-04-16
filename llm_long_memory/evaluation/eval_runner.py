@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import time
 import uuid
 from typing import Any, Dict, List
 
@@ -19,7 +20,13 @@ from llm_long_memory.memory.memory_manager import MemoryManager
 from llm_long_memory.utils.logger import logger
 
 
-def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) -> None:
+def run_eval(
+    manager: MemoryManager,
+    dataset_path: str,
+    config: Dict[str, Any],
+    *,
+    resume_run_id: str | None = None,
+) -> str:
     """Run eval mode: ingest history, then ask question and compare with answer."""
     dataset_cfg = config["dataset"]
     eval_cfg = config["evaluation"]
@@ -51,21 +58,39 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
         "Eval mode started: "
         f"path={dataset_path}, stream_mode={stream_mode}, max_instances={max_instances}, isolated={isolated}"
     )
-    run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
-    manager.mid_memory.eval_store.log_eval_run_start(
-        run_id, dataset_path, isolated, commit=False
+    run_id = str(resume_run_id or "").strip() or (
+        datetime.now().strftime("run_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     )
-    logger.info(f"Eval run id: {run_id}")
+    store = manager.mid_memory.eval_store
+    if not store.run_exists(run_id):
+        store.log_eval_run_start(run_id, dataset_path, isolated, commit=True)
+        logger.info(f"Eval run id: {run_id} (new)")
+    else:
+        logger.info(f"Eval run id: {run_id} (resuming existing run)")
+    processed_question_ids = store.get_existing_question_ids(run_id)
+    remaining_budget = None
+    if max_instances > 0:
+        remaining_budget = max(0, int(max_instances) - len(processed_question_ids))
+        logger.info(
+            "Eval resume budget: "
+            f"target_total={max_instances}, already_done={len(processed_question_ids)}, "
+            f"remaining={remaining_budget}"
+        )
+    if processed_question_ids:
+        logger.info(
+            f"Eval resume state: already_processed={len(processed_question_ids)} question_ids."
+        )
 
     instances = load_stream(dataset_path)
     seen = 0
+    processed_now = 0
     counters = EvalCounters()
     grouped: Dict[str, Dict[str, int]] = {}
 
     eval_error: Exception | None = None
     try:
         for instance in instances:
-            if max_instances > 0 and seen >= max_instances:
+            if remaining_budget is not None and processed_now >= remaining_budget:
                 break
 
             seen += 1
@@ -73,6 +98,10 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
             qtype = str(instance.get("question_type", ""))
             question = str(instance.get("question", "")).strip()
             expected = str(instance.get("answer", "")).strip()
+
+            if qid and qid in processed_question_ids:
+                logger.info(f"Eval instance {seen}: question_id={qid} already processed, skipped.")
+                continue
 
             logger.info(f"Eval instance {seen}: question_id={qid}, question_type={qtype}")
             if isolated:
@@ -147,13 +176,16 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 if compute_support_sentence_hit_enabled:
                     support_sentence_hit = None
 
+            processed_now += 1
             counters.total += 1
             eval_question = f"{answer_style}\n{question}" if answer_style else question
+            started = time.perf_counter()
             prediction = manager.chat(
                 eval_question,
                 retrieval_query=question,
                 precomputed_context=precomputed_context,
             )
+            latency_sec = time.perf_counter() - started
             prompt_chunks = manager.get_last_prompt_eval_chunks()
             if compute_answer_span_hit_enabled:
                 answer_span_hit = compute_answer_span_hit(expected, prompt_chunks, eval_cfg)
@@ -183,8 +215,9 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 support_sentence_hit=support_sentence_hit,
                 graph_answer_span_hit=graph_answer_span_hit,
                 graph_support_sentence_hit=graph_support_sentence_hit,
+                latency_sec=latency_sec,
                 retrieved_session_ids=retrieved_session_ids,
-                commit=False,
+                commit=True,
             )
 
             preview = prediction[:preview_chars].replace("\n", " ")
@@ -192,6 +225,7 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
                 f"[Eval {counters.total}] question_id={qid} | type={qtype} | match={is_match}\n"
                 f"Score: em={match_result['em']:.2f}, f1={match_result['f1']:.2f}, "
                 f"substring={match_result['substring']:.0f}, numeric={match_result['numeric']:.0f}\n"
+                f"Latency: {latency_sec:.3f}s\n"
                 "Retrieval Quality: "
                 f"support_sentence_hit={support_sentence_hit}, answer_span_hit={answer_span_hit}\n"
                 "Coverage (aux): "
@@ -217,3 +251,4 @@ def run_eval(manager: MemoryManager, dataset_path: str, config: Dict[str, Any]) 
 
     if eval_error is not None:
         raise eval_error
+    return run_id
