@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
+from llm_long_memory.evaluation.eval_store import EvalStore
 from llm_long_memory.experiments.llm_judge import LLMJudge
 from llm_long_memory.utils.helpers import load_config, resolve_project_path
 
@@ -67,7 +68,9 @@ def _group_metrics(rows: Sequence[sqlite3.Row], *, judge_enabled: bool = False) 
                 "question_type": key,
                 "total": total,
                 "matched": matched,
-                "type_answer_acc": ((judge_matched / total) if (judge_enabled and total) else None),
+                "type_answer_acc": (
+                    (judge_matched / total) if (judge_enabled and total) else ((matched / total) if total else None)
+                ),
                 "answer_span_hit_rate": avg("answer_span_hit"),
                 "support_sentence_hit_rate": avg("support_sentence_hit"),
                 "graph_answer_span_hit_rate": avg("graph_answer_span_hit"),
@@ -106,6 +109,9 @@ def export_report(
             f"SELECT * FROM {result_table} WHERE run_id=? ORDER BY id ASC",
             (resolved_run_id,),
         ).fetchall()
+        eval_store = EvalStore(conn=conn, eval_cfg=dict(config["evaluation"]))
+        eval_store.create_tables()
+        eval_store.ensure_schema_compat()
 
         enriched_rows: List[Dict[str, Any]] = [_row_to_dict(row) for row in result_rows]
         if judge_enabled and enriched_rows:
@@ -150,6 +156,28 @@ def export_report(
         )
 
         grouped = _group_metrics(enriched_rows, judge_enabled=judge_enabled)
+        thesis_final_answer_acc = ((judge_matched / total) if (judge_enabled and total) else ((matched / total) if total else 0.0))
+        if grouped:
+            for row in grouped:
+                eval_store.log_thesis_type_metric(
+                    resolved_run_id,
+                    str(row["question_type"]),
+                    type_answer_acc=float(row.get("type_answer_acc") or 0.0),
+                    type_latency_sec=float(row.get("type_latency_sec") or 0.0),
+                    commit=False,
+                )
+        eval_store.log_thesis_run_metrics(
+            resolved_run_id,
+            final_answer_acc=float(thesis_final_answer_acc),
+            retrieval_answer_span_hit_rate=_safe_float(summary.get("retrieval_answer_span_hit_rate")),
+            retrieval_support_sentence_hit_rate=_safe_float(summary.get("retrieval_support_sentence_hit_rate")),
+            graph_answer_span_hit_rate=_safe_float(summary.get("graph_answer_span_hit_rate")),
+            graph_support_sentence_hit_rate=_safe_float(summary.get("graph_support_sentence_hit_rate")),
+            graph_ingest_accept_rate=_safe_float(summary.get("graph_ingest_accept_rate")),
+            avg_latency_sec=_safe_float(summary.get("avg_latency_sec")),
+            commit=False,
+        )
+        conn.commit()
         graph_payload: Dict[str, Any] = {}
         if graph_json_path:
             graph_file = resolve_project_path(graph_json_path)

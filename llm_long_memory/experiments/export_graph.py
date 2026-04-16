@@ -189,15 +189,18 @@ def export_graph(
     *,
     db_path: str,
     output_dir: str,
+    artifact_prefix: str = "",
     active_only: bool = False,
     event_limit: int = 0,
     preview_limit: int = 250,
 ) -> Dict[str, Any]:
     db_file = resolve_project_path(db_path)
     out_root = resolve_project_path(output_dir)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = out_root / f"graph_export_{stamp}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_root.mkdir(parents=True, exist_ok=True)
+    prefix = str(artifact_prefix or "").strip()
+    if not prefix:
+        prefix = datetime.now().strftime("graph_export_%Y%m%d_%H%M%S")
+    prefix = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in prefix)
 
     conn = sqlite3.connect(str(db_file))
     conn.row_factory = sqlite3.Row
@@ -270,19 +273,19 @@ def export_graph(
             "node_edges": node_graph.number_of_edges(),
         }
 
-        event_graphml = out_dir / "event_graph.graphml"
-        node_graphml = out_dir / "node_graph.graphml"
+        event_graphml = out_root / f"{prefix}_event_graph.graphml"
+        node_graphml = out_root / f"{prefix}_node_graph.graphml"
         nx.write_graphml(event_graph, event_graphml)
         nx.write_graphml(node_graph, node_graphml)
-        (out_dir / "event_graph.json").write_text(
+        (out_root / f"{prefix}_event_graph.json").write_text(
             json.dumps({"summary": summary, **event_json}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        (out_dir / "node_graph.json").write_text(
+        (out_root / f"{prefix}_node_graph.json").write_text(
             json.dumps({"summary": summary, **node_json}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        (out_dir / "summary.json").write_text(
+        (out_root / f"{prefix}_summary.json").write_text(
             json.dumps(summary, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -297,7 +300,7 @@ def export_graph(
             ],
         }
         _write_html_preview(
-            out_path=out_dir / "event_graph_preview.html",
+            out_path=out_root / f"{prefix}_event_graph_preview.html",
             title="Long Memory Event Graph Preview",
             graph_json=preview_graph,
             note=f"Exported from {db_file.name}. Open the GraphML in Gephi/Cytoscape for the full graph.",
@@ -312,20 +315,21 @@ def export_graph(
             ],
         }
         _write_html_preview(
-            out_path=out_dir / "node_graph_preview.html",
+            out_path=out_root / f"{prefix}_node_graph_preview.html",
             title="Long Memory Node Graph Preview",
             graph_json=node_preview_graph,
             note=f"Exported from {db_file.name}. This view shows the intra-event node structure.",
         )
 
-        print(f"output_dir: {out_dir}")
+        print(f"output_dir: {out_root}")
+        print(f"artifact_prefix: {prefix}")
         print(f"event_graphml: {event_graphml}")
         print(f"node_graphml: {node_graphml}")
-        print(f"event_graph_json: {out_dir / 'event_graph.json'}")
-        print(f"node_graph_json: {out_dir / 'node_graph.json'}")
-        print(f"preview_html: {out_dir / 'event_graph_preview.html'}")
-        print(f"node_preview_html: {out_dir / 'node_graph_preview.html'}")
-        return {"summary": summary, "output_dir": str(out_dir)}
+        print(f"event_graph_json: {out_root / f'{prefix}_event_graph.json'}")
+        print(f"node_graph_json: {out_root / f'{prefix}_node_graph.json'}")
+        print(f"preview_html: {out_root / f'{prefix}_event_graph_preview.html'}")
+        print(f"node_preview_html: {out_root / f'{prefix}_node_graph_preview.html'}")
+        return {"summary": summary, "output_dir": str(out_root), "artifact_prefix": prefix}
     finally:
         conn.close()
 
@@ -341,6 +345,11 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         default="data/graphs",
         help="Base directory for exported graph artifacts.",
+    )
+    parser.add_argument(
+        "--artifact-prefix",
+        default="",
+        help="Optional filename prefix for exported graph artifacts.",
     )
     parser.add_argument(
         "--active-only",
@@ -367,6 +376,7 @@ def main() -> None:
     export_graph(
         db_path=args.db_path,
         output_dir=args.output_dir,
+        artifact_prefix=args.artifact_prefix,
         active_only=bool(args.active_only),
         event_limit=int(args.event_limit),
         preview_limit=int(args.preview_limit),

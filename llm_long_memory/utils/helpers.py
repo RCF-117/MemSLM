@@ -16,10 +16,19 @@ def project_root() -> Path:
 
 
 def resolve_project_path(path: str) -> Path:
-    """Resolve absolute/relative path with llm_long_memory as base."""
+    """Resolve absolute/relative path with llm_long_memory as base.
+
+    Accepts paths already prefixed with ``llm_long_memory/`` and strips the
+    redundant package prefix so callers can use either ``data/...`` or
+    ``llm_long_memory/data/...`` without creating duplicate nested paths.
+    """
     raw = Path(path)
     if raw.is_absolute():
         return raw
+    parts = raw.parts
+    root_name = project_root().name
+    if parts and parts[0] == root_name:
+        raw = Path(*parts[1:]) if len(parts) > 1 else Path('.')
     return project_root() / raw
 
 

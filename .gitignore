@@ -18,8 +18,13 @@ llm_long_memory/data/processed/*.db-shm
 llm_long_memory/data/processed/*.sqlite
 llm_long_memory/data/processed/*.sqlite3
 llm_long_memory/data/processed/*.json
+llm_long_memory/data/processed/thesis_*/
+llm_long_memory/data/processed/thesis_*/*
 llm_long_memory/data/graphs/*.json
+llm_long_memory/data/graphs_thesis*/
+llm_long_memory/data/graphs_thesis*/*
 llm_long_memory/data/raw/wget-log
+llm_long_memory/llm_long_memory/
 
 # Large raw datasets (keep scripts tracked)
 llm_long_memory/data/raw/*.json

@@ -17,6 +17,12 @@ class EvalStore:
         self.run_table = self._sanitize_identifier(str(eval_cfg["run_table"]))
         self.result_table = self._sanitize_identifier(str(eval_cfg["result_table"]))
         self.group_table = self._sanitize_identifier(str(eval_cfg["group_table"]))
+        self.thesis_run_table = self._sanitize_identifier(
+            str(eval_cfg.get("thesis_run_table", "thesis_eval_runs"))
+        )
+        self.thesis_type_table = self._sanitize_identifier(
+            str(eval_cfg.get("thesis_type_table", "thesis_eval_type_metrics"))
+        )
 
     @staticmethod
     def _sanitize_identifier(name: str) -> str:
@@ -81,6 +87,31 @@ class EvalStore:
             )
             """
         )
+        self.conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.thesis_run_table}(
+              run_id TEXT PRIMARY KEY,
+              final_answer_acc REAL,
+              retrieval_answer_span_hit_rate REAL,
+              retrieval_support_sentence_hit_rate REAL,
+              graph_answer_span_hit_rate REAL,
+              graph_support_sentence_hit_rate REAL,
+              graph_ingest_accept_rate REAL,
+              avg_latency_sec REAL
+            )
+            """
+        )
+        self.conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.thesis_type_table}(
+              run_id TEXT,
+              question_type TEXT,
+              type_answer_acc REAL,
+              type_latency_sec REAL,
+              PRIMARY KEY(run_id, question_type)
+            )
+            """
+        )
         self.conn.commit()
 
     def ensure_schema_compat(self) -> None:
@@ -110,6 +141,28 @@ class EvalStore:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN graph_ingest_accept_rate REAL")
         if "avg_latency_sec" not in run_names:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN avg_latency_sec REAL")
+        thesis_run_cols = self.conn.execute(f"PRAGMA table_info({self.thesis_run_table})").fetchall()
+        thesis_run_names = {str(row["name"]) for row in thesis_run_cols}
+        thesis_run_expected = {
+            "run_id",
+            "final_answer_acc",
+            "retrieval_answer_span_hit_rate",
+            "retrieval_support_sentence_hit_rate",
+            "graph_answer_span_hit_rate",
+            "graph_support_sentence_hit_rate",
+            "graph_ingest_accept_rate",
+            "avg_latency_sec",
+        }
+        if not thesis_run_expected.issubset(thesis_run_names):
+            # Legacy or partially created DB: rebuild is not necessary because CREATE TABLE
+            # already defines the schema for new installs. The additive ALTER path is only
+            # needed for the legacy eval tables above.
+            pass
+        thesis_type_cols = self.conn.execute(f"PRAGMA table_info({self.thesis_type_table})").fetchall()
+        thesis_type_names = {str(row["name"]) for row in thesis_type_cols}
+        thesis_type_expected = {"run_id", "question_type", "type_answer_acc", "type_latency_sec"}
+        if not thesis_type_expected.issubset(thesis_type_names):
+            pass
 
         cols = self.conn.execute(f"PRAGMA table_info({self.result_table})").fetchall()
         names = {str(row["name"]) for row in cols}
@@ -254,6 +307,77 @@ class EvalStore:
             VALUES(?, ?, ?, ?, ?)
             """,
             (run_id, group_key, int(total), int(matched), float(accuracy)),
+        )
+        if commit:
+            self.conn.commit()
+
+    def log_thesis_run_metrics(
+        self,
+        run_id: str,
+        *,
+        final_answer_acc: float,
+        retrieval_answer_span_hit_rate: float | None,
+        retrieval_support_sentence_hit_rate: float | None,
+        graph_answer_span_hit_rate: float | None,
+        graph_support_sentence_hit_rate: float | None,
+        graph_ingest_accept_rate: float | None,
+        avg_latency_sec: float | None,
+        commit: bool = True,
+    ) -> None:
+        if not self.save_to_db:
+            return
+        self.conn.execute(
+            f"""
+            INSERT OR REPLACE INTO {self.thesis_run_table}
+            (
+              run_id,
+              final_answer_acc,
+              retrieval_answer_span_hit_rate,
+              retrieval_support_sentence_hit_rate,
+              graph_answer_span_hit_rate,
+              graph_support_sentence_hit_rate,
+              graph_ingest_accept_rate,
+              avg_latency_sec
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                float(final_answer_acc),
+                float(retrieval_answer_span_hit_rate) if retrieval_answer_span_hit_rate is not None else None,
+                float(retrieval_support_sentence_hit_rate) if retrieval_support_sentence_hit_rate is not None else None,
+                float(graph_answer_span_hit_rate) if graph_answer_span_hit_rate is not None else None,
+                float(graph_support_sentence_hit_rate) if graph_support_sentence_hit_rate is not None else None,
+                float(graph_ingest_accept_rate) if graph_ingest_accept_rate is not None else None,
+                float(avg_latency_sec) if avg_latency_sec is not None else None,
+            ),
+        )
+        if commit:
+            self.conn.commit()
+
+    def log_thesis_type_metric(
+        self,
+        run_id: str,
+        question_type: str,
+        *,
+        type_answer_acc: float,
+        type_latency_sec: float,
+        commit: bool = True,
+    ) -> None:
+        if not self.save_to_db:
+            return
+        self.conn.execute(
+            f"""
+            INSERT OR REPLACE INTO {self.thesis_type_table}
+            (run_id, question_type, type_answer_acc, type_latency_sec)
+            VALUES(?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                question_type,
+                float(type_answer_acc),
+                float(type_latency_sec),
+            ),
         )
         if commit:
             self.conn.commit()

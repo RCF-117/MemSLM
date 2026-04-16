@@ -149,11 +149,12 @@ def main() -> None:
             export_result = export_graph(
                 db_path=str(graph_db_path),
                 output_dir=args.graph_output_dir,
+                artifact_prefix=run_id,
                 active_only=False,
             )
             export_dir = resolve_project_path(str(export_result["output_dir"]))
-            graph_json_path = str(export_dir / "event_graph.json")
-            node_graph_json_path = str(export_dir / "node_graph.json")
+            graph_json_path = str(export_dir / f"{run_id}_event_graph.json")
+            node_graph_json_path = str(export_dir / f"{run_id}_node_graph.json")
     export_report(
         db_path=report_db_path,
         output_dir=args.report_dir,

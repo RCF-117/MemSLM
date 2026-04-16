@@ -648,6 +648,8 @@ evaluation:
   run_table: eval_runs
   result_table: eval_results
   group_table: eval_group_results
+  thesis_run_table: thesis_eval_runs
+  thesis_type_table: thesis_eval_type_metrics
   oracle_temporal:
     disable_temporal_weight: true
     dataset_keyword: oracle

@@ -22,11 +22,11 @@ from llm_long_memory.utils.helpers import resolve_project_path
 from llm_long_memory.utils.logger import logger
 
 
-def _create_graph_accumulator_store(config: Dict[str, Any], run_id: str) -> LongMemoryStore:
+def _create_graph_accumulator_store(config: Dict[str, Any]) -> LongMemoryStore:
     long_cfg = dict(config["memory"]["long_memory"])
     graph_root = resolve_project_path("data/processed/thesis_graph_runs")
     graph_root.mkdir(parents=True, exist_ok=True)
-    db_path = graph_root / f"{run_id}.db"
+    db_path = graph_root / "thesis_graph_runs.db"
     return LongMemoryStore(
         database_file=str(db_path),
         sqlite_busy_timeout_ms=int(long_cfg.get("sqlite_busy_timeout_ms", 5000)),
@@ -109,7 +109,10 @@ def run_eval(
     grouped: Dict[str, Dict[str, int]] = {}
     graph_accumulator_store: LongMemoryStore | None = None
     if offline_graph_build_enabled and bool(getattr(manager, "long_memory_enabled", False)):
-        graph_accumulator_store = _create_graph_accumulator_store(config, run_id)
+        graph_accumulator_store = _create_graph_accumulator_store(config)
+        if not store.run_exists(run_id):
+            graph_accumulator_store.clear_all()
+            graph_accumulator_store.commit()
 
     eval_error: Exception | None = None
     try:
