@@ -17,6 +17,8 @@ class MidMemoryStore:
     def __init__(
         self,
         database_file: str,
+        eval_database_file: str | None = None,
+        *,
         sqlite_busy_timeout_ms: int,
         sqlite_journal_mode: str,
         sqlite_synchronous: str,
@@ -29,6 +31,10 @@ class MidMemoryStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
+        self.eval_db_path = self._resolve_path(eval_database_file or database_file)
+        self.eval_db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.eval_conn = sqlite3.connect(str(self.eval_db_path))
+        self.eval_conn.row_factory = sqlite3.Row
 
         self.lexical_search_enabled = bool(lexical_search_enabled)
         self.sqlite_busy_timeout_ms = int(sqlite_busy_timeout_ms)
@@ -38,11 +44,12 @@ class MidMemoryStore:
         self.sqlite_checkpoint_mode = str(sqlite_checkpoint_mode).upper()
 
         self._configure_sqlite()
+        self._configure_sqlite_conn(self.eval_conn)
         self._create_tables()
         self._ensure_schema_compat()
         self._create_indexes()
 
-        self.eval_store = EvalStore(conn=self.conn, eval_cfg=eval_cfg)
+        self.eval_store = EvalStore(conn=self.eval_conn, eval_cfg=eval_cfg)
         self.eval_store.create_tables()
         self.eval_store.ensure_schema_compat()
 
@@ -50,11 +57,14 @@ class MidMemoryStore:
     def _resolve_path(path: str) -> Path:
         return resolve_project_path(path)
 
+    def _configure_sqlite_conn(self, conn: sqlite3.Connection) -> None:
+        conn.execute(f"PRAGMA journal_mode={self.sqlite_journal_mode}")
+        conn.execute(f"PRAGMA synchronous={self.sqlite_synchronous}")
+        conn.execute(f"PRAGMA busy_timeout={self.sqlite_busy_timeout_ms}")
+        conn.commit()
+
     def _configure_sqlite(self) -> None:
-        self.conn.execute(f"PRAGMA journal_mode={self.sqlite_journal_mode}")
-        self.conn.execute(f"PRAGMA synchronous={self.sqlite_synchronous}")
-        self.conn.execute(f"PRAGMA busy_timeout={self.sqlite_busy_timeout_ms}")
-        self.conn.commit()
+        self._configure_sqlite_conn(self.conn)
 
     def _checkpoint_if_enabled(self) -> None:
         if not self.sqlite_checkpoint_on_commit:
@@ -70,7 +80,9 @@ class MidMemoryStore:
         try:
             self.conn.execute(f"PRAGMA wal_checkpoint({mode})")
         except sqlite3.OperationalError as exc:
-            logger.warn(f"MidMemoryStore.wal_checkpoint failed: {exc}")
+            message = str(exc).lower()
+            if "locked" not in message:
+                logger.warn(f"MidMemoryStore.wal_checkpoint failed: {exc}")
 
     def _create_tables(self) -> None:
         self.conn.execute(
@@ -271,6 +283,7 @@ class MidMemoryStore:
 
     def commit(self) -> None:
         self.conn.commit()
+        self.eval_conn.commit()
         self._checkpoint_if_enabled()
 
     def close(self) -> None:
@@ -278,3 +291,7 @@ class MidMemoryStore:
             self._checkpoint_if_enabled()
         finally:
             self.conn.close()
+            try:
+                self.eval_conn.commit()
+            finally:
+                self.eval_conn.close()

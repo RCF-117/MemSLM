@@ -89,6 +89,7 @@ class TestHelpers(unittest.TestCase):
               stream_mode: true
             evaluation:
               save_to_db: false
+              database_file: data/processed/thesis_eval.db
               run_table: eval_runs
               result_table: eval_results
               group_table: eval_group_results

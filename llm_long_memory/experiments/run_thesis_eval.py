@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import tempfile
 from pathlib import Path
 from typing import List
 
@@ -11,7 +10,7 @@ from llm_long_memory.baselines.run_baseline import run_one_dataset
 from llm_long_memory.experiments.build_eval_subset import build_subset
 from llm_long_memory.experiments.export_eval_report import export_report
 from llm_long_memory.experiments.export_graph import export_graph
-from llm_long_memory.utils.helpers import load_config, resolve_project_path
+from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
 
 def _parse_csv(value: str | None) -> List[str]:
@@ -40,8 +39,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="llm_long_memory/config/config.yaml", help="Config path.")
     parser.add_argument("--dataset", default="", help="Explicit dataset path.")
     parser.add_argument("--split", default="", help="Configured dataset split name.")
-    parser.add_argument("--max-total", type=int, default=20, help="Cap total instances.")
-    parser.add_argument("--per-type", type=int, default=2, help="Cap instances per question type.")
+    parser.add_argument("--max-total", type=int, default=0, help="Cap total instances.")
+    parser.add_argument("--per-type", type=int, default=0, help="Cap instances per question type.")
     parser.add_argument("--seed", type=int, default=42, help="Subset sampling seed.")
     parser.add_argument(
         "--keep-types",
@@ -60,12 +59,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--report-dir",
-        default="data/processed/thesis_reports",
+        default="",
         help="Where to write the final report artifacts.",
     )
     parser.add_argument(
         "--graph-output-dir",
-        default="data/graphs_thesis",
+        default="",
         help="Where to write the full-run graph visualization artifacts.",
     )
     parser.add_argument(
@@ -107,6 +106,12 @@ def main() -> None:
     default_model = str(config["llm"]["default_model"])
     source_dataset = _resolve_dataset_path(config, args.dataset.strip() or None, args.split.strip() or None)
     swap_roles = bool(args.swap_roles)
+    report_dir = args.report_dir.strip() or str(
+        config["evaluation"].get("thesis_report_dir", "data/processed/thesis_reports_debug_analysis")
+    )
+    graph_output_dir = args.graph_output_dir.strip() or str(
+        config["evaluation"].get("thesis_graph_dir", "data/graphs_thesis_debug_analysis")
+    )
 
     subset_path = source_dataset
     keep_types = _parse_csv(args.keep_types) or _parse_csv(args.include_types)
@@ -116,8 +121,26 @@ def main() -> None:
         if args.subset_output.strip():
             subset_path = str(resolve_project_path(args.subset_output))
         else:
-            tmp_dir = Path(tempfile.mkdtemp(prefix="thesis_subset_"))
-            subset_path = str(tmp_dir / "subset.json")
+            subset_dir = resolve_project_path(
+                str(config["evaluation"].get("thesis_subset_dir", "data/raw/LongMemEval/thesis_subsets"))
+            )
+            subset_dir.mkdir(parents=True, exist_ok=True)
+            source_stem = sanitize_filename_part(Path(source_dataset).stem)
+            keep_tag = (
+                f"__keep-{sanitize_filename_part('-'.join(sorted(keep_types)))}"
+                if keep_types
+                else ""
+            )
+            drop_tag = (
+                f"__drop-{sanitize_filename_part('-'.join(sorted(drop_types)))}"
+                if drop_types
+                else ""
+            )
+            subset_name = (
+                f"{source_stem}__max{int(args.max_total)}__per{int(args.per_type)}"
+                f"__seed{int(args.seed)}{keep_tag}{drop_tag}.json"
+            )
+            subset_path = str(subset_dir / subset_name)
         build_subset(
             source_path=source_dataset,
             output_path=subset_path,
@@ -127,6 +150,9 @@ def main() -> None:
             keep_types=keep_types,
             drop_types=drop_types,
         )
+        print(f"subset_dataset: {subset_path}")
+    else:
+        print(f"subset_dataset: {source_dataset} (no extra subset built)")
 
     model_override = args.model.strip() or default_model
     judge_override = args.judge_model.strip() or default_model
@@ -140,29 +166,46 @@ def main() -> None:
         model_name=model_override,
         resume_run_id=(args.resume_run_id.strip() or None),
     )
-    report_db_path = str(config["memory"]["mid_memory"]["database_file"])
+    dataset_name = Path(source_dataset).name
+    artifact_prefix = "__".join(
+        [
+            sanitize_filename_part(run_id),
+            sanitize_filename_part(Path(dataset_name).stem),
+            f"model-{sanitize_filename_part(model_override)}",
+            f"judge-{sanitize_filename_part(judge_override)}",
+        ]
+    )
+    report_db_path = str(config["evaluation"]["database_file"])
     graph_json_path = ""
     node_graph_json_path = ""
     if bool(config["evaluation"].get("offline_graph_build_enabled", False)):
-        graph_db_path = resolve_project_path("data/processed/thesis_graph_runs") / f"{run_id}.db"
+        graph_db_path = resolve_project_path(
+            str(config["evaluation"].get(
+                "thesis_graph_db_file",
+                "data/processed/thesis_graph_runs/thesis_graph_runs.db",
+            ))
+        )
         if graph_db_path.exists():
             export_result = export_graph(
                 db_path=str(graph_db_path),
-                output_dir=args.graph_output_dir,
-                artifact_prefix=run_id,
+                output_dir=graph_output_dir,
+                artifact_prefix=artifact_prefix,
                 active_only=False,
             )
             export_dir = resolve_project_path(str(export_result["output_dir"]))
-            graph_json_path = str(export_dir / f"{run_id}_event_graph.json")
-            node_graph_json_path = str(export_dir / f"{run_id}_node_graph.json")
+            graph_json_path = str(export_dir / f"{artifact_prefix}_event_graph.json")
+            node_graph_json_path = str(export_dir / f"{artifact_prefix}_node_graph.json")
     export_report(
         db_path=report_db_path,
-        output_dir=args.report_dir,
+        output_dir=report_dir,
         run_id=(run_id if run_id else (args.resume_run_id.strip() or None)),
+        dataset_name=dataset_name,
+        model_name=model_override,
+        judge_model=judge_override,
+        artifact_prefix=artifact_prefix,
         graph_json_path=(graph_json_path or None),
         node_graph_json_path=(node_graph_json_path or None),
         judge_enabled=bool(args.judge),
-        judge_model=judge_override,
     )
 
 

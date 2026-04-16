@@ -127,11 +127,12 @@ def run_health(manager: MemoryManager, config: Dict[str, Any]) -> None:
 
     stats = manager.mid_memory.debug_stats()
     print(f"db_path: {manager.mid_memory.db_path}")
+    print(f"eval_db_path: {getattr(manager.mid_memory, 'eval_db_path', '')}")
     print(f"topics: {stats['topics']}")
     print(f"chunks: {stats['chunks']}")
     print(f"active_topics: {stats['active_topics']}")
     print(f"inactive_topics: {stats['inactive_topics']}")
-    row = manager.mid_memory.conn.execute(
+    row = manager.mid_memory.eval_store.conn.execute(
         "SELECT COUNT(*) AS cnt FROM eval_runs"
     ).fetchone()
     eval_runs = int(row["cnt"]) if row else 0
@@ -260,4 +261,3 @@ def run_interactive(manager: MemoryManager, config: Dict[str, Any]) -> None:
         except (RuntimeError, ValueError, TypeError) as exc:
             logger.error(f"Chat failed: {exc}")
             print(f"Assistant: [Error] {exc}\n")
-

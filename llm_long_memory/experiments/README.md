@@ -21,6 +21,15 @@ The scripts are intentionally split by responsibility so the research workflow s
   - one-shot workflow for subset construction, evaluation, and report export
   - supports model override, judge override, and checkpoint resume
 
+- `run_thesis_compare.py`
+  - runs the four thesis comparison protocols in a fixed order:
+    - `model-only`
+    - `naive rag`
+    - `memslm`
+    - `ablation`
+  - exports one consolidated wide comparison report with per-type accuracy and latency columns
+  - keeps MemSLM as the focal column, with the other three modes serving as reference protocols
+
 ## 3. Report and Graph Export
 
 - `export_eval_report.py`
@@ -44,7 +53,8 @@ Recommended order:
 2. tune on `debug`
 3. freeze `test`
 4. run thesis evaluation
-5. export report
-6. export graph artifacts
+5. run thesis comparison
+6. export report
+7. export graph artifacts
 
 That separation keeps experimentation clean and makes the repository easier to maintain over time.

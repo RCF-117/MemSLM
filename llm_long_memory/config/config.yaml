@@ -631,6 +631,7 @@ dataset:
   eval_splits:
     sample20: data/raw/LongMemEval/longmemeval_s_sample_20.json
     oracle: data/raw/LongMemEval/longmemeval_oracle.json
+    ragdebug10: data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json
     locomo10: data/raw/LoCoMo/locomo10.json
   default_eval_split: sample20
 
@@ -645,11 +646,16 @@ evaluation:
   compute_support_sentence_hit: true
   offline_graph_build_enabled: true
   save_to_db: true
+  database_file: data/processed/thesis_eval.db
   run_table: eval_runs
   result_table: eval_results
   group_table: eval_group_results
   thesis_run_table: thesis_eval_runs
   thesis_type_table: thesis_eval_type_metrics
+  thesis_report_dir: data/processed/thesis_reports_debug_analysis
+  thesis_graph_dir: data/graphs_thesis_debug_analysis
+  thesis_subset_dir: data/raw/LongMemEval/thesis_subsets
+  thesis_graph_db_file: data/processed/thesis_graph_runs/thesis_graph_runs.db
   oracle_temporal:
     disable_temporal_weight: true
     dataset_keyword: oracle

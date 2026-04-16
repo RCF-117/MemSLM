@@ -32,6 +32,21 @@ def resolve_project_path(path: str) -> Path:
     return project_root() / raw
 
 
+def sanitize_filename_part(value: str) -> str:
+    """Return a filesystem-friendly filename component."""
+    text = " ".join(str(value).split()).strip()
+    if not text:
+        return "unknown"
+    chars: list[str] = []
+    for ch in text:
+        if ch.isalnum() or ch in {"-", "_", "."}:
+            chars.append(ch)
+        else:
+            chars.append("_")
+    cleaned = "".join(chars).strip("._")
+    return cleaned or "unknown"
+
+
 def _resolve_config_path(path: str) -> Path:
     raw_path = Path(path)
     if raw_path.is_absolute():

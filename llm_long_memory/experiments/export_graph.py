@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 import networkx as nx
 
-from llm_long_memory.utils.helpers import resolve_project_path
+from llm_long_memory.utils.helpers import load_config, resolve_project_path
 
 
 def _safe_text(value: Any, limit: int = 180) -> str:
@@ -343,7 +343,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="data/graphs",
+        default="",
         help="Base directory for exported graph artifacts.",
     )
     parser.add_argument(
@@ -373,9 +373,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    config = load_config()
+    output_dir = args.output_dir.strip() or str(
+        config["evaluation"].get("thesis_graph_dir", "data/graphs_thesis_debug_analysis")
+    )
     export_graph(
         db_path=args.db_path,
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         artifact_prefix=args.artifact_prefix,
         active_only=bool(args.active_only),
         event_limit=int(args.event_limit),

@@ -127,6 +127,7 @@ class MidMemory:
 
         self.store = MidMemoryStore(
             database_file=str(self.memory_cfg["database_file"]),
+            eval_database_file=str(self.config["evaluation"]["database_file"]),
             sqlite_busy_timeout_ms=self.sqlite_busy_timeout_ms,
             sqlite_journal_mode=self.sqlite_journal_mode,
             sqlite_synchronous=self.sqlite_synchronous,
@@ -139,8 +140,11 @@ class MidMemory:
         self.eval_store = self.store.eval_store
         self.lexical_search_enabled = self.store.lexical_search_enabled
         self.db_path = self.store.db_path
+        self.eval_db_path = self.store.eval_db_path
         self.current_step = self.store.load_current_step()
-        logger.info(f"MidMemory initialized with SQLite at {self.db_path}.")
+        logger.info(
+            f"MidMemory initialized with SQLite at {self.db_path}; eval db at {self.eval_db_path}."
+        )
 
     @staticmethod
     def _arr_to_blob(arr: np.ndarray) -> bytes:

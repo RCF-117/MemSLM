@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Sequence
 
 from llm_long_memory.evaluation.eval_store import EvalStore
 from llm_long_memory.experiments.llm_judge import LLMJudge
-from llm_long_memory.utils.helpers import load_config, resolve_project_path
+from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> Dict[str, Any]:
@@ -86,10 +86,13 @@ def export_report(
     db_path: str,
     output_dir: str,
     run_id: str | None = None,
+    dataset_name: str | None = None,
+    model_name: str | None = None,
+    judge_model: str | None = None,
+    artifact_prefix: str | None = None,
     graph_json_path: str | None = None,
     node_graph_json_path: str | None = None,
     judge_enabled: bool = False,
-    judge_model: str | None = None,
 ) -> Dict[str, Any]:
     db_file = resolve_project_path(db_path)
     conn = sqlite3.connect(str(db_file))
@@ -142,15 +145,25 @@ def export_report(
         matched = sum(1 for row in enriched_rows if int(row["is_match"] or 0) == 1)
         judge_matched = sum(1 for row in enriched_rows if int(row.get("judge_is_correct") or 0) == 1) if judge_enabled else None
         summary = _row_to_dict(run_row)
+        resolved_dataset_name = (
+            str(dataset_name).strip()
+            if dataset_name and str(dataset_name).strip()
+            else Path(str(summary.get("dataset_path", ""))).name
+        )
+        resolved_model_name = str(model_name).strip() if model_name and str(model_name).strip() else ""
+        resolved_judge_model = str(judge_model).strip() if judge_model and str(judge_model).strip() else ""
+        summary["dataset_path"] = resolved_dataset_name
         summary.update(
             {
                 "run_id": resolved_run_id,
+                "dataset_name": resolved_dataset_name,
+                "model_name": resolved_model_name,
+                "judge_model": resolved_judge_model,
                 "total_results": total,
                 "matched_results": matched,
                 "exact_match_acc": (matched / total) if total else 0.0,
                 "final_answer_acc": ((judge_matched / total) if (judge_enabled and total) else ((matched / total) if total else 0.0)),
                 "judge_matched_results": judge_matched,
-                "judge_enabled": bool(judge_enabled),
                 "avg_latency_sec": _safe_float(summary.get("avg_latency_sec")),
             }
         )
@@ -201,9 +214,17 @@ def export_report(
 
         out_dir = resolve_project_path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        json_path = out_dir / f"{resolved_run_id}_report.json"
-        md_path = out_dir / f"{resolved_run_id}_report.md"
-        csv_path = out_dir / f"{resolved_run_id}_rows.csv"
+        file_prefix = artifact_prefix or "__".join(
+            [
+                sanitize_filename_part(resolved_run_id),
+                sanitize_filename_part(Path(resolved_dataset_name).stem),
+                f"model-{sanitize_filename_part(resolved_model_name)}" if resolved_model_name else "model-unknown",
+                f"judge-{sanitize_filename_part(resolved_judge_model)}" if resolved_judge_model else "judge-unknown",
+            ]
+        )
+        json_path = out_dir / f"{file_prefix}_report.json"
+        md_path = out_dir / f"{file_prefix}_report.md"
+        csv_path = out_dir / f"{file_prefix}_rows.csv"
 
         json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -216,10 +237,12 @@ def export_report(
         md_lines = [
             f"# Eval Report: {resolved_run_id}",
             "",
-            f"- dataset: `{summary.get('dataset_path', '')}`",
+            f"- dataset: `{resolved_dataset_name}`",
+            f"- eval_db: `{Path(str(db_file)).name}`",
+            f"- model: `{resolved_model_name or 'unknown'}`",
+            f"- judge_model: `{resolved_judge_model or 'unknown'}`",
             f"- total: `{summary.get('total', 0)}`",
             f"- final_answer_acc: `{summary.get('final_answer_acc', 0.0):.4f}`",
-            f"- judge_enabled: `{bool(summary.get('judge_enabled', False))}`",
             f"- retrieval_answer_span_hit_rate: `{_safe_float(summary.get('retrieval_answer_span_hit_rate')) or 0.0:.4f}`",
             f"- retrieval_support_sentence_hit_rate: `{_safe_float(summary.get('retrieval_support_sentence_hit_rate')) or 0.0:.4f}`",
             f"- graph_answer_span_hit_rate: `{_safe_float(summary.get('graph_answer_span_hit_rate')) or 0.0:.4f}`",
@@ -356,15 +379,23 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export a thesis-ready eval report.")
     parser.add_argument(
         "--db-path",
-        default="data/processed/mid_memory.db",
+        default="",
         help="Evaluation SQLite database path.",
     )
     parser.add_argument(
         "--output-dir",
-        default="data/processed/thesis_reports",
+        default="",
         help="Directory where report artifacts are written.",
     )
     parser.add_argument("--run-id", default="", help="Specific run id. Defaults to latest run.")
+    parser.add_argument("--dataset-name", default="", help="Dataset display name for the report.")
+    parser.add_argument("--model-name", default="", help="Main model display name for the report.")
+    parser.add_argument("--judge-model", default="", help="Judge model display name for the report.")
+    parser.add_argument(
+        "--artifact-prefix",
+        default="",
+        help="Optional filename prefix for the exported report artifacts.",
+    )
     parser.add_argument(
         "--graph-json",
         default="",
@@ -380,24 +411,27 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use a local LLM judge for the final answer accuracy.",
     )
-    parser.add_argument(
-        "--judge-model",
-        default="",
-        help="Optional judge model override. Defaults to config.llm.default_model.",
-    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    config = load_config()
+    db_path = args.db_path.strip() or str(config["evaluation"].get("database_file", "data/processed/thesis_eval.db"))
+    output_dir = args.output_dir.strip() or str(
+        config["evaluation"].get("thesis_report_dir", "data/processed/thesis_reports_debug_analysis")
+    )
     export_report(
-        db_path=args.db_path,
-        output_dir=args.output_dir,
+        db_path=db_path,
+        output_dir=output_dir,
         run_id=(args.run_id.strip() or None),
+        dataset_name=(args.dataset_name.strip() or None),
+        model_name=(args.model_name.strip() or None),
+        judge_model=(args.judge_model.strip() or None),
+        artifact_prefix=(args.artifact_prefix.strip() or None),
         graph_json_path=(args.graph_json.strip() or None),
         node_graph_json_path=(args.node_graph_json.strip() or None),
         judge_enabled=bool(args.judge),
-        judge_model=(args.judge_model.strip() or None),
     )
 
 

@@ -104,6 +104,7 @@ flowchart LR
 - `build_eval_subset.py`: build a compact balanced subset
 - `build_eval_split.py`: build a debug/test split with a fixed manifest
 - `run_thesis_eval.py`: run a thesis-oriented experiment with optional judge
+- `run_thesis_compare.py`: run the four thesis comparison protocols and export one consolidated wide report centered on MemSLM
 - `export_eval_report.py`: export SQLite eval runs into JSON / Markdown / CSV
 - `export_graph.py`: export the long-memory graph for visualization
 - `llm_judge.py`: local judge helper used by the report exporter
@@ -172,7 +173,7 @@ python -m llm_long_memory.experiments.run_thesis_eval \
   --model qwen3:8b \
   --judge-model deepseek-r1:8b \
   --judge \
-  --report-dir llm_long_memory/data/processed/thesis_reports
+  --report-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
 ```
 
 Example 2:
@@ -184,7 +185,7 @@ python -m llm_long_memory.experiments.run_thesis_eval \
   --model deepseek-r1:8b \
   --judge-model qwen3:8b \
   --judge \
-  --report-dir llm_long_memory/data/processed/thesis_reports
+  --report-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
 ```
 
 Useful options:
@@ -197,16 +198,16 @@ Useful options:
 
 ```bash
 python -m llm_long_memory.experiments.export_eval_report \
-  --db-path llm_long_memory/data/processed/mid_memory.db \
-  --output-dir llm_long_memory/data/processed/thesis_reports
+  --db-path llm_long_memory/data/processed/thesis_eval.db \
+  --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
 ```
 
 You can optionally merge offline graph evaluation JSON with:
 
 ```bash
 python -m llm_long_memory.experiments.export_eval_report \
-  --db-path llm_long_memory/data/processed/mid_memory.db \
-  --output-dir llm_long_memory/data/processed/thesis_reports \
+  --db-path llm_long_memory/data/processed/thesis_eval.db \
+  --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis \
   --graph-json llm_long_memory/data/processed/graph_eval_*.json
 ```
 
@@ -219,6 +220,26 @@ python -m llm_long_memory.experiments.export_graph \
 ```
 
 This produces graph artifacts suitable for inspection in Gephi, browser preview, or later paper figures.
+
+### 5) Run the four-way comparison
+
+```bash
+python -m llm_long_memory.experiments.run_thesis_compare \
+  --config llm_long_memory/config/config.yaml \
+  --baseline-config llm_long_memory/baselines/baseline_midrag_v1.yaml \
+  --split ragdebug10 \
+  --model qwen3:8b \
+  --judge-model deepseek-r1:8b \
+  --judge
+```
+
+The comparison report writes one consolidated wide table with these fixed protocol columns:
+- `model-only`
+- `naive rag`
+- `memslm`
+- `ablation`
+
+MemSLM is the primary column in the report narrative; the other three modes are reference protocols for comparison.
 
 ## Metrics
 
