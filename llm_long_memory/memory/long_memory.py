@@ -1522,6 +1522,9 @@ class LongMemory:
         target_store.commit()
 
     def clear_all(self) -> None:
+        if not self.enabled:
+            logger.info("LongMemory.clear_all: disabled, no-op.")
+            return
         self.store.clear_all()
         self.current_step = 0
         self.store.save_current_step(self.current_step)

@@ -127,6 +127,15 @@ class MemoryManager:
         self.graph_context_from_store_enabled = bool(
             answering_cfg.get("graph_context_from_store_enabled", False)
         )
+        self.retrieval_execution_mode = str(
+            self.config["retrieval"].get("execution_mode", "memslm")
+        ).strip().lower() or "memslm"
+        self.model_only_enabled = bool(
+            self.config["retrieval"].get("model_only_enabled", False)
+        ) or self.retrieval_execution_mode == "model_only"
+        self.classic_rag_enabled = bool(
+            self.config["retrieval"].get("classic_rag_enabled", False)
+        ) or self.retrieval_execution_mode == "naive_rag"
         offline_graph_cfg = dict(self.config["memory"]["long_memory"].get("offline_graph", {}))
         self.offline_graph_build_enabled = bool(offline_graph_cfg.get("enabled", False))
         self.offline_graph_build_top_chunks = int(offline_graph_cfg.get("build_top_chunks", 6))
@@ -266,6 +275,26 @@ class MemoryManager:
         self, query: str
     ) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]:
         """Retrieve top topics and reranked chunks for final prompt context."""
+        if self.model_only_enabled:
+            return "", [], []
+        if self.classic_rag_enabled:
+            top_n = max(1, int(self.config["retrieval"].get("top_k", 5)))
+            reranked_chunks = []
+            if hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+                reranked_chunks = self.mid_memory.search_chunks_global_with_limit(
+                    query,
+                    topic_score_map={},
+                    top_n=top_n,
+                )
+            elif hasattr(self.mid_memory, "search_chunks_global"):
+                reranked_chunks = self.mid_memory.search_chunks_global(query, topic_score_map={})
+            context_parts: List[str] = []
+            for index, item in enumerate(reranked_chunks, start=1):
+                text = str(item.get("text", "")).strip()
+                if not text:
+                    continue
+                context_parts.append(f"[Chunk {index}]\n{text}")
+            return "\n\n".join(context_parts), [], reranked_chunks
         topics = self.mid_memory.search(query)
         topic_score_map = {
             str(topic.get("topic_id", "")): float(topic.get("score", 0.0)) for topic in topics
@@ -419,7 +448,8 @@ class MemoryManager:
         """Reset short and mid memory for isolated per-instance evaluation."""
         self.short_memory.clear()
         self.mid_memory.clear_all()
-        self.long_memory.clear_all()
+        if bool(getattr(self, "long_memory_enabled", False)):
+            self.long_memory.clear_all()
         logger.info("MemoryManager.reset_for_new_instance: memory reset completed.")
 
     def chat(
@@ -433,6 +463,7 @@ class MemoryManager:
         logger.info(f"MemoryManager.chat: user input='{input_text}'")
         query = retrieval_query if retrieval_query is not None else input_text
         (
+            retrieved_context_text,
             _topics,
             chunks,
             evidence_sentences,
@@ -445,6 +476,7 @@ class MemoryManager:
 
         prompt_text = self._build_generation_prompt(
             input_text=input_text,
+            retrieved_context_text=retrieved_context_text,
             chunks=chunks,
             candidates=candidates,
             best_evidence=best_evidence,
@@ -514,6 +546,7 @@ class MemoryManager:
         self,
         *,
         input_text: str,
+        retrieved_context_text: str,
         chunks: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
         best_evidence: str,
@@ -522,6 +555,7 @@ class MemoryManager:
     ) -> str:
         return self.chat_runtime.build_generation_prompt(
             input_text=input_text,
+            retrieved_context_text=retrieved_context_text,
             chunks=chunks,
             candidates=candidates,
             best_evidence=best_evidence,

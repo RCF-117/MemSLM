@@ -21,6 +21,7 @@ class MemoryManagerChatRuntime:
             Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]
         ],
     ) -> Tuple[
+        str,
         List[Dict[str, object]],
         List[Dict[str, object]],
         List[Dict[str, object]],
@@ -30,27 +31,38 @@ class MemoryManagerChatRuntime:
         str,
     ]:
         if precomputed_context is not None:
-            _, topics, chunks = precomputed_context
+            context_text, topics, chunks = precomputed_context
         else:
-            _, topics, chunks = self.m.retrieve_context(query)
+            context_text, topics, chunks = self.m.retrieve_context(query)
         retrieved_ids = [str(topic["topic_id"]) for topic in topics]
         logger.info(f"MemoryManager.chat: retrieved topics={retrieved_ids}")
 
-        evidence_sentences = self.m.answering.collect_evidence_sentences(query, chunks)
-        candidates = self.m.answering.extract_candidates(query, evidence_sentences)
-        self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
-        fallback_answer = self.m.answering.resolve_fallback_answer(
-            query,
-            evidence_sentences,
-            candidates,
-            chunks,
-        )
-        evidence_candidate = self.m.answering.extract_evidence_candidate(
-            query, evidence_sentences, candidates
-        )
-        best_evidence = str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
-        best_candidate = str(candidates[0].get("text", "")) if candidates else ""
+        if self.m.retrieval_execution_mode in {"model_only", "naive_rag"}:
+            evidence_sentences: List[Dict[str, object]] = []
+            candidates: List[Dict[str, object]] = []
+            fallback_answer = ""
+            evidence_candidate = None
+            best_evidence = ""
+            best_candidate = ""
+        else:
+            evidence_sentences = self.m.answering.collect_evidence_sentences(query, chunks)
+            candidates = self.m.answering.extract_candidates(query, evidence_sentences)
+            self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
+            fallback_answer = self.m.answering.resolve_fallback_answer(
+                query,
+                evidence_sentences,
+                candidates,
+                chunks,
+            )
+            evidence_candidate = self.m.answering.extract_evidence_candidate(
+                query, evidence_sentences, candidates
+            )
+            best_evidence = (
+                str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
+            )
+            best_candidate = str(candidates[0].get("text", "")) if candidates else ""
         return (
+            context_text,
             topics,
             chunks,
             evidence_sentences,
@@ -65,13 +77,57 @@ class MemoryManagerChatRuntime:
         self,
         *,
         input_text: str,
+        retrieved_context_text: str,
         chunks: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
         best_evidence: str,
         fallback_answer: str,
         evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
+        execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
         graph_context = self.build_graph_context(query=input_text, chunks=chunks)
+        retrieved_context_text = str(retrieved_context_text or "").strip()
+
+        if execution_mode == "model_only":
+            prompt_sections: List[Dict[str, str]] = [
+                {
+                    "section": "answer_rules",
+                    "text": "Return only the final answer.",
+                }
+            ]
+            compact_prompt = self.m.answering.build_answer_prompt(
+                input_text=input_text,
+                graph_context="",
+                rag_evidence="",
+                fallback_answer="",
+            )
+            self.m._set_prompt_eval_chunks(prompt_sections)
+            return compact_prompt
+
+        if execution_mode == "naive_rag":
+            retrieved_text = retrieved_context_text or "None"
+            prompt_sections = [
+                {"section": "retrieved_context", "text": retrieved_text},
+                {
+                    "section": "answer_rules",
+                    "text": (
+                        "Use only the retrieved context.\n"
+                        "Do not add graph reasoning or fallback heuristics.\n"
+                        "Return only the final answer."
+                    ),
+                },
+            ]
+            compact_prompt = (
+                "[Retrieved Context]\n"
+                f"{retrieved_text}\n\n"
+                "[Answer Rules]\n"
+                "Use only the retrieved context.\n"
+                "Return only the final answer.\n\n"
+                f"User: {input_text}"
+            )
+            self.m._set_prompt_eval_chunks(prompt_sections)
+            return compact_prompt
+
         fallback_text = str(fallback_answer).strip()
         if not fallback_text and evidence_candidate is not None:
             fallback_text = str(evidence_candidate.get("answer", "")).strip()
@@ -161,6 +217,12 @@ class MemoryManagerChatRuntime:
             f"(model={model_name}, prompt_chars={len(prompt_text)})."
         )
         response = self.m.llm.chat(prompt_messages)
+        execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
+        if execution_mode in {"model_only", "naive_rag"}:
+            ai_response = self.m.answering.postprocess_final_answer(
+                response, query, evidence_candidate=None
+            )
+            return ai_response, f"{execution_mode}_direct", ""
         fallback_result = self.m.answering.evaluate_response_fallback(
             response=response,
             evidence_sentences=evidence_sentences,

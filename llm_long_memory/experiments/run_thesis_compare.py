@@ -12,9 +12,10 @@ from typing import Any, Dict, List, Sequence
 
 from llm_long_memory.baselines.run_baseline import run_one_dataset_with_config
 from llm_long_memory.experiments.build_eval_subset import build_subset
+from llm_long_memory.experiments.llm_judge import LLMJudge
 from llm_long_memory.experiments.run_thesis_eval import _parse_csv, _resolve_dataset_path
 from llm_long_memory.evaluation.eval_store import EvalStore
-from llm_long_memory.utils.helpers import resolve_project_path, sanitize_filename_part
+from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
 
 MODE_ORDER = ["model-only", "naive rag", "memslm", "ablation"]
@@ -40,21 +41,29 @@ def _mode_config(
     config["evaluation"] = evaluation_cfg
 
     if mode == "model-only":
+        retrieval_cfg["execution_mode"] = "model_only"
         retrieval_cfg["model_only_enabled"] = True
+        retrieval_cfg["classic_rag_enabled"] = False
         retrieval_cfg.setdefault("global_chunk_retrieval", {})["enabled"] = False
         retrieval_cfg.setdefault("topic_expansion", {})["enabled"] = False
         retrieval_cfg.setdefault("long_memory_context", {})["enabled"] = False
         long_mem_cfg["enabled"] = False
     elif mode == "naive rag":
+        retrieval_cfg["execution_mode"] = "naive_rag"
         retrieval_cfg["model_only_enabled"] = False
+        retrieval_cfg["classic_rag_enabled"] = True
         retrieval_cfg.setdefault("global_chunk_retrieval", {})["enabled"] = False
         retrieval_cfg.setdefault("topic_expansion", {})["enabled"] = False
         retrieval_cfg.setdefault("long_memory_context", {})["enabled"] = False
         long_mem_cfg["enabled"] = False
     elif mode == "memslm":
+        retrieval_cfg["execution_mode"] = "memslm"
         retrieval_cfg["model_only_enabled"] = False
+        retrieval_cfg["classic_rag_enabled"] = False
     elif mode == "ablation":
+        retrieval_cfg["execution_mode"] = "memslm"
         retrieval_cfg["model_only_enabled"] = False
+        retrieval_cfg["classic_rag_enabled"] = False
         retrieval_cfg.setdefault("global_chunk_retrieval", {})["enabled"] = False
         retrieval_cfg.setdefault("topic_expansion", {})["enabled"] = False
         retrieval_cfg.setdefault("long_memory_context", {})["enabled"] = False
@@ -85,6 +94,8 @@ def _load_mode_payload(
     db_path: str,
     run_id: str,
     eval_cfg: Dict[str, Any],
+    judge_enabled: bool,
+    judge_model: str | None,
 ) -> Dict[str, Any]:
     db_file = resolve_project_path(db_path)
     conn = sqlite3.connect(str(db_file))
@@ -93,26 +104,84 @@ def _load_mode_payload(
         store = EvalStore(conn=conn, eval_cfg=dict(eval_cfg))
         store.create_tables()
         store.ensure_schema_compat()
-        run_table = store.thesis_run_table
-        type_table = store.thesis_type_table
+        run_table = store.run_table
+        type_table = store.result_table
         run_row = conn.execute(
             f"SELECT * FROM {run_table} WHERE run_id=?",
             (run_id,),
         ).fetchone()
         if run_row is None:
-            raise ValueError(f"Run not found in thesis eval db: {run_id}")
+            raise ValueError(f"Run not found in eval db: {run_id}")
         type_rows = conn.execute(
-            f"SELECT * FROM {type_table} WHERE run_id=? ORDER BY question_type ASC",
+            f"SELECT * FROM {type_table} WHERE run_id=? ORDER BY id ASC",
             (run_id,),
         ).fetchall()
+        enriched_rows: List[Dict[str, Any]] = [{str(k): row[k] for k in row.keys()} for row in type_rows]
+        if judge_enabled and enriched_rows:
+            judge = LLMJudge(model_name=judge_model or str(eval_cfg.get("judge_model", "")) or "qwen3:8b")
+            judge_cache: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+            for row in enriched_rows:
+                question = str(row.get("question", "")).strip()
+                gold = str(row.get("expected_answer", "")).strip()
+                prediction = str(row.get("prediction", "")).strip()
+                cache_key = (question, gold, prediction)
+                verdict = judge_cache.get(cache_key)
+                if verdict is None:
+                    result = judge.judge(question, gold, prediction)
+                    verdict = {
+                        "judge_is_correct": int(bool(result.is_correct)),
+                        "judge_verdict": result.verdict,
+                        "judge_reason": result.reason,
+                    }
+                    judge_cache[cache_key] = verdict
+                row.update(verdict)
+        else:
+            for row in enriched_rows:
+                row.setdefault("judge_is_correct", None)
+                row.setdefault("judge_verdict", "")
+                row.setdefault("judge_reason", "")
+
         summary = {str(k): run_row[k] for k in run_row.keys()}
+        total = len(enriched_rows)
+        matched = sum(1 for row in enriched_rows if int(row["is_match"] or 0) == 1)
+        judge_matched = sum(1 for row in enriched_rows if int(row.get("judge_is_correct") or 0) == 1) if judge_enabled else None
+        summary.update(
+            {
+                "run_id": run_id,
+                "total": total,
+                "matched": matched,
+                "accuracy": (matched / total) if total else 0.0,
+                "final_answer_acc": ((judge_matched / total) if (judge_enabled and total) else ((matched / total) if total else 0.0)),
+            }
+        )
         type_metrics = []
-        for row in type_rows:
+        buckets: Dict[str, List[Dict[str, Any]]] = {}
+        for row in enriched_rows:
+            key = str(row.get("question_type", "") or "unknown").strip() or "unknown"
+            buckets.setdefault(key, []).append(row)
+        for key in sorted(buckets.keys()):
+            bucket = buckets[key]
+            total_bucket = len(bucket)
+            matched_bucket = sum(1 for row in bucket if int(row["is_match"] or 0) == 1)
+            judge_bucket = (
+                sum(1 for row in bucket if int(row.get("judge_is_correct") or 0) == 1)
+                if judge_enabled
+                else None
+            )
+            latency_vals = [float(row["latency_sec"]) for row in bucket if row.get("latency_sec") is not None]
             type_metrics.append(
                 {
-                    "question_type": str(row["question_type"] or "").strip(),
-                    "type_answer_acc": float(row["type_answer_acc"] or 0.0),
-                    "type_latency_sec": float(row["type_latency_sec"] or 0.0),
+                    "question_type": key,
+                    "total": total_bucket,
+                    "matched": matched_bucket,
+                    "type_answer_acc": (
+                        (judge_bucket / total_bucket)
+                        if (judge_enabled and total_bucket)
+                        else ((matched_bucket / total_bucket) if total_bucket else None)
+                    ),
+                    "type_latency_sec": (
+                        (sum(latency_vals) / float(len(latency_vals))) if latency_vals else None
+                    ),
                 }
             )
         return {"run": summary, "question_type_metrics": type_metrics}
@@ -387,6 +456,8 @@ def main() -> None:
             db_path=str(mode_config["evaluation"]["database_file"]),
             run_id=run_id,
             eval_cfg=mode_config["evaluation"],
+            judge_enabled=bool(args.judge),
+            judge_model=judge_override,
         )
 
     compare_prefix = "__".join([artifact_seed, "compare"])

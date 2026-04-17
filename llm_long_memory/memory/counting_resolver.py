@@ -53,22 +53,34 @@ class CountingResolver:
             str(x).strip().lower() for x in list(self.cfg.get("list_count_stopwords", []))
         }
         self.list_count_focus_stopwords = {
-            str(x).strip().lower() for x in list(self.cfg["list_count_focus_stopwords"])
+            str(x).strip().lower()
+            for x in list(self.cfg.get("list_count_focus_stopwords", []))
+            if str(x).strip()
         }
-        self.list_count_focus_min_overlap = int(self.cfg["list_count_focus_min_overlap"])
+        self.list_count_focus_min_overlap = int(self.cfg.get("list_count_focus_min_overlap", 1))
         irregular_cfg = dict(self.cfg.get("list_count_irregular_forms", {}))
         self.list_count_irregular_forms = {
             str(k).strip().lower(): [str(x).strip().lower() for x in list(v)]
             for k, v in irregular_cfg.items()
         }
-        numeric_cfg = dict(self.cfg["numeric_answer_filter"])
-        self.numeric_answer_enabled = bool(numeric_cfg["enabled"])
-        self.numeric_focus_min_overlap = int(numeric_cfg["focus_min_overlap"])
+        numeric_cfg = dict(
+            self.cfg.get(
+                "numeric_answer_filter",
+                {
+                    "enabled": False,
+                    "focus_min_overlap": 1,
+                    "allowed_units": [],
+                    "disallowed_units": [],
+                },
+            )
+        )
+        self.numeric_answer_enabled = bool(numeric_cfg.get("enabled", False))
+        self.numeric_focus_min_overlap = int(numeric_cfg.get("focus_min_overlap", 1))
         self.numeric_allowed_units = {
-            str(x).strip().lower() for x in list(numeric_cfg["allowed_units"])
+            str(x).strip().lower() for x in list(numeric_cfg.get("allowed_units", []))
         }
         self.numeric_disallowed_units = {
-            str(x).strip().lower() for x in list(numeric_cfg["disallowed_units"])
+            str(x).strip().lower() for x in list(numeric_cfg.get("disallowed_units", []))
         }
 
     @staticmethod

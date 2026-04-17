@@ -55,8 +55,8 @@ class MidMemory:
         self.sqlite_busy_timeout_ms = int(self.memory_cfg["sqlite_busy_timeout_ms"])
         self.sqlite_journal_mode = str(self.memory_cfg["sqlite_journal_mode"])
         self.sqlite_synchronous = str(self.memory_cfg["sqlite_synchronous"])
-        self.sqlite_checkpoint_on_commit = bool(self.memory_cfg["sqlite_checkpoint_on_commit"])
-        self.sqlite_checkpoint_mode = str(self.memory_cfg["sqlite_checkpoint_mode"])
+        self.sqlite_checkpoint_on_commit = bool(self.memory_cfg.get("sqlite_checkpoint_on_commit", False))
+        self.sqlite_checkpoint_mode = str(self.memory_cfg.get("sqlite_checkpoint_mode", "PASSIVE"))
 
         self.role_enabled = bool(self.memory_cfg["role"]["enable"])
         self.role_weights = {

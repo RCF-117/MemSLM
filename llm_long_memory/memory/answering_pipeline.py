@@ -37,9 +37,18 @@ class AnsweringPipeline:
         self.candidate_extractor = AnswerCandidateExtractor(self.answering_cfg)
         self.counting = CountingResolver(dict(self.answering_cfg.get("counting", {})))
         self.not_found_force_evidence_candidate_when_available = bool(
-            self.answering_cfg["not_found_force_evidence_candidate_when_available"]
+            self.answering_cfg.get("not_found_force_evidence_candidate_when_available", False)
         )
-        post_cfg = dict(self.answering_cfg["postprocess"])
+        post_cfg = dict(
+            self.answering_cfg.get(
+                "postprocess",
+                {
+                    "enabled": False,
+                    "strip_prefixes": [],
+                    "issue_with_pattern_enabled": False,
+                },
+            )
+        )
         self.postprocess_enabled = bool(post_cfg["enabled"])
         self.postprocess_strip_prefixes = [
             str(x).strip().lower() for x in list(post_cfg["strip_prefixes"])
