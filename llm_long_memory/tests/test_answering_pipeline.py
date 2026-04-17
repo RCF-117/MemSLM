@@ -53,9 +53,11 @@ class TestAnsweringPipeline(unittest.TestCase):
         prompt = self.pipeline.build_answer_prompt(
             input_text="where did she move?",
             graph_context="[Long Memory Graph]\n- location: Boston",
+            graph_tool_hints="intent=temporal_compare\nanchors=Boston | 2023",
             fallback_answer="Boston",
         )
         self.assertIn("[Graph Evidence]", prompt)
+        self.assertIn("[Graph Tool Hints]", prompt)
         self.assertIn("[Fallback Answer]", prompt)
         self.assertIn("[Answer Rules]", prompt)
         self.assertNotIn("[Retrieved Context]", prompt)

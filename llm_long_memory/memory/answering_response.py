@@ -56,12 +56,16 @@ class AnswerResponseHandler:
         self,
         input_text: str,
         graph_context: str,
+        graph_tool_hints: str = "",
         rag_evidence: str = "",
         fallback_answer: str = "",
     ) -> str:
         graph_text = self._normalize_space(graph_context).strip()
         if not graph_text:
             graph_text = "None"
+        graph_tool_text = self._normalize_space(graph_tool_hints).strip()
+        if not graph_tool_text:
+            graph_tool_text = "None"
         rag_text = self._normalize_space(rag_evidence).strip()
         if not rag_text:
             rag_text = "None"
@@ -69,7 +73,11 @@ class AnswerResponseHandler:
         if not fallback_text:
             fallback_text = "None"
         rules = (
-            "Use Graph Evidence first.\n"
+            "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
+            "For count questions, prefer count_items and count_hint over loose numeric fragments.\n"
+            "For temporal_count questions, prefer duration_hint and temporal_points, and preserve the asked unit.\n"
+            "For preference questions, use preference_summary and resource_hint to form a concise preference-aware answer.\n"
+            "Use Graph Evidence next for any missing detail.\n"
             "If Graph Evidence is weak or empty, use the Fallback Answer as the compact backup clue.\n"
             "Do not repeat long evidence blocks.\n"
             "Do not say Not found unless both Graph Evidence and the fallback cues are insufficient.\n"
@@ -79,6 +87,8 @@ class AnswerResponseHandler:
             else "Return only the final answer."
         )
         return (
+            "[Graph Tool Hints]\n"
+            f"{graph_tool_text}\n\n"
             "[Graph Evidence]\n"
             f"{graph_text}\n\n"
             "[RAG Evidence]\n"
@@ -226,7 +236,11 @@ class AnswerResponseHandler:
         )
         guidance = (
             "Re-check the same compact prompt.\n"
-            "Use the Graph Evidence and Fallback Answer if available.\n"
+            "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
+            "For count questions, prefer count_items and count_hint.\n"
+            "For temporal_count questions, prefer duration_hint and temporal_points.\n"
+            "For preference questions, prefer preference_summary and resource_hint.\n"
+            "Use Graph Evidence next if needed, then the Fallback Answer if needed.\n"
             "Do not say Not found unless both are insufficient.\n"
             "Prefer the shortest exact phrase from the fallback cues.\n"
             "Return only the final answer."

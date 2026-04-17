@@ -504,6 +504,7 @@ retrieval:
       date_regexes:
         - "\\b\\d{4}[/-]\\d{1,2}[/-]\\d{1,2}\\b"
         - "\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b"
+        - "\\b\\d{1,2}[/-]\\d{1,2}\\b"
         - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
       list_count_enabled: true
       list_count_query_keywords:

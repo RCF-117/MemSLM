@@ -44,6 +44,7 @@ class MemoryManagerChatRuntime:
             evidence_candidate = None
             best_evidence = ""
             best_candidate = ""
+            graph_tool_answer = ""
         else:
             evidence_sentences = self.m.answering.collect_evidence_sentences(query, chunks)
             candidates = self.m.answering.extract_candidates(query, evidence_sentences)
@@ -61,6 +62,15 @@ class MemoryManagerChatRuntime:
                 str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
             )
             best_candidate = str(candidates[0].get("text", "")) if candidates else ""
+            graph_tool_answer = self.m.graph_toolkit.build_tool_answer(
+                query=query,
+                graph_context=self.build_graph_context(query=query, chunks=chunks),
+                evidence_sentences=evidence_sentences,
+                candidates=candidates,
+                chunks=chunks,
+            )
+            if graph_tool_answer.strip():
+                fallback_answer = graph_tool_answer.strip()
         return (
             context_text,
             topics,
@@ -78,6 +88,7 @@ class MemoryManagerChatRuntime:
         *,
         input_text: str,
         retrieved_context_text: str,
+        evidence_sentences: List[Dict[str, object]],
         chunks: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
         best_evidence: str,
@@ -98,6 +109,7 @@ class MemoryManagerChatRuntime:
             compact_prompt = self.m.answering.build_answer_prompt(
                 input_text=input_text,
                 graph_context="",
+                graph_tool_hints="",
                 rag_evidence="",
                 fallback_answer="",
             )
@@ -128,6 +140,14 @@ class MemoryManagerChatRuntime:
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
+        graph_tool_hints = self.build_graph_tool_hints(
+            query=input_text,
+            graph_context=graph_context,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
+            chunks=chunks,
+        )
+
         fallback_text = str(fallback_answer).strip()
         if not fallback_text and evidence_candidate is not None:
             fallback_text = str(evidence_candidate.get("answer", "")).strip()
@@ -138,6 +158,8 @@ class MemoryManagerChatRuntime:
         prompt_sections: List[Dict[str, str]] = []
         if graph_context.strip():
             prompt_sections.append({"section": "graph_evidence", "text": graph_context.strip()})
+        if graph_tool_hints.strip():
+            prompt_sections.append({"section": "graph_tool_hints", "text": graph_tool_hints.strip()})
         if best_evidence.strip():
             prompt_sections.append({"section": "rag_evidence", "text": best_evidence.strip()})
         if fallback_text:
@@ -160,11 +182,42 @@ class MemoryManagerChatRuntime:
         compact_prompt = self.m.answering.build_answer_prompt(
             input_text=input_text,
             graph_context=graph_context,
+            graph_tool_hints=graph_tool_hints,
             rag_evidence=best_evidence,
             fallback_answer=fallback_text,
         )
         self.m._set_prompt_eval_chunks(prompt_sections)
         return compact_prompt
+
+    def build_graph_tool_hints(
+        self,
+        *,
+        query: str,
+        graph_context: str,
+        evidence_sentences: List[Dict[str, object]],
+        candidates: List[Dict[str, object]],
+        chunks: List[Dict[str, object]],
+    ) -> str:
+        if not self.m.graph_refiner_enabled:
+            return ""
+        if not bool(getattr(self.m, "long_memory_enabled", False)):
+            return ""
+        if not bool(getattr(self.m, "offline_graph_build_enabled", False)):
+            return ""
+        if not self.m.graph_context_from_store_enabled:
+            return ""
+        toolkit = getattr(self.m, "graph_toolkit", None)
+        if toolkit is None:
+            return ""
+        return str(
+            toolkit.build_tool_hints(
+                query=query,
+                graph_context=graph_context,
+                evidence_sentences=evidence_sentences,
+                candidates=candidates,
+                chunks=chunks,
+            )
+        ).strip()
 
     def build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
         if not self.m.graph_refiner_enabled:

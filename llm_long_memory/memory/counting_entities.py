@@ -40,6 +40,21 @@ def normalize_entity(
         return ""
     if any(re.fullmatch(r"\d+", t) for t in tokens):
         return ""
+    discourse_prefixes = (
+        "by the way",
+        "speaking of",
+        "speaking about",
+        "for example",
+        "for instance",
+        "in fact",
+        "that said",
+        "to be honest",
+        "to be fair",
+        "in other words",
+    )
+    lowered_joined = " ".join(tokens)
+    if any(lowered_joined.startswith(prefix) for prefix in discourse_prefixes):
+        return ""
     return " ".join(tokens)
 
 
@@ -49,17 +64,43 @@ def extract_list_entities(
     stopwords: Set[str],
 ) -> List[str]:
     """Extract comma/and lists and quoted entities."""
+    def _strip_trailing_temporal_suffix(part: str) -> str:
+        cleaned = normalize_text(part)
+        cleaned = re.sub(
+            r"\b(?:today|yesterday|tonight|now|currently|recently)\b\.?$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        cleaned = re.sub(
+            r"\b(?:this|last|next)\s+(?:day|week|month|year|morning|afternoon|evening|night)\b\.?$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        return cleaned
+
     entities: List[str] = []
     for q in quoted_phrases(text):
-        norm = normalize_entity(q, max_entity_tokens=max_entity_tokens, stopwords=stopwords)
+        norm = normalize_entity(
+            _strip_trailing_temporal_suffix(q),
+            max_entity_tokens=max_entity_tokens,
+            stopwords=stopwords,
+        )
         if norm:
             entities.append(norm)
 
     normalized_text = normalize_text(text)
     if "," in normalized_text or " and " in normalized_text.lower():
-        tmp = re.sub(r"\band\b", ",", normalized_text, flags=re.IGNORECASE)
+        tmp = re.sub(r"\b(?:and|or|plus)\b", ",", normalized_text, flags=re.IGNORECASE)
+        tmp = re.sub(r"\s*[:;]\s*", ",", tmp)
+        tmp = re.sub(r"\s+[–—-]\s+", ",", tmp)
         for part in [x.strip() for x in tmp.split(",")]:
-            norm = normalize_entity(part, max_entity_tokens=max_entity_tokens, stopwords=stopwords)
+            norm = normalize_entity(
+                _strip_trailing_temporal_suffix(part),
+                max_entity_tokens=max_entity_tokens,
+                stopwords=stopwords,
+            )
             if norm:
                 entities.append(norm)
     return entities

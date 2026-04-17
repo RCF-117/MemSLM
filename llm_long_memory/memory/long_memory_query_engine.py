@@ -82,11 +82,45 @@ class LongMemoryQueryEngine:
 
     def _extract_query_intent(self, query: str) -> Dict[str, bool]:
         lowered = str(query or "").strip().lower()
+        compare_cues = (
+            "compare",
+            "versus",
+            "vs",
+            "before",
+            "after",
+            "earlier",
+            "later",
+            "first",
+            "second",
+            "third",
+            "which came first",
+            "between",
+            "earliest",
+            "latest",
+            "more recent",
+        )
+        preference_cues = (
+            "prefer",
+            "preference",
+            "recommend",
+            "suggest",
+            "resources",
+            "resource",
+            "dinner",
+            "video editing",
+            "colleague",
+            "keep in touch",
+            "how should i",
+            "what should i",
+            "what resources",
+        )
         return {
             "asks_where": "where" in lowered or "location" in lowered,
             "asks_when": any(t in lowered for t in ("when", "date", "time", "year", "month", "day")),
             "asks_how_many": any(t in lowered for t in ("how many", "number of", "count", "total")),
             "asks_current": any(t in lowered for t in ("current", "currently", "latest", "now")),
+            "asks_compare": any(t in lowered for t in compare_cues),
+            "asks_preference": any(t in lowered for t in preference_cues),
         }
 
     def _event_time_tokens(self, detail_idx: Dict[str, List[str]]) -> Set[str]:
@@ -231,6 +265,10 @@ class LongMemoryQueryEngine:
             score += self.m.node_boost_weight
         if query_intent.get("asks_current") and channel == "active" and fact_type == "state_fact":
             score += self.m.node_edge_boost_weight
+        if query_intent.get("asks_compare") and (has_time or value_type == "number"):
+            score += self.m.node_boost_weight * 0.8
+        if query_intent.get("asks_preference") and fact_type == "state_fact":
+            score += self.m.node_boost_weight * 0.9
 
         if self.m.temporal_filter_enabled:
             query_time_tokens = set(time_constraints.get("time_tokens", set()))

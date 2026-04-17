@@ -88,6 +88,10 @@ class CountingResolver:
         return normalize_text(text)
 
     @staticmethod
+    def _tokenize(text: str) -> List[str]:
+        return re.findall(r"[a-z0-9]+", str(text).lower())
+
+    @staticmethod
     def _extract_quoted_options(query: str) -> List[str]:
         return [x.strip() for x in re.findall(r"'([^']{2,120})'|\"([^\"]{2,120})\"", query) for x in x if x.strip()]
 
@@ -238,6 +242,45 @@ class CountingResolver:
             return None
         return (str(len(uniq)), "list_entity_count")
 
+    def _resolve_numeric_count(
+        self,
+        query: str,
+        evidence: Sequence[Evidence],
+        candidates: Sequence[Candidate],
+        reranked_chunks: Sequence[Chunk],
+    ) -> Optional[Tuple[str, str]]:
+        focus_tokens = self._extract_query_focus_tokens(query)
+        if not focus_tokens:
+            return None
+        scored: List[Tuple[float, int, int, str]] = []
+
+        def _collect(
+            items: Sequence[Dict[str, object]],
+            source_bonus: int,
+        ) -> None:
+            for item in items:
+                text = str(item.get("text", "")).strip()
+                numeric = self._extract_numeric_phrase(text)
+                if numeric is None:
+                    continue
+                number, unit = numeric
+                if not self._accept_numeric_phrase(number, unit, query, text):
+                    continue
+                overlap = float(self._sentence_focus_overlap(text, focus_tokens))
+                if overlap <= 0.0 and not any(ch.isdigit() for ch in text):
+                    continue
+                scored.append((overlap, source_bonus, len(self._tokenize(text)), number))
+
+        _collect(reranked_chunks, 3)
+        _collect(evidence, 2)
+        _collect(candidates, 1)
+
+        if not scored:
+            return None
+        scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+        answer = scored[0][3]
+        return (answer, "numeric_focus_count")
+
     def _resolve_day_diff(
         self,
         query: str,
@@ -366,6 +409,16 @@ class CountingResolver:
         list_result = self._resolve_list_count(query, evidence, candidates)
         if list_result is not None:
             answer, reason = list_result
+            return {"answer": answer, "reason": reason}
+
+        numeric_result = self._resolve_numeric_count(
+            query=query,
+            evidence=evidence,
+            candidates=candidates,
+            reranked_chunks=reranked_chunks or [],
+        )
+        if numeric_result is not None:
+            answer, reason = numeric_result
             return {"answer": answer, "reason": reason}
 
         for cand in candidates:

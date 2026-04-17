@@ -187,12 +187,14 @@ class AnsweringPipeline:
         self,
         input_text: str,
         graph_context: str,
+        graph_tool_hints: str = "",
         rag_evidence: str = "",
         fallback_answer: str = "",
     ) -> str:
         return self.response_handler.build_answer_prompt(
             input_text=input_text,
             graph_context=graph_context,
+            graph_tool_hints=graph_tool_hints,
             rag_evidence=rag_evidence,
             fallback_answer=fallback_answer,
         )

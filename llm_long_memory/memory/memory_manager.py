@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
+from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
 from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
 from llm_long_memory.memory.memory_manager_utils import (
@@ -127,6 +128,7 @@ class MemoryManager:
         self.graph_context_from_store_enabled = bool(
             answering_cfg.get("graph_context_from_store_enabled", False)
         )
+        self.graph_toolkit = GraphReasoningToolkit(self)
         self.retrieval_execution_mode = str(
             self.config["retrieval"].get("execution_mode", "memslm")
         ).strip().lower() or "memslm"
@@ -477,6 +479,7 @@ class MemoryManager:
         prompt_text = self._build_generation_prompt(
             input_text=input_text,
             retrieved_context_text=retrieved_context_text,
+            evidence_sentences=evidence_sentences,
             chunks=chunks,
             candidates=candidates,
             best_evidence=best_evidence,
@@ -547,6 +550,7 @@ class MemoryManager:
         *,
         input_text: str,
         retrieved_context_text: str,
+        evidence_sentences: List[Dict[str, object]],
         chunks: List[Dict[str, object]],
         candidates: List[Dict[str, object]],
         best_evidence: str,
@@ -556,6 +560,7 @@ class MemoryManager:
         return self.chat_runtime.build_generation_prompt(
             input_text=input_text,
             retrieved_context_text=retrieved_context_text,
+            evidence_sentences=evidence_sentences,
             chunks=chunks,
             candidates=candidates,
             best_evidence=best_evidence,
