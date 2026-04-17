@@ -83,6 +83,22 @@ class MemoryManagerChatRuntime:
             best_candidate,
         )
 
+    def resolve_prompt_fallback(
+        self,
+        fallback_answer: str,
+        evidence_candidate: Optional[Dict[str, str]],
+        candidates: List[Dict[str, object]],
+        best_evidence: str,
+    ) -> str:
+        fallback_text = str(fallback_answer or "").strip()
+        if not fallback_text and evidence_candidate is not None:
+            fallback_text = str(evidence_candidate.get("answer", "")).strip()
+        if not fallback_text and candidates:
+            fallback_text = str(candidates[0].get("text", "")).strip()
+        if not fallback_text and best_evidence.strip():
+            fallback_text = best_evidence.strip()
+        return fallback_text
+
     def build_generation_prompt(
         self,
         *,
@@ -148,13 +164,12 @@ class MemoryManagerChatRuntime:
             chunks=chunks,
         )
 
-        fallback_text = str(fallback_answer).strip()
-        if not fallback_text and evidence_candidate is not None:
-            fallback_text = str(evidence_candidate.get("answer", "")).strip()
-        if not fallback_text and candidates:
-            fallback_text = str(candidates[0].get("text", "")).strip()
-        if not fallback_text and best_evidence.strip():
-            fallback_text = best_evidence.strip()
+        fallback_text = self.resolve_prompt_fallback(
+            fallback_answer=fallback_answer,
+            evidence_candidate=evidence_candidate,
+            candidates=candidates,
+            best_evidence=best_evidence,
+        )
         prompt_sections: List[Dict[str, str]] = []
         if graph_context.strip():
             prompt_sections.append({"section": "graph_evidence", "text": graph_context.strip()})

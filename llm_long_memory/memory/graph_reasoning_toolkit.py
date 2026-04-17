@@ -59,7 +59,6 @@ class GraphReasoningToolkit:
             "after",
             "earlier",
             "later",
-            "first",
             "second",
             "third",
             "which came first",
@@ -143,6 +142,10 @@ class GraphReasoningToolkit:
             r"\blearn more about\s+(.+?)(?:[?.!]|$)",
             r"\bways to\s+(.+?)(?:[?.!]|$)",
             r"\brecommend(?:\s+some)?\s+(.+?)(?:[?.!]|$)",
+            r"\brecommend(?:\s+some)?\s+resources\s+for\s+(.+?)(?:[?.!]|$)",
+            r"\bwhat advice do you have for\s+(.+?)(?:[?.!]|$)",
+            r"\bwhat advice would you give for\s+(.+?)(?:[?.!]|$)",
+            r"\bwhat advice do you have about\s+(.+?)(?:[?.!]|$)",
             r"\bwhat should i\s+(.+?)(?:[?.!]|$)",
             r"\bhow should i\s+(.+?)(?:[?.!]|$)",
             r"\bthinking about ways to\s+(.+?)(?:[?.!]|$)",
@@ -387,6 +390,11 @@ class GraphReasoningToolkit:
         q = str(query or "").strip().lower()
         if not q:
             return "generic"
+        choice_options = parse_choice_query(
+            query,
+            max_options=4,
+            default_target_k=2,
+        )
         if re.search(r"\bhow many\s+(?:days?|weeks?|months?|years?)\b", q) or re.search(
             r"\bhow long\b", q
         ):
@@ -401,7 +409,9 @@ class GraphReasoningToolkit:
             return "temporal_count"
         if any(cue in q for cue in self.preference_cues):
             return "preference"
-        if any(cue in q for cue in self.temporal_cues):
+        if choice_options and len(choice_options) >= 2:
+            return "temporal_compare"
+        if "which came first" in q or "which came earlier" in q or "which came later" in q:
             return "temporal_compare"
         return "generic"
 
@@ -472,6 +482,32 @@ class GraphReasoningToolkit:
             return "; ".join(parts)
         return ""
 
+    def _derive_count_answer_from_lines(
+        self,
+        *,
+        query: str,
+        lines: Sequence[str],
+    ) -> tuple[str, List[str]]:
+        selected = self._select_best_lines(
+            query=query,
+            lines=lines,
+            max_items=5,
+            prefer_number=False,
+        )
+        count_items = self._extract_count_items(query, selected)
+        if len(count_items) >= 2:
+            return str(len(count_items)), count_items
+        for line in selected:
+            if not self._line_has_list_shape(line):
+                continue
+            spelled = self._extract_spelled_number(line)
+            if spelled >= 0:
+                return str(spelled), count_items
+            m = re.search(r"\b(\d+)\b", line)
+            if m:
+                return str(int(m.group(1))), count_items
+        return "", count_items
+
     def build_tool_hints(
         self,
         *,
@@ -495,31 +531,17 @@ class GraphReasoningToolkit:
         tool_lines: List[str] = [f"intent={intent}"]
 
         if intent == "count":
-            count_source_lines = self._select_best_lines(
+            count_answer_lines = evidence_lines + candidate_lines if (evidence_lines or candidate_lines) else all_lines
+            count_answer, count_items = self._derive_count_answer_from_lines(
                 query=query,
-                lines=evidence_lines + candidate_lines if (evidence_lines or candidate_lines) else all_lines,
-                max_items=5,
-                prefer_number=False,
+                lines=count_answer_lines,
             )
-            count_answer_lines = count_source_lines or (evidence_lines + candidate_lines if (evidence_lines or candidate_lines) else all_lines)
-            counting_result = self.counting.resolve(
-                query=query,
-                evidence=evidence_sentences,
-                candidates=candidates,
-                reranked_chunks=chunks,
-            )
-            count_items = self._extract_count_items(query, count_answer_lines)
             if count_items:
                 tool_lines.append("count_items=" + " | ".join(count_items[:6]))
                 if len(count_items) >= 2:
                     tool_lines.append(f"count_hint={len(count_items)} items")
-            if counting_result is not None:
-                answer = self._normalize(str(counting_result.get("answer", "")))
-                reason = self._normalize(str(counting_result.get("reason", "")))
-                if answer and not count_items:
-                    tool_lines.append(f"count_hint={answer}")
-                if reason:
-                    tool_lines.append(f"count_reason={reason}")
+            if count_answer:
+                tool_lines.append(f"count_answer={count_answer}")
             selected = self._select_best_lines(
                 query=query,
                 lines=count_answer_lines,
@@ -529,6 +551,8 @@ class GraphReasoningToolkit:
             )
             if selected:
                 tool_lines.append("support=" + " || ".join(selected[:3]))
+            elif count_answer:
+                tool_lines.append(f"count_hint={count_answer}")
             return "\n".join(tool_lines[:7]).strip()
 
         if intent == "temporal_count":
@@ -554,6 +578,7 @@ class GraphReasoningToolkit:
                 duration_hint = self._build_temporal_duration_hint(query, duration_answer_lines)
             if duration_hint:
                 tool_lines.append(f"duration_hint={duration_hint}")
+                tool_lines.append(f"duration_answer={duration_hint}")
             dates = anchor_dates or self._extract_temporal_dates(duration_answer_lines)
             if dates:
                 tool_lines.append("temporal_points=" + " | ".join(dates[:4]))
@@ -607,6 +632,7 @@ class GraphReasoningToolkit:
             )
             if preference_summary:
                 tool_lines.append("preference_summary=" + preference_summary)
+                tool_lines.append("preference_answer=" + preference_summary)
             if selected:
                 tool_lines.append("preference_hint=" + " || ".join(selected[:3]))
             else:
@@ -629,6 +655,7 @@ class GraphReasoningToolkit:
                         )
                         if fallback_summary:
                             tool_lines.append("preference_summary=" + fallback_summary)
+                            tool_lines.append("preference_answer=" + fallback_summary)
                     tool_lines.append("preference_hint=" + " || ".join(fallback[:2]))
             return "\n".join(tool_lines[:6]).strip()
 
@@ -654,28 +681,30 @@ class GraphReasoningToolkit:
         evidence_pref_lines = evidence_lines + candidate_lines
 
         if intent == "count":
-            answer_lines = self._select_best_lines(
+            answer_lines = evidence_lines + candidate_lines if (evidence_lines or candidate_lines) else all_lines
+            count_answer, count_items = self._derive_count_answer_from_lines(
                 query=query,
-                lines=evidence_lines + candidate_lines if (evidence_lines or candidate_lines) else all_lines,
-                max_items=5,
-                prefer_number=False,
-            ) or (evidence_lines + candidate_lines if (evidence_lines or candidate_lines) else all_lines)
-            count_items = self._extract_count_items(query, answer_lines)
-            spelled = max((self._extract_spelled_number(line) for line in answer_lines), default=-1)
+                lines=answer_lines,
+            )
             if len(count_items) >= 2:
                 return str(len(count_items))
-            if spelled >= 0:
-                return str(spelled)
-            counting_result = self.counting.resolve(
+            if count_answer:
+                return count_answer
+            selected = self._select_best_lines(
                 query=query,
-                evidence=evidence_sentences,
-                candidates=candidates,
-                reranked_chunks=chunks,
+                lines=answer_lines,
+                max_items=3,
+                prefer_number=True,
             )
-            if counting_result is not None:
-                answer = self._normalize(str(counting_result.get("answer", "")))
-                if answer:
-                    return answer
+            if selected:
+                for line in selected:
+                    if self._line_has_list_shape(line):
+                        spelled = self._extract_spelled_number(line)
+                        if spelled >= 0:
+                            return str(spelled)
+                        m = re.search(r"\b(\d+)\b", line)
+                        if m:
+                            return str(int(m.group(1)))
             return ""
 
         if intent == "temporal_count":

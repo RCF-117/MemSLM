@@ -163,6 +163,27 @@ class AnswerCandidateExtractor:
                 unique.append(c)
         return unique
 
+    @staticmethod
+    def _extract_copula_spans(sentence: str) -> List[str]:
+        spans: List[str] = []
+        for pattern in [
+            r"\b(?:was|were|is|are)\s+(?:the\s+|a\s+|an\s+|my\s+|your\s+|their\s+|our\s+|his\s+|her\s+)?(.+?)(?:[,.!?;:]|$)",
+            r"\b(?:was|were|is|are)\s+(.+?)(?:[,.!?;:]|$)",
+        ]:
+            for m in re.finditer(pattern, sentence, flags=re.IGNORECASE):
+                span = " ".join(str(m.group(1)).split()).strip(" ,.;:!?\"'")
+                if span:
+                    spans.append(span)
+        unique: List[str] = []
+        seen: set[str] = set()
+        for span in spans:
+            key = span.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(span)
+        return unique
+
     def is_noisy_candidate(self, value: str) -> bool:
         if not self.candidate_filter_enabled:
             return False
@@ -315,5 +336,17 @@ class AnswerCandidateExtractor:
                     "source": "intent_span",
                     "score": f"{score:.4f}",
                 }
+            if intent == "generic":
+                for span in self._extract_copula_spans(sentence):
+                    normalized = self.normalize_space(span)
+                    token_count = len(self.tokenize(normalized))
+                    if token_count == 0 or token_count > self.evidence_candidate_max_tokens:
+                        continue
+                    if self.is_noisy_candidate(normalized):
+                        continue
+                    return {
+                        "answer": normalized,
+                        "source": "copula_span",
+                        "score": f"{score:.4f}",
+                    }
         return None
-

@@ -40,6 +40,54 @@ def normalize_entity(
         return ""
     if any(re.fullmatch(r"\d+", t) for t in tokens):
         return ""
+    summary_verbs = (
+        "have",
+        "has",
+        "had",
+        "own",
+        "owns",
+        "got",
+        "currently own",
+        "currently have",
+        "need",
+        "need to have",
+        "service",
+        "serviced",
+        "lead",
+        "led",
+        "tried",
+        "bought",
+        "picked up",
+        "returned",
+    )
+    summary_subjects = ("i", "we", "you", "they", "he", "she", "my", "our", "your", "their")
+    quantity_markers = (
+        r"\d+",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "a pair of",
+        "a couple of",
+        "several",
+        "many",
+        "few",
+    )
+    has_quantity = any(re.search(rf"\b{marker}\b", lowered) for marker in quantity_markers)
+    starts_like_summary = any(lowered.startswith(f"{subject} ") for subject in summary_subjects) and any(
+        verb in lowered for verb in summary_verbs
+    )
+    if len(tokens) <= 7 and has_quantity and starts_like_summary:
+        return ""
     discourse_prefixes = (
         "by the way",
         "speaking of",

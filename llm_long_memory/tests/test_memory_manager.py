@@ -183,6 +183,48 @@ class TestMemoryManager(unittest.TestCase):
         self.assertNotEqual(out, "Not found in retrieved context.")
         self.assertGreaterEqual(llm.calls, 1)
 
+    def test_chat_uses_prompt_fallback_for_not_found(self):
+        manager, llm = self._build_manager(llm=FakeLLM("Not found in retrieved context."))
+
+        def _prepare_answer_inputs(query, precomputed_context):
+            return (
+                "[Topic: topic_1]\n(assistant) The first issue was the GPS system not functioning correctly.",
+                [{"topic_id": "topic_1", "score": 1.0}],
+                [
+                    {
+                        "topic_id": "topic_1",
+                        "chunk_id": 1,
+                        "role": "assistant",
+                        "text": "(assistant) The first issue was the GPS system not functioning correctly.",
+                        "score": 0.9,
+                        "session_id": "s1",
+                        "session_date": "2023/01/01",
+                        "has_answer": 1,
+                    }
+                ],
+                [
+                    {
+                        "text": "The first issue was the GPS system not functioning correctly.",
+                        "score": 0.9,
+                        "topic_id": "topic_1",
+                        "chunk_id": 1,
+                        "session_date": "2023/01/01",
+                    }
+                ],
+                [],
+                "",
+                {"answer": "GPS system not functioning correctly", "source": "intent_span", "score": "0.9000"},
+                "The first issue was the GPS system not functioning correctly.",
+                "",
+            )
+
+        manager._prepare_answer_inputs = _prepare_answer_inputs  # type: ignore[method-assign]
+        out = manager.chat("What was the first issue with my car?")
+        self.assertEqual(out, "GPS system not functioning correctly")
+        self.assertIsNotNone(llm.last_messages)
+        self.assertIn("GPS system not functioning correctly", llm.last_messages[0]["content"])
+        self.assertNotEqual(out, "Not found in retrieved context.")
+
     def test_counting_fallback_is_used_before_top_candidate(self):
         manager, llm = self._build_manager(llm=FakeLLM("unrelated answer"))
         manager.answering.counting.resolve = lambda **kwargs: {"answer": "4", "reason": "mock"}

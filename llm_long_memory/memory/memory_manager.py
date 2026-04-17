@@ -475,6 +475,12 @@ class MemoryManager:
             best_evidence,
             best_candidate,
         ) = self._prepare_answer_inputs(query, precomputed_context)
+        prompt_fallback_answer = self.chat_runtime.resolve_prompt_fallback(
+            fallback_answer=fallback_answer,
+            evidence_candidate=evidence_candidate,
+            candidates=candidates,
+            best_evidence=best_evidence,
+        )
 
         prompt_text = self._build_generation_prompt(
             input_text=input_text,
@@ -483,7 +489,7 @@ class MemoryManager:
             chunks=chunks,
             candidates=candidates,
             best_evidence=best_evidence,
-            fallback_answer=fallback_answer,
+            fallback_answer=prompt_fallback_answer,
             evidence_candidate=evidence_candidate,
         )
         ai_response, fallback_path, not_found_reason = self._generate_with_fallback(
@@ -492,7 +498,7 @@ class MemoryManager:
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
-            fallback_answer=fallback_answer,
+            fallback_answer=prompt_fallback_answer,
             evidence_candidate=evidence_candidate,
         )
         logger.info(
@@ -502,6 +508,7 @@ class MemoryManager:
             f"best_evidence='{best_evidence}', "
             f"best_candidate='{best_candidate}', "
             f"fallback_answer='{fallback_answer}', "
+            f"prompt_fallback_answer='{prompt_fallback_answer}', "
             f"evidence_candidate='{(evidence_candidate or {}).get('answer', '')}'."
         )
         logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
