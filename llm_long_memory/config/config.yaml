@@ -2,7 +2,7 @@ memory:
   short_memory_size: 10
   mid_memory:
     max_size: 2000
-    min_chunk_size: 2
+    min_chunk_size: 3
     max_chunk_size: 5
     message_chunk_max_chars: 900
     message_chunk_overlap_chars: 120
@@ -10,7 +10,7 @@ memory:
     message_chunk_boundary_window_chars: 80
     chunk_similarity_threshold: 0.55
     embedding_min_length: 20
-    topic_similarity_threshold: 0.72
+    topic_similarity_threshold: 0.68
     topic_multi_assign_top_k: 2
     topic_inactive_steps: 10
     topic_merge_threshold: 0.97
@@ -34,9 +34,9 @@ memory:
         user: 1.0
         assistant: 0.5
         system: 0.3
-      non_user_threshold_multiplier: 1.1
+      non_user_threshold_multiplier: 1.0
     chunking:
-      role_boundary_flush: true
+      role_boundary_flush: false
       use_buffer_centroid_similarity: true
     stopwords:
       - a
@@ -254,10 +254,10 @@ memory:
       keyword_nodes_limit: 8
     offline_graph:
       enabled: true
-      build_top_chunks: 10
+      build_top_chunks: 14
       adaptive_top_chunks_enabled: true
       adaptive_top_chunks_min: 8
-      adaptive_top_chunks_max: 18
+      adaptive_top_chunks_max: 24
       adaptive_score_gap_threshold: 0.08
       min_pieces_per_query: 8
       build_chunk_max_chars: 1200
@@ -268,7 +268,7 @@ memory:
       adaptive_role_cap_enabled: true
       assistant_min_keep: 1
       assistant_signal_threshold: 0.45
-      assistant_hard_filter_enabled: true
+      assistant_hard_filter_enabled: false
       assistant_hard_filter_when_user_exists: true
       assistant_answer_cue_keywords:
         - bought
@@ -330,7 +330,7 @@ retrieval:
     similarity_threshold: 0.82
   global_chunk_retrieval:
     enabled: true
-    top_n: 32
+    top_n: 40
     rrf_k: 60
     dense_weight: 1.2
     lexical_weight: 1.0
@@ -339,7 +339,7 @@ retrieval:
     prefilter_enabled: true
     prefilter_top_n: 256
     lexical_prefilter_top_n: 256
-    prefilter_topic_top_k: 8
+    prefilter_topic_top_k: 10
     recent_fallback_n: 64
     dedup_by_text: true
   temporal_anchor_retrieval:
@@ -362,8 +362,8 @@ retrieval:
     additive_limit: 8
   graph_build_retry:
     enabled: true
-    expanded_top_n: 48
-    ingest_top_chunks: 10
+    expanded_top_n: 64
+    ingest_top_chunks: 14
     use_temporal_anchors: true
     anchor_query_limit: 4
     anchor_top_n_per_query: 8
