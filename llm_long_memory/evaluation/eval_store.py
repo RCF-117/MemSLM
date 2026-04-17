@@ -23,6 +23,9 @@ class EvalStore:
         self.thesis_type_table = self._sanitize_identifier(
             str(eval_cfg.get("thesis_type_table", "thesis_eval_type_metrics"))
         )
+        self.thesis_mode_table = self._sanitize_identifier(
+            str(eval_cfg.get("thesis_mode_table", "thesis_mode_runs"))
+        )
 
     @staticmethod
     def _sanitize_identifier(name: str) -> str:
@@ -112,6 +115,19 @@ class EvalStore:
             )
             """
         )
+        self.conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.thesis_mode_table}(
+              dataset_name TEXT,
+              mode TEXT,
+              run_id TEXT,
+              model_name TEXT,
+              judge_model TEXT,
+              created_at TEXT,
+              PRIMARY KEY(dataset_name, mode, run_id)
+            )
+            """
+        )
         self.conn.commit()
 
     def ensure_schema_compat(self) -> None:
@@ -162,6 +178,18 @@ class EvalStore:
         thesis_type_names = {str(row["name"]) for row in thesis_type_cols}
         thesis_type_expected = {"run_id", "question_type", "type_answer_acc", "type_latency_sec"}
         if not thesis_type_expected.issubset(thesis_type_names):
+            pass
+        thesis_mode_cols = self.conn.execute(f"PRAGMA table_info({self.thesis_mode_table})").fetchall()
+        thesis_mode_names = {str(row["name"]) for row in thesis_mode_cols}
+        thesis_mode_expected = {
+            "dataset_name",
+            "mode",
+            "run_id",
+            "model_name",
+            "judge_model",
+            "created_at",
+        }
+        if not thesis_mode_expected.issubset(thesis_mode_names):
             pass
 
         cols = self.conn.execute(f"PRAGMA table_info({self.result_table})").fetchall()
@@ -381,6 +409,55 @@ class EvalStore:
         )
         if commit:
             self.conn.commit()
+
+    def log_thesis_mode_run(
+        self,
+        *,
+        dataset_name: str,
+        mode: str,
+        run_id: str,
+        model_name: str,
+        judge_model: str = "",
+        commit: bool = True,
+    ) -> None:
+        if not self.save_to_db:
+            return
+        self.conn.execute(
+            f"""
+            INSERT OR REPLACE INTO {self.thesis_mode_table}
+            (dataset_name, mode, run_id, model_name, judge_model, created_at)
+            VALUES(?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (
+                str(dataset_name),
+                str(mode),
+                str(run_id),
+                str(model_name),
+                str(judge_model),
+            ),
+        )
+        if commit:
+            self.conn.commit()
+
+    def get_latest_thesis_mode_run(
+        self,
+        *,
+        dataset_name: str,
+        mode: str,
+    ) -> str | None:
+        row = self.conn.execute(
+            f"""
+            SELECT run_id
+            FROM {self.thesis_mode_table}
+            WHERE dataset_name = ? AND mode = ?
+            ORDER BY datetime(created_at) DESC, run_id DESC
+            LIMIT 1
+            """,
+            (str(dataset_name), str(mode)),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["run_id"])
 
     def log_eval_run_finish(
         self,

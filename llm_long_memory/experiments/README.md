@@ -17,17 +17,25 @@ The scripts are intentionally split by responsibility so the research workflow s
 
 ## 2. Thesis Evaluation Runner
 
+- `run_model_only_eval.py`
+  - runs the bare-model baseline directly on the raw dataset
+  - bypasses retrieval, graph, and long-memory code paths entirely
+
+- `run_naive_rag_eval.py`
+  - runs a classic retrieve-then-generate baseline
+  - uses a simple passage retrieval stage without the richer MemSLM stack
+
+- `run_ablation_eval.py`
+  - runs the frozen Mid-RAG baseline with long memory disabled
+  - acts as the ablation/reference protocol for MemSLM
+
 - `run_thesis_eval.py`
   - one-shot workflow for subset construction, evaluation, and report export
   - supports model override, judge override, and checkpoint resume
 
 - `run_thesis_compare.py`
-  - runs the four thesis comparison protocols in a fixed order:
-    - `model-only`
-    - `naive rag`
-    - `memslm`
-    - `ablation`
-  - exports one consolidated wide comparison report with per-type accuracy and latency columns
+  - builds one consolidated wide comparison report from already stored runs
+  - resolves `model-only`, `naive rag`, `memslm`, and `ablation` from the mode registry or the latest legacy comparison artifact
   - keeps MemSLM as the focal column, with the other three modes serving as reference protocols
 
 ## 3. Report and Graph Export
@@ -52,9 +60,11 @@ Recommended order:
 1. build a debug/test split
 2. tune on `debug`
 3. freeze `test`
-4. run thesis evaluation
-5. run thesis comparison
-6. export report
-7. export graph artifacts
+4. run `model-only` / `naive rag` once when needed
+5. run `ablation` once when needed
+6. run thesis evaluation for `memslm`
+7. build the consolidated comparison report
+8. export report
+9. export graph artifacts
 
 That separation keeps experimentation clean and makes the repository easier to maintain over time.

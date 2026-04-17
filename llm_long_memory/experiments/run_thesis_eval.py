@@ -207,6 +207,31 @@ def main() -> None:
         node_graph_json_path=(node_graph_json_path or None),
         judge_enabled=bool(args.judge),
     )
+    # Register the latest memslm run so report builders can resolve it without rerunning eval.
+    try:
+        from llm_long_memory.evaluation.eval_store import EvalStore
+        import sqlite3
+
+        db_file = resolve_project_path(report_db_path)
+        conn = sqlite3.connect(str(db_file))
+        conn.row_factory = sqlite3.Row
+        try:
+            store = EvalStore(conn=conn, eval_cfg=dict(config["evaluation"]))
+            store.create_tables()
+            store.ensure_schema_compat()
+            if run_id:
+                store.log_thesis_mode_run(
+                    dataset_name=dataset_name,
+                    mode="memslm",
+                    run_id=run_id,
+                    model_name=model_override,
+                    judge_model=judge_override,
+                    commit=True,
+                )
+        finally:
+            conn.close()
+    except Exception as exc:  # pragma: no cover - best effort registration
+        print(f"[warn] failed to register memslm mode metadata: {exc}")
 
 
 if __name__ == "__main__":

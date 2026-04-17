@@ -96,15 +96,18 @@ flowchart LR
 - `llm_long_memory/memory/`: short memory, mid memory, long memory, answering pipeline, orchestration
 - `llm_long_memory/evaluation/`: dataset loading, runtime evaluation, metrics, persistence, report export
 - `llm_long_memory/baselines/`: frozen baseline protocol and runner
-- `llm_long_memory/experiments/`: thesis-oriented subset building, split generation, judge export, graph export
+- `llm_long_memory/experiments/`: thesis-oriented subset building, split generation, standalone baselines, judge export, report export, graph export
 - `llm_long_memory/tests/`: unit tests
 
 ### Experiment entry points
 
 - `build_eval_subset.py`: build a compact balanced subset
 - `build_eval_split.py`: build a debug/test split with a fixed manifest
+- `run_model_only_eval.py`: run a direct-to-LLM bare-model baseline and persist results
+- `run_naive_rag_eval.py`: run a classic retrieve-then-generate baseline and persist results
+- `run_ablation_eval.py`: run the frozen baseline ablation and persist results
 - `run_thesis_eval.py`: run a thesis-oriented experiment with optional judge
-- `run_thesis_compare.py`: run the four thesis comparison protocols and export one consolidated wide report centered on MemSLM
+- `run_thesis_compare.py`: build the consolidated thesis comparison report from existing mode runs, centered on MemSLM
 - `export_eval_report.py`: export SQLite eval runs into JSON / Markdown / CSV
 - `export_graph.py`: export the long-memory graph for visualization
 - `llm_judge.py`: local judge helper used by the report exporter
@@ -194,6 +197,29 @@ Useful options:
 - `--keep-types` / `--drop-types`: optional type filtering
 - `--max-total`, `--per-type`, `--seed`: subset control
 
+Standalone baseline runners:
+
+```bash
+python -m llm_long_memory.experiments.run_model_only_eval \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10
+```
+
+```bash
+python -m llm_long_memory.experiments.run_naive_rag_eval \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10
+```
+
+```bash
+python -m llm_long_memory.experiments.run_ablation_eval \
+  --config llm_long_memory/baselines/baseline_midrag_v1.yaml \
+  --split ragdebug10
+```
+
+These baseline scripts write their raw results into the shared eval SQLite database.
+You can then run the comparison report builder once after refreshing `memslm`.
+
 ### 3) Export a report
 
 ```bash
@@ -221,19 +247,17 @@ python -m llm_long_memory.experiments.export_graph \
 
 This produces graph artifacts suitable for inspection in Gephi, browser preview, or later paper figures.
 
-### 5) Run the four-way comparison
+### 5) Run the consolidated comparison report
 
 ```bash
 python -m llm_long_memory.experiments.run_thesis_compare \
   --config llm_long_memory/config/config.yaml \
-  --baseline-config llm_long_memory/baselines/baseline_midrag_v1.yaml \
   --split ragdebug10 \
-  --model qwen3:8b \
-  --judge-model deepseek-r1:8b \
-  --judge
+  --model-name qwen3:8b \
+  --judge-model deepseek-r1:8b
 ```
 
-The comparison report writes one consolidated wide table with these fixed protocol columns:
+This report is built from already stored mode runs and writes one consolidated wide table with these fixed protocol columns:
 - `model-only`
 - `naive rag`
 - `memslm`
