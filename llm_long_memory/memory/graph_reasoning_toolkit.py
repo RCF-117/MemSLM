@@ -138,7 +138,6 @@ class GraphReasoningToolkit:
             cleaned = re.sub(r"^(?:my|our|your|their|the)\s+", "", cleaned, flags=re.IGNORECASE)
             return cleaned
         patterns = [
-            r"\bstay connected with\s+(.+?)(?:[?.!]|$)",
             r"\blearn more about\s+(.+?)(?:[?.!]|$)",
             r"\bways to\s+(.+?)(?:[?.!]|$)",
             r"\brecommend(?:\s+some)?\s+(.+?)(?:[?.!]|$)",
@@ -156,8 +155,6 @@ class GraphReasoningToolkit:
             if m:
                 focus = _clean_focus(str(m.group(1)))
                 if focus:
-                    if "stay connected with" in pat:
-                        return f"staying connected with {focus}"
                     return focus
         return ""
 
@@ -258,7 +255,7 @@ class GraphReasoningToolkit:
             text_tokens = set(self._tokenize(text))
             list_entities = self.counting._extract_list_entities(text)
             if focus_tokens and len(focus_tokens.intersection(text_tokens)) == 0:
-                if len(list_entities) < 2 or not self._line_has_list_shape(text):
+                if not (self._line_has_list_shape(text) and len(list_entities) >= 2):
                     continue
             for ent in list_entities:
                 cleaned = self._normalize(ent)

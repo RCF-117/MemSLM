@@ -402,8 +402,6 @@ retrieval:
       enabled: true
       strip_prefixes:
         - the answer is
-        - the first issue mentioned was
-        - the issue was
         - it was
         - it is
       issue_with_pattern_enabled: true
@@ -507,17 +505,7 @@ retrieval:
         - "\\b\\d{1,2}[/-]\\d{1,2}\\b"
         - "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b"
       list_count_enabled: true
-      list_count_query_keywords:
-        - how many things
-        - how many items
-        - how many names
-        - how many products
-        - how many books
-        - how many songs
-        - how many places
-        - how many did i mention
-        - number of things
-        - number of items
+      list_count_query_keywords: []
       list_count_min_unique_entities: 2
       list_count_max_entity_tokens: 4
       list_count_stopwords:

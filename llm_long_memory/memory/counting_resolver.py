@@ -134,8 +134,17 @@ class CountingResolver:
         return any(k in q for k in self.day_count_keywords)
 
     def _is_list_count_query(self, query: str) -> bool:
-        q = query.lower()
-        return any(k in q for k in self.list_count_query_keywords)
+        q = " ".join(str(query).split()).lower()
+        if self._is_day_count_query(query):
+            return False
+        if any(k in q for k in self.list_count_query_keywords):
+            return True
+        return bool(
+            re.search(r"\bhow many\b", q)
+            or re.search(r"\bnumber of\b", q)
+            or re.search(r"\bcount of\b", q)
+            or re.search(r"\bhow much\b", q)
+        )
 
     def _extract_numeric_phrase(self, text: str) -> Optional[Tuple[str, str]]:
         m = re.search(r"\b(\d+(?:\.\d+)?)\s*([a-zA-Z%$]+)?\b", text, flags=re.IGNORECASE)
@@ -195,6 +204,17 @@ class CountingResolver:
             query=query, focus_stopwords=self.list_count_focus_stopwords
         )
 
+    @staticmethod
+    def _line_has_list_shape(text: str) -> bool:
+        low = " ".join(str(text or "").split()).lower()
+        return (
+            "," in low
+            or " and " in low
+            or " or " in low
+            or " plus " in low
+            or "+" in low
+        )
+
     def _sentence_focus_overlap(self, text: str, focus_tokens: Sequence[str]) -> int:
         return sentence_focus_overlap(
             text=text,
@@ -221,9 +241,15 @@ class CountingResolver:
 
         for item in evidence:
             text = str(item.get("text", ""))
-            if self._sentence_focus_overlap(text, focus_tokens) < self.list_count_focus_min_overlap:
+            list_entities = self._extract_list_entities(text)
+            line_has_shape = self._line_has_list_shape(text)
+            focus_overlap = self._sentence_focus_overlap(text, focus_tokens)
+            if (
+                focus_overlap < self.list_count_focus_min_overlap
+                and not (line_has_shape and len(list_entities) >= 2)
+            ):
                 continue
-            for ent in self._extract_list_entities(text):
+            for ent in list_entities:
                 if ent not in seen:
                     seen.add(ent)
                     uniq.append(ent)
@@ -231,7 +257,8 @@ class CountingResolver:
         # candidate phrases are a weak signal but can help when evidence is short.
         for cand in candidates:
             ctext = str(cand.get("text", ""))
-            if self._sentence_focus_overlap(ctext, focus_tokens) < self.list_count_focus_min_overlap:
+            focus_overlap = self._sentence_focus_overlap(ctext, focus_tokens)
+            if focus_overlap < self.list_count_focus_min_overlap and not self._line_has_list_shape(ctext):
                 continue
             ent = self._normalize_entity(ctext)
             if ent and ent not in seen:

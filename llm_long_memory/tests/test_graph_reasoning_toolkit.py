@@ -111,6 +111,27 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         )
         self.assertEqual(answer, "4")
 
+    def test_counting_resolver_counts_list_items_without_query_word_overlap(self) -> None:
+        result = self.toolkit.counting.resolve(
+            query="How many books do I own?",
+            evidence=[
+                {
+                    "text": "I have a cookbook, a novel, and a notebook.",
+                    "score": 1.0,
+                }
+            ],
+            candidates=[],
+            reranked_chunks=[
+                {
+                    "text": "I have a cookbook, a novel, and a notebook.",
+                    "score": 1.0,
+                    "session_date": "",
+                }
+            ],
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(str(result.get("answer", "")).strip(), "3")
+
     def test_counting_entities_drop_discourse_fillers(self) -> None:
         entities = self.toolkit.counting._extract_list_entities(
             "By the way, speaking of my bikes, I've got three of them - a road bike, a mountain bike, and a commuter bike."
