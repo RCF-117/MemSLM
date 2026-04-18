@@ -136,6 +136,11 @@ class AnsweringPipeline:
         reranked_chunks: List[Dict[str, object]],
     ) -> str:
         """Return a compact fallback answer without bypassing the main LLM."""
+        evidence_candidate = self.extract_evidence_candidate(query, evidence_sentences, candidates)
+        if evidence_candidate is not None:
+            fallback = str(evidence_candidate.get("answer", "")).strip()
+            if fallback:
+                return fallback
         counting_result = self.counting.resolve(
             query=query,
             evidence=evidence_sentences,
@@ -146,11 +151,6 @@ class AnsweringPipeline:
             answer = str(counting_result.get("answer", "")).strip()
             if answer:
                 return answer
-        evidence_candidate = self.extract_evidence_candidate(query, evidence_sentences, candidates)
-        if evidence_candidate is not None:
-            fallback = str(evidence_candidate.get("answer", "")).strip()
-            if fallback:
-                return fallback
         if candidates:
             return str(candidates[0].get("text", "")).strip()
         return ""

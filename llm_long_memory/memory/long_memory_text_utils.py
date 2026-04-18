@@ -75,6 +75,8 @@ class LongMemoryTextUtils:
             return True
         if t in self.stopwords:
             return True
+        if t in self.ROLE_AND_META_KEYWORDS:
+            return True
         if len(t) <= 1:
             return True
         if t.isdigit() and len(t) <= 2:
@@ -218,3 +220,17 @@ class LongMemoryTextUtils:
         a = self.normalize_fact_component(action)
         o = self.normalize_fact_component(obj)
         return f"{s}|{a}|{o}".strip("|")
+    ROLE_AND_META_KEYWORDS = {
+        "user",
+        "assistant",
+        "system",
+        "conversation",
+        "chat",
+        "response",
+        "suggestion",
+        "suggestions",
+        "recommend",
+        "recommendation",
+        "recommendations",
+        "advice",
+    }

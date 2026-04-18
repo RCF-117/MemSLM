@@ -23,6 +23,10 @@ class EvalCounters:
     graph_retrieval_total: int = 0
     graph_span_hits: int = 0
     graph_support_hits: int = 0
+    ingest_event_total: int = 0
+    ingest_event_accepted: int = 0
+    ingest_prev_total: int = 0
+    ingest_prev_accepted: int = 0
 
 
 def finalize_eval_run(
@@ -72,8 +76,12 @@ def finalize_eval_run(
             }
 
     long_stats = manager.long_memory.debug_stats()
-    ingest_total = int(long_stats.get("ingest_event_total", 0))
-    ingest_accepted = int(long_stats.get("ingest_event_accepted", 0))
+    ingest_total = int(counters.ingest_event_total)
+    ingest_accepted = int(counters.ingest_event_accepted)
+    if ingest_total <= 0:
+        ingest_total = int(long_stats.get("ingest_event_total", 0))
+    if ingest_accepted <= 0:
+        ingest_accepted = int(long_stats.get("ingest_event_accepted", 0))
     graph_ingest_accept_rate = (
         float(ingest_accepted) / float(ingest_total)
         if ingest_total > 0

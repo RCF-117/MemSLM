@@ -10,12 +10,6 @@ memory:
     message_chunk_boundary_window_chars: 80
     chunk_similarity_threshold: 0.55
     embedding_min_length: 20
-    topic_similarity_threshold: 0.68
-    topic_multi_assign_top_k: 2
-    topic_inactive_steps: 10
-    topic_merge_threshold: 0.97
-    enable_topic_merge: false
-    topic_min_chunks_before_merge: 3
     database_file: data/processed/mid_memory.db
     sqlite_busy_timeout_ms: 5000
     sqlite_journal_mode: WAL
@@ -61,7 +55,7 @@ memory:
       - was
       - with
   long_memory:
-    enabled: true
+    enabled: false
     staging_enabled: true
     supersede_min_evidence_overlap: 0.25
     database_file: data/processed/long_memory.db
@@ -93,16 +87,15 @@ memory:
       max_events_per_message: 6
       process_roles:
         - user
-        - assistant
       min_chars: 40
       max_chars: 1400
       input_max_chars: 1200
-      max_output_tokens: 160
+      max_output_tokens: 320
       force_json_output: true
       think: false
       require_action: true
       min_filled_fields: 2
-      require_evidence_span: false
+      require_evidence_span: true
       reject_pronoun_subject: false
       subject_pronouns:
         - i
@@ -124,6 +117,11 @@ memory:
         - i'm
         - my
         - your
+        - user
+        - assistant
+        - system
+        - conversation
+        - chat
         - just
         - very
         - really
@@ -251,7 +249,7 @@ memory:
       node_boost_weight: 0.2
       node_edge_boost_weight: 0.12
       context_nodes_per_event: 6
-      keyword_nodes_limit: 8
+      keyword_nodes_limit: 5
     offline_graph:
       enabled: true
       build_top_chunks: 14
@@ -309,12 +307,8 @@ memory:
 
 retrieval:
   top_k: 5
-  chunks_per_topic: 5
   hybrid_alpha: 0.6
   keyword_weight: 0.25
-  recent_topic_weight: 1.2
-  recent_topic_apply_margin: 0.08
-  chunk_topic_weight: 0.2
   time_weight: 0.2
   temporal_boost_max: 0.25
   lexical_search:
@@ -324,7 +318,6 @@ retrieval:
     rrf_k: 60
     dense_weight: 1.0
     lexical_weight: 1.0
-    topic_weight: 0.15
   diversity:
     enabled: true
     similarity_threshold: 0.82
@@ -335,11 +328,9 @@ retrieval:
     dense_weight: 1.2
     lexical_weight: 1.0
     keyword_weight: 0.1
-    topic_prior_weight: 0.15
     prefilter_enabled: true
     prefilter_top_n: 256
     lexical_prefilter_top_n: 256
-    prefilter_topic_top_k: 10
     recent_fallback_n: 64
     dedup_by_text: true
   temporal_anchor_retrieval:
@@ -371,12 +362,9 @@ retrieval:
     user: 1.0
     assistant: 0.7
     system: 0.5
-  topic_expansion:
-    enabled: true
-    per_topic_limit: 1
   long_memory_context:
     enabled: false
-    query_graph_enabled: true
+    query_graph_enabled: false
     prepend_before_mid_context: true
   answering:
     graph_refiner_enabled: true
@@ -679,3 +667,8 @@ evaluation:
     support_hit:
       min_overlap_ratio: 0.5
       min_overlap_tokens: 2
+  locomo:
+    drop_empty_answers: true
+    drop_categories:
+      - 5
+    max_qas_per_sample: 0

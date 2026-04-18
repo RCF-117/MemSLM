@@ -50,10 +50,10 @@ In practice this means:
 flowchart LR
     A["Dataset / User Input"] --> B["Short Memory"]
     B --> C["Mid Memory Ingest (SQLite)"]
-    C --> D["Mid Retrieval: topic + global chunk"]
+    C --> D["Mid Retrieval: global chunk (dense + lexical + keyword)"]
     D --> E["Answering Pipeline"]
     E --> F["8B Generation"]
-    D --> G["Offline Long-Memory Graph Build"]
+    D --> G["Offline Long-Memory Graph Build (optional)"]
     G --> H["Graph Store (SQLite)"]
     H --> E
     F --> I["Eval Result Logging"]
@@ -70,13 +70,14 @@ flowchart LR
 
 - **Mid memory**
   - stores conversation chunks persistently in SQLite
-  - supports retrieval over topic and chunk evidence
+  - uses chunk-first hybrid retrieval (dense + lexical + keyword)
   - serves as the main recall layer for the baseline and thesis experiments
 
 - **Long memory**
   - builds a structured event graph from retrieved evidence
   - is evaluated offline so that graph quality can be inspected without conflating it with final answer generation
   - remains a research prototype rather than a final production module
+  - can be disabled to run pure mid-memory experiments
 
 - **Answering pipeline**
   - assembles compact evidence bundles

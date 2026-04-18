@@ -34,8 +34,7 @@ class MemoryManagerChatRuntime:
             context_text, topics, chunks = precomputed_context
         else:
             context_text, topics, chunks = self.m.retrieve_context(query)
-        retrieved_ids = [str(topic["topic_id"]) for topic in topics]
-        logger.info(f"MemoryManager.chat: retrieved topics={retrieved_ids}")
+        logger.info(f"MemoryManager.chat: retrieved chunks={len(chunks)}")
 
         if self.m.retrieval_execution_mode in {"model_only", "naive_rag"}:
             evidence_sentences: List[Dict[str, object]] = []

@@ -51,13 +51,13 @@ class FakeMidMemory:
     def __init__(self, config=None) -> None:
         self.search_calls = 0
         self.rerank_calls = 0
+        self.global_search_calls = 0
         self.added = []
         self.closed = False
         self.cleared = False
-        self._topics = [{"topic_id": "topic_1", "score": 1.0}]
+        self.global_chunk_retrieval_enabled = True
         self._chunks = [
             {
-                "topic_id": "topic_1",
                 "chunk_id": 1,
                 "role": "user",
                 "text": "(user) She moved to Boston in 2023.",
@@ -70,10 +70,18 @@ class FakeMidMemory:
 
     def search(self, query):
         self.search_calls += 1
-        return list(self._topics)
+        return []
 
     def rerank_chunks(self, query, topics):
         self.rerank_calls += 1
+        return list(self._chunks)
+
+    def search_chunks_global_with_limit(self, query, topic_score_map=None, top_n=5):
+        self.global_search_calls += 1
+        return list(self._chunks)[: max(1, int(top_n))]
+
+    def search_chunks_global(self, query, topic_score_map=None):
+        self.global_search_calls += 1
         return list(self._chunks)
 
     def add(self, message):
@@ -142,21 +150,21 @@ class TestMemoryManager(unittest.TestCase):
     def test_retrieve_context_groups_by_topic(self):
         manager, _ = self._build_manager()
         context, topics, chunks = manager.retrieve_context("where moved")
-        self.assertEqual(len(topics), 1)
+        self.assertEqual(len(topics), 0)
         self.assertEqual(len(chunks), 1)
-        self.assertIn("[Topic: topic_1]", context)
+        self.assertIn("[Chunk 1]", context)
         self.assertIn("Boston", context)
-        self.assertEqual(manager.mid_memory.search_calls, 1)
-        self.assertEqual(manager.mid_memory.rerank_calls, 1)
+        self.assertEqual(manager.mid_memory.search_calls, 0)
+        self.assertEqual(manager.mid_memory.rerank_calls, 0)
+        self.assertEqual(manager.mid_memory.global_search_calls, 1)
 
     def test_chat_uses_precomputed_context_without_extra_retrieval(self):
         manager, llm = self._build_manager()
         pre = (
-            "[Topic: topic_1]\n(user) She moved to Boston in 2023.",
-            [{"topic_id": "topic_1", "score": 1.0}],
+            "[Chunk 1]\n(user) She moved to Boston in 2023.",
+            [],
             [
                 {
-                    "topic_id": "topic_1",
                     "chunk_id": 1,
                     "role": "user",
                     "text": "(user) She moved to Boston in 2023.",
@@ -188,11 +196,10 @@ class TestMemoryManager(unittest.TestCase):
 
         def _prepare_answer_inputs(query, precomputed_context):
             return (
-                "[Topic: topic_1]\n(assistant) The first issue was the GPS system not functioning correctly.",
-                [{"topic_id": "topic_1", "score": 1.0}],
+                "[Chunk 1]\n(assistant) The first issue was the GPS system not functioning correctly.",
+                [],
                 [
                     {
-                        "topic_id": "topic_1",
                         "chunk_id": 1,
                         "role": "assistant",
                         "text": "(assistant) The first issue was the GPS system not functioning correctly.",
@@ -206,7 +213,6 @@ class TestMemoryManager(unittest.TestCase):
                     {
                         "text": "The first issue was the GPS system not functioning correctly.",
                         "score": 0.9,
-                        "topic_id": "topic_1",
                         "chunk_id": 1,
                         "session_date": "2023/01/01",
                     }

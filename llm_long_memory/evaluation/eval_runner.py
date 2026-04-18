@@ -241,6 +241,24 @@ def run_eval(
                 counters.matched += 1
             if group_by_type:
                 update_group_stats(grouped, eval_group_key(qid, qtype, eval_cfg), is_match)
+            if bool(getattr(manager, "long_memory_enabled", False)):
+                stats = manager.long_memory.debug_stats()
+                cur_total = int(stats.get("ingest_event_total", 0))
+                cur_accepted = int(stats.get("ingest_event_accepted", 0))
+                prev_total = int(counters.ingest_prev_total)
+                prev_accepted = int(counters.ingest_prev_accepted)
+                if cur_total < prev_total:
+                    delta_total = cur_total
+                else:
+                    delta_total = cur_total - prev_total
+                if cur_accepted < prev_accepted:
+                    delta_accepted = cur_accepted
+                else:
+                    delta_accepted = cur_accepted - prev_accepted
+                counters.ingest_event_total += max(0, int(delta_total))
+                counters.ingest_event_accepted += max(0, int(delta_accepted))
+                counters.ingest_prev_total = cur_total
+                counters.ingest_prev_accepted = cur_accepted
             manager.mid_memory.eval_store.log_eval_result(
                 run_id=run_id,
                 question_id=qid,

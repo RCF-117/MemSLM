@@ -140,7 +140,13 @@ def _session_index_from_dia_id(dia_id: str) -> int | None:
     return int(match.group(1))
 
 
-def _normalize_locomo_instances(item: Dict[str, Any]) -> List[EvalInstance]:
+def _normalize_locomo_instances(
+    item: Dict[str, Any],
+    *,
+    drop_empty_answers: bool,
+    drop_categories: set[str],
+    max_qas_per_sample: int,
+) -> List[EvalInstance]:
     """Normalize one LoCoMo sample into LongMemEval-like eval instances."""
     conversation = item.get("conversation", {})
     if not isinstance(conversation, dict):
@@ -213,6 +219,11 @@ def _normalize_locomo_instances(item: Dict[str, Any]) -> List[EvalInstance]:
         answer = str(qa.get("answer", "")).strip()
         if not question:
             continue
+        category = str(qa.get("category", "")).strip()
+        if category and (category in drop_categories):
+            continue
+        if drop_empty_answers and (not answer):
+            continue
 
         evidence = qa.get("evidence", [])
         evidence_ids = {str(x).strip() for x in evidence if str(x).strip()}
@@ -238,7 +249,6 @@ def _normalize_locomo_instances(item: Dict[str, Any]) -> List[EvalInstance]:
         qid = str(qa.get("question_id", "")).strip()
         if not qid:
             qid = f"{sample_id}_qa_{index}"
-        category = str(qa.get("category", "")).strip()
         qtype = f"locomo_category_{category}" if category else "locomo"
         question_date = str(qa.get("question_date", "")).strip()
 
@@ -255,6 +265,8 @@ def _normalize_locomo_instances(item: Dict[str, Any]) -> List[EvalInstance]:
                 "answer_session_ids": answer_session_ids,
             }
         )
+        if max_qas_per_sample > 0 and len(out) >= max_qas_per_sample:
+            break
     return out
 
 
@@ -265,7 +277,17 @@ def load_stream(path: str) -> Generator[EvalInstance, None, None]:
     - LongMemEval JSON / JSONL
     - LoCoMo JSON (one sample expanded into multiple QA instances)
     """
-    stream_read_size = int(load_config()["dataset"]["stream_read_size"])
+    cfg = load_config()
+    stream_read_size = int(cfg["dataset"]["stream_read_size"])
+    eval_cfg = dict(cfg.get("evaluation", {}))
+    locomo_cfg = dict(eval_cfg.get("locomo", {}))
+    drop_empty_answers = bool(locomo_cfg.get("drop_empty_answers", True))
+    drop_categories = {
+        str(x).strip()
+        for x in list(locomo_cfg.get("drop_categories", []))
+        if str(x).strip()
+    }
+    max_qas_per_sample = int(locomo_cfg.get("max_qas_per_sample", 0))
     file_path = Path(path)
     with file_path.open("r", encoding="utf-8") as file:
         first_char = file.read(1)
@@ -294,7 +316,12 @@ def load_stream(path: str) -> Generator[EvalInstance, None, None]:
                         break
                     buffer = buffer[index:]
                     if _is_locomo_sample(item):
-                        for locomo_instance in _normalize_locomo_instances(item):
+                        for locomo_instance in _normalize_locomo_instances(
+                            item,
+                            drop_empty_answers=drop_empty_answers,
+                            drop_categories=drop_categories,
+                            max_qas_per_sample=max_qas_per_sample,
+                        ):
                             yield locomo_instance
                     else:
                         instance = _normalize_instance(item)
@@ -308,7 +335,12 @@ def load_stream(path: str) -> Generator[EvalInstance, None, None]:
                 continue
             item = json.loads(text)
             if _is_locomo_sample(item):
-                for locomo_instance in _normalize_locomo_instances(item):
+                for locomo_instance in _normalize_locomo_instances(
+                    item,
+                    drop_empty_answers=drop_empty_answers,
+                    drop_categories=drop_categories,
+                    max_qas_per_sample=max_qas_per_sample,
+                ):
                     yield locomo_instance
             else:
                 instance = _normalize_instance(item)

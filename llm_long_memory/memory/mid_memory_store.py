@@ -1,4 +1,4 @@
-"""SQLite storage layer for MidMemory."""
+"""SQLite storage layer for MidMemory (chunk-first, no topic layer)."""
 
 from __future__ import annotations
 
@@ -87,31 +87,20 @@ class MidMemoryStore:
     def _create_tables(self) -> None:
         self.conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS topics(
-              topic_id TEXT PRIMARY KEY,
-              topic_embedding BLOB,
-              summary TEXT,
-              summary_embedding BLOB,
-              keywords TEXT,
-              topic_times TEXT,
-              last_updated_step INTEGER,
-              last_summary_step INTEGER,
-              active INTEGER
-            )
-            """
-        )
-        self.conn.execute(
-            """
             CREATE TABLE IF NOT EXISTS chunks(
               chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
-              topic_id TEXT,
               text TEXT,
               chunk_embedding BLOB,
               chunk_role TEXT,
+              chunk_role_hist TEXT,
               chunk_session_id TEXT,
               chunk_session_date TEXT,
+              chunk_session_dates TEXT,
               chunk_has_answer INTEGER,
-              chunk_times TEXT
+              chunk_has_answer_count INTEGER,
+              chunk_answer_density REAL,
+              chunk_times TEXT,
+              chunk_time_sources TEXT
             )
             """
         )
@@ -120,7 +109,7 @@ class MidMemoryStore:
                 self.conn.execute(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-                    USING fts5(text, topic_id UNINDEXED)
+                    USING fts5(text)
                     """
                 )
             except sqlite3.OperationalError:
@@ -129,38 +118,38 @@ class MidMemoryStore:
         self.conn.commit()
 
     def _create_indexes(self) -> None:
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_topics_last_updated ON topics(last_updated_step)"
-        )
-        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_chunk_id ON chunks(chunk_id)")
         self.conn.commit()
 
     def _ensure_schema_compat(self) -> None:
         chunk_cols = self.conn.execute("PRAGMA table_info(chunks)").fetchall()
         chunk_names = {str(row["name"]) for row in chunk_cols}
-        topic_cols = self.conn.execute("PRAGMA table_info(topics)").fetchall()
-        topic_names = {str(row["name"]) for row in topic_cols}
         if "chunk_role" not in chunk_names:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_role TEXT")
+        if "chunk_role_hist" not in chunk_names:
+            self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_role_hist TEXT")
         if "chunk_session_id" not in chunk_names:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_session_id TEXT")
         if "chunk_session_date" not in chunk_names:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_session_date TEXT")
+        if "chunk_session_dates" not in chunk_names:
+            self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_session_dates TEXT")
         if "chunk_has_answer" not in chunk_names:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_has_answer INTEGER")
+        if "chunk_has_answer_count" not in chunk_names:
+            self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_has_answer_count INTEGER")
+        if "chunk_answer_density" not in chunk_names:
+            self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_answer_density REAL")
         if "chunk_times" not in chunk_names:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_times TEXT")
-        if "last_summary_step" not in topic_names:
-            self.conn.execute("ALTER TABLE topics ADD COLUMN last_summary_step INTEGER DEFAULT 0")
-        if "topic_times" not in topic_names:
-            self.conn.execute("ALTER TABLE topics ADD COLUMN topic_times TEXT")
+        if "chunk_time_sources" not in chunk_names:
+            self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_time_sources TEXT")
         if self.lexical_search_enabled:
             try:
                 self.conn.execute(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-                    USING fts5(text, topic_id UNINDEXED)
+                    USING fts5(text)
                     """
                 )
             except sqlite3.OperationalError:
@@ -170,17 +159,17 @@ class MidMemoryStore:
 
     def load_current_step(self) -> int:
         row = self.conn.execute(
-            "SELECT COALESCE(MAX(last_updated_step), 0) AS step FROM topics"
+            "SELECT COALESCE(MAX(chunk_id), 0) AS step FROM chunks"
         ).fetchone()
         return int(row["step"]) if row else 0
 
-    def index_chunk_fts(self, chunk_id: int, topic_id: str, text: str) -> None:
+    def index_chunk_fts(self, chunk_id: int, text: str) -> None:
         if not self.lexical_search_enabled:
             return
         try:
             self.conn.execute(
-                "INSERT OR REPLACE INTO chunks_fts(rowid, text, topic_id) VALUES(?, ?, ?)",
-                (int(chunk_id), str(text), str(topic_id)),
+                "INSERT OR REPLACE INTO chunks_fts(rowid, text) VALUES(?, ?)",
+                (int(chunk_id), str(text)),
             )
         except sqlite3.OperationalError as exc:
             logger.warn(f"MidMemory._index_chunk_fts failed: {exc}")
@@ -196,41 +185,13 @@ class MidMemoryStore:
     def rebuild_chunk_fts(self) -> None:
         if not self.lexical_search_enabled:
             return
-        rows = self.conn.execute("SELECT chunk_id, topic_id, text FROM chunks").fetchall()
+        rows = self.conn.execute("SELECT chunk_id, text FROM chunks").fetchall()
         self.conn.execute("DELETE FROM chunks_fts")
         for row in rows:
             self.conn.execute(
-                "INSERT INTO chunks_fts(rowid, text, topic_id) VALUES(?, ?, ?)",
-                (int(row["chunk_id"]), str(row["text"]), str(row["topic_id"])),
+                "INSERT INTO chunks_fts(rowid, text) VALUES(?, ?)",
+                (int(row["chunk_id"]), str(row["text"])),
             )
-
-    def lexical_rank_map(
-        self,
-        topic_id: str,
-        query: str,
-        tokenize: Callable[[str], List[str]],
-        bm25_top_n: int,
-    ) -> Dict[int, int]:
-        if not self.lexical_search_enabled:
-            return {}
-        query_tokens = tokenize(query)
-        if not query_tokens:
-            return {}
-        fts_query = " OR ".join(query_tokens)
-        try:
-            rows = self.conn.execute(
-                """
-                SELECT rowid AS chunk_id
-                FROM chunks_fts
-                WHERE chunks_fts MATCH ? AND topic_id = ?
-                ORDER BY bm25(chunks_fts) ASC
-                LIMIT ?
-                """,
-                (fts_query, topic_id, int(bm25_top_n)),
-            ).fetchall()
-        except sqlite3.OperationalError:
-            return {}
-        return {int(row["chunk_id"]): idx + 1 for idx, row in enumerate(rows)}
 
     def lexical_rank_map_global(
         self,
@@ -261,24 +222,16 @@ class MidMemoryStore:
         return {int(row["chunk_id"]): idx + 1 for idx, row in enumerate(rows)}
 
     def debug_stats(self) -> Dict[str, int]:
-        t = self.conn.execute("SELECT COUNT(*) AS cnt FROM topics").fetchone()
         c = self.conn.execute("SELECT COUNT(*) AS cnt FROM chunks").fetchone()
-        a = self.conn.execute("SELECT COUNT(*) AS cnt FROM topics WHERE active = 1").fetchone()
-        topics = int(t["cnt"]) if t else 0
         chunks = int(c["cnt"]) if c else 0
-        active = int(a["cnt"]) if a else 0
         return {
-            "topics": topics,
             "chunks": chunks,
-            "active_topics": active,
-            "inactive_topics": max(0, topics - active),
         }
 
     def clear_all(self) -> None:
         self.conn.execute("DELETE FROM chunks")
         if self.lexical_search_enabled:
             self.conn.execute("DELETE FROM chunks_fts")
-        self.conn.execute("DELETE FROM topics")
         self.conn.commit()
 
     def commit(self) -> None:

@@ -33,7 +33,6 @@ class TestMidMemoryStore(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = self._build_store(tmp)
             stats = store.debug_stats()
-            self.assertEqual(stats["topics"], 0)
             self.assertEqual(stats["chunks"], 0)
             store.close()
 
@@ -43,32 +42,23 @@ class TestMidMemoryStore(unittest.TestCase):
             if not store.lexical_search_enabled:
                 store.close()
                 self.skipTest("SQLite FTS5 not available in this runtime.")
-            store.conn.execute(
-                """
-                INSERT INTO topics(topic_id, topic_embedding, summary, summary_embedding, keywords, topic_times, last_updated_step, last_summary_step, active)
-                VALUES('t1', ?, '', ?, '[]', '[]', 1, 0, 1)
-                """,
-                (b"\x00" * 16, b"\x00" * 16),
-            )
             cursor = store.conn.execute(
                 """
-                INSERT INTO chunks(topic_id, text, chunk_embedding, chunk_role, chunk_session_id, chunk_session_date, chunk_has_answer, chunk_times)
-                VALUES('t1', 'alice moved to boston', ?, 'user', '', '', 0, '[]')
+                INSERT INTO chunks(text, chunk_embedding, chunk_role, chunk_session_id, chunk_session_date, chunk_has_answer, chunk_times)
+                VALUES('alice moved to boston', ?, 'user', '', '', 0, '[]')
                 """,
                 (b"\x00" * 16,),
             )
             chunk_id = int(cursor.lastrowid)
-            store.index_chunk_fts(chunk_id, "t1", "alice moved to boston")
-            rank_map = store.lexical_rank_map(
-                topic_id="t1",
+            store.index_chunk_fts(chunk_id, "alice moved to boston")
+            rank_map = store.lexical_rank_map_global(
                 query="alice boston",
                 tokenize=lambda s: s.split(),
                 bm25_top_n=10,
             )
             self.assertIn(chunk_id, rank_map)
             store.delete_chunk_fts([chunk_id])
-            rank_map_after = store.lexical_rank_map(
-                topic_id="t1",
+            rank_map_after = store.lexical_rank_map_global(
                 query="alice boston",
                 tokenize=lambda s: s.split(),
                 bm25_top_n=10,

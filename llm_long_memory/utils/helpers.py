@@ -86,7 +86,7 @@ def _validate_config(data: Dict[str, Any]) -> None:
     _require(memory, "mid_memory", "memory.")
 
     retrieval = _require(data, "retrieval", "")
-    for key in ("top_k", "chunks_per_topic", "hybrid_alpha", "keyword_weight"):
+    for key in ("top_k", "hybrid_alpha", "keyword_weight"):
         if key not in retrieval:
             raise ValueError(f"Missing required config key: retrieval.{key}")
     answering = _require(retrieval, "answering", "retrieval.")

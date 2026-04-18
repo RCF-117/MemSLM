@@ -30,6 +30,8 @@ class _NoOpLongMemory:
 
     query_rewrite_enabled = False
     query_rewrite_max = 0
+    cleared = False
+    closed = False
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         return []
@@ -95,9 +97,11 @@ class _NoOpLongMemory:
         }
 
     def clear_all(self) -> None:
+        self.cleared = True
         return None
 
     def close(self) -> None:
+        self.closed = True
         return None
 
 
@@ -276,7 +280,7 @@ class MemoryManager:
     def retrieve_context(
         self, query: str
     ) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]:
-        """Retrieve top topics and reranked chunks for final prompt context."""
+        """Retrieve reranked chunks for final prompt context."""
         if self.model_only_enabled:
             return "", [], []
         if self.classic_rag_enabled:
@@ -285,11 +289,10 @@ class MemoryManager:
             if hasattr(self.mid_memory, "search_chunks_global_with_limit"):
                 reranked_chunks = self.mid_memory.search_chunks_global_with_limit(
                     query,
-                    topic_score_map={},
                     top_n=top_n,
                 )
             elif hasattr(self.mid_memory, "search_chunks_global"):
-                reranked_chunks = self.mid_memory.search_chunks_global(query, topic_score_map={})
+                reranked_chunks = self.mid_memory.search_chunks_global(query)
             context_parts: List[str] = []
             for index, item in enumerate(reranked_chunks, start=1):
                 text = str(item.get("text", "")).strip()
@@ -297,49 +300,18 @@ class MemoryManager:
                     continue
                 context_parts.append(f"[Chunk {index}]\n{text}")
             return "\n\n".join(context_parts), [], reranked_chunks
-        topics = self.mid_memory.search(query)
-        topic_score_map = {
-            str(topic.get("topic_id", "")): float(topic.get("score", 0.0)) for topic in topics
-        }
         global_chunk_enabled = bool(
             getattr(self.mid_memory, "global_chunk_retrieval_enabled", False)
         )
         if global_chunk_enabled and hasattr(self.mid_memory, "search_chunks_global"):
-            reranked_chunks = self.mid_memory.search_chunks_global(query, topic_score_map)
-            topic_expansion_enabled = bool(
-                getattr(self.mid_memory, "topic_expansion_enabled", False)
+            reranked_chunks = self.mid_memory.search_chunks_global(query)
+        elif hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+            reranked_chunks = self.mid_memory.search_chunks_global_with_limit(
+                query=query,
+                top_n=int(getattr(self.mid_memory, "global_chunk_top_n", 40)),
             )
-            if topic_expansion_enabled and topics:
-                primary_topic_ids = {str(item.get("topic_id", "")) for item in reranked_chunks}
-                missing_topics = [
-                    topic for topic in topics if str(topic.get("topic_id", "")) not in primary_topic_ids
-                ]
-                if missing_topics:
-                    expanded = self.mid_memory.rerank_chunks(query, missing_topics)
-                    per_topic_limit = max(
-                        0, int(getattr(self.mid_memory, "topic_expansion_per_topic_limit", 0))
-                    )
-                    if per_topic_limit > 0:
-                        existing_chunk_ids = {
-                            int(c.get("chunk_id"))
-                            for c in reranked_chunks
-                            if c.get("chunk_id") is not None
-                        }
-                        topic_counts: Dict[str, int] = {}
-                        for chunk in expanded:
-                            tid = str(chunk.get("topic_id", ""))
-                            count = topic_counts.get(tid, 0)
-                            if count >= per_topic_limit:
-                                continue
-                            cid_raw = chunk.get("chunk_id")
-                            if cid_raw is not None and int(cid_raw) in existing_chunk_ids:
-                                continue
-                            reranked_chunks.append(chunk)
-                            if cid_raw is not None:
-                                existing_chunk_ids.add(int(cid_raw))
-                            topic_counts[tid] = count + 1
         else:
-            reranked_chunks = self.mid_memory.rerank_chunks(query, topics)
+            reranked_chunks = []
 
         if self.temporal_anchor_enabled and hasattr(self.mid_memory, "search_chunks_global_with_limit"):
             anchor_queries = self._build_temporal_anchor_queries(query)
@@ -349,7 +321,6 @@ class MemoryManager:
                     anchor_chunks.extend(
                         self.mid_memory.search_chunks_global_with_limit(
                             aq,
-                            topic_score_map=topic_score_map,
                             top_n=self.temporal_anchor_top_n_per_query,
                         )
                     )
@@ -364,25 +335,12 @@ class MemoryManager:
                         f"temporal_anchor_queries={len(anchor_queries)}, "
                         f"anchor_candidates={len(anchor_chunks)}."
                     )
-        grouped: Dict[str, List[str]] = {}
-        for item in reranked_chunks:
-            topic_id = str(item["topic_id"])
-            grouped.setdefault(topic_id, []).append(str(item["text"]))
-
         context_parts: List[str] = []
-        ordered_topic_ids: List[str] = []
-        for topic in topics:
-            topic_id = str(topic["topic_id"])
-            ordered_topic_ids.append(topic_id)
-        for item in reranked_chunks:
-            topic_id = str(item.get("topic_id", ""))
-            if topic_id and topic_id not in ordered_topic_ids:
-                ordered_topic_ids.append(topic_id)
-
-        for topic_id in ordered_topic_ids:
-            chunks = grouped.get(topic_id, [])
-            if chunks:
-                context_parts.append(f"[Topic: {topic_id}]\n" + "\n".join(chunks))
+        for index, item in enumerate(reranked_chunks, start=1):
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            context_parts.append(f"[Chunk {index}]\n{text}")
         context_text = "\n\n".join(context_parts)
 
         lm_ctx_cfg = dict(self.config["retrieval"].get("long_memory_context", {}))
@@ -407,7 +365,7 @@ class MemoryManager:
                     "MemoryManager.retrieve_context: "
                     f"long_memory_hits={len(long_snippets)}."
                 )
-        return context_text, topics, reranked_chunks
+        return context_text, [], reranked_chunks
 
     def ingest_message(self, message: Message) -> None:
         """Ingest one dataset message into memory without calling the LLM."""
@@ -450,8 +408,7 @@ class MemoryManager:
         """Reset short and mid memory for isolated per-instance evaluation."""
         self.short_memory.clear()
         self.mid_memory.clear_all()
-        if bool(getattr(self, "long_memory_enabled", False)):
-            self.long_memory.clear_all()
+        self.long_memory.clear_all()
         logger.info("MemoryManager.reset_for_new_instance: memory reset completed.")
 
     def chat(
@@ -600,19 +557,8 @@ class MemoryManager:
         if not hasattr(self.mid_memory, "search_chunks_global_with_limit"):
             return accepted
 
-        topic_score_map: Dict[str, float] = {}
-        for item in chunks:
-            topic_id = str(item.get("topic_id", "")).strip()
-            if not topic_id:
-                continue
-            topic_score_map[topic_id] = max(
-                float(item.get("score", 0.0)),
-                float(topic_score_map.get(topic_id, 0.0)),
-            )
-
         expanded = self.mid_memory.search_chunks_global_with_limit(
             str(query),
-            topic_score_map=topic_score_map,
             top_n=self.graph_build_retry_expanded_top_n,
         )
         combined = self._dedup_chunks_keep_best(list(chunks) + list(expanded))
@@ -623,7 +569,6 @@ class MemoryManager:
                 combined.extend(
                     self.mid_memory.search_chunks_global_with_limit(
                         aq,
-                        topic_score_map=topic_score_map,
                         top_n=self.graph_build_retry_anchor_top_n_per_query,
                     )
                 )

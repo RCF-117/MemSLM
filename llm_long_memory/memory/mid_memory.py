@@ -1,4 +1,4 @@
-"""Topic-aware mid-term memory with SQLite and two-stage hybrid retrieval."""
+"""Chunk-first mid-term memory with SQLite and hybrid retrieval."""
 
 from __future__ import annotations
 
@@ -11,19 +11,17 @@ import numpy as np
 from llm_long_memory.memory import mid_memory_chunking as chunking
 from llm_long_memory.memory import mid_memory_retrieval as retrieval
 from llm_long_memory.memory.mid_memory_store import MidMemoryStore
-from llm_long_memory.memory import mid_memory_topicing as topicing
 from llm_long_memory.utils.embedding import embed
 from llm_long_memory.utils.helpers import load_config
 from llm_long_memory.utils.logger import logger
 
 
 Message = Dict[str, Any]
-Topic = Dict[str, Any]
 Chunk = Dict[str, Any]
 
 
 class MidMemory:
-    """Persistent topic memory with dynamic chunking and temporal-aware retrieval."""
+    """Persistent chunk memory with dynamic chunking and temporal-aware retrieval."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize config, storage, and runtime buffers."""
@@ -46,12 +44,6 @@ class MidMemory:
         )
         self.chunk_similarity_threshold = float(self.memory_cfg["chunk_similarity_threshold"])
         self.embedding_min_length = int(self.memory_cfg["embedding_min_length"])
-        self.topic_similarity_threshold = float(self.memory_cfg["topic_similarity_threshold"])
-        self.topic_multi_assign_top_k = int(self.memory_cfg["topic_multi_assign_top_k"])
-        self.topic_inactive_steps = int(self.memory_cfg["topic_inactive_steps"])
-        self.topic_merge_threshold = float(self.memory_cfg["topic_merge_threshold"])
-        self.enable_topic_merge = bool(self.memory_cfg["enable_topic_merge"])
-        self.topic_min_chunks_before_merge = int(self.memory_cfg["topic_min_chunks_before_merge"])
         self.sqlite_busy_timeout_ms = int(self.memory_cfg["sqlite_busy_timeout_ms"])
         self.sqlite_journal_mode = str(self.memory_cfg["sqlite_journal_mode"])
         self.sqlite_synchronous = str(self.memory_cfg["sqlite_synchronous"])
@@ -81,12 +73,8 @@ class MidMemory:
         self.stopwords = {str(x).lower() for x in self.memory_cfg["stopwords"]}
 
         self.top_k = int(self.retrieval_cfg["top_k"])
-        self.chunks_per_topic = int(self.retrieval_cfg["chunks_per_topic"])
         self.hybrid_alpha = float(self.retrieval_cfg["hybrid_alpha"])
         self.keyword_weight = float(self.retrieval_cfg["keyword_weight"])
-        self.recent_topic_weight = float(self.retrieval_cfg["recent_topic_weight"])
-        self.recent_topic_apply_margin = float(self.retrieval_cfg["recent_topic_apply_margin"])
-        self.chunk_topic_weight = float(self.retrieval_cfg["chunk_topic_weight"])
         self.time_weight = float(self.retrieval_cfg["time_weight"])
         lexical_cfg = dict(self.retrieval_cfg["lexical_search"])
         self.lexical_search_enabled = bool(lexical_cfg["enabled"])
@@ -95,12 +83,7 @@ class MidMemory:
         self.fusion_rrf_k = int(fusion_cfg["rrf_k"])
         self.fusion_dense_weight = float(fusion_cfg["dense_weight"])
         self.fusion_lexical_weight = float(fusion_cfg["lexical_weight"])
-        self.fusion_topic_weight = float(fusion_cfg["topic_weight"])
         self.temporal_boost_max = float(self.retrieval_cfg["temporal_boost_max"])
-        self.retrieval_diversity_enabled = bool(self.retrieval_cfg["diversity"]["enabled"])
-        self.retrieval_diversity_similarity_threshold = float(
-            self.retrieval_cfg["diversity"]["similarity_threshold"]
-        )
         global_chunk_cfg = dict(self.retrieval_cfg["global_chunk_retrieval"])
         self.global_chunk_retrieval_enabled = bool(global_chunk_cfg["enabled"])
         self.global_chunk_top_n = int(global_chunk_cfg["top_n"])
@@ -108,18 +91,13 @@ class MidMemory:
         self.global_chunk_dense_weight = float(global_chunk_cfg["dense_weight"])
         self.global_chunk_lexical_weight = float(global_chunk_cfg["lexical_weight"])
         self.global_chunk_keyword_weight = float(global_chunk_cfg["keyword_weight"])
-        self.global_chunk_topic_prior_weight = float(global_chunk_cfg["topic_prior_weight"])
         self.global_chunk_prefilter_enabled = bool(global_chunk_cfg["prefilter_enabled"])
         self.global_chunk_prefilter_top_n = int(global_chunk_cfg["prefilter_top_n"])
         self.global_chunk_lexical_prefilter_top_n = int(
             global_chunk_cfg["lexical_prefilter_top_n"]
         )
-        self.global_chunk_prefilter_topic_top_k = int(global_chunk_cfg["prefilter_topic_top_k"])
         self.global_chunk_recent_fallback_n = int(global_chunk_cfg["recent_fallback_n"])
         self.global_chunk_dedup_by_text = bool(global_chunk_cfg["dedup_by_text"])
-        topic_expansion_cfg = dict(self.retrieval_cfg["topic_expansion"])
-        self.topic_expansion_enabled = bool(topic_expansion_cfg["enabled"])
-        self.topic_expansion_per_topic_limit = int(topic_expansion_cfg["per_topic_limit"])
 
         self.buffer: List[Dict[str, Any]] = []
         self.current_step = 0
@@ -178,22 +156,14 @@ class MidMemory:
             return 0.0
         return self._temporal_weight_base(delta)
 
-    def _index_chunk_fts(self, chunk_id: int, topic_id: str, text: str) -> None:
-        self.store.index_chunk_fts(chunk_id=chunk_id, topic_id=topic_id, text=text)
+    def _index_chunk_fts(self, chunk_id: int, text: str) -> None:
+        self.store.index_chunk_fts(chunk_id=chunk_id, text=text)
 
     def _delete_chunk_fts(self, chunk_ids: Sequence[int]) -> None:
         self.store.delete_chunk_fts(chunk_ids=chunk_ids)
 
     def _rebuild_chunk_fts(self) -> None:
         self.store.rebuild_chunk_fts()
-
-    def _lexical_rank_map(self, topic_id: str, query: str) -> Dict[int, int]:
-        return self.store.lexical_rank_map(
-            topic_id=topic_id,
-            query=query,
-            tokenize=self._tokenize,
-            bm25_top_n=self.lexical_bm25_top_n,
-        )
 
     def _lexical_rank_map_global(self, query: str, top_n: int) -> Dict[int, int]:
         return self.store.lexical_rank_map_global(
@@ -277,6 +247,7 @@ class MidMemory:
                     "session_date": session_date,
                     "has_answer": has_answer,
                     "times": msg_times,
+                    "source_part_index": int(index),
                 }
             )
             logger.debug(
@@ -298,29 +269,98 @@ class MidMemory:
         if (not force) and len(self.buffer) < self.min_chunk_size:
             return
         chunk_text = "\n".join(str(m["text"]) for m in self.buffer)
-        chunk_embedding = np.mean(
-            np.stack([m["embedding"] for m in self.buffer]), axis=0
-        ).astype(np.float32)
+        weighted_embeddings: List[np.ndarray] = []
+        weights: List[float] = []
+        for m in self.buffer:
+            vec = np.asarray(m["embedding"], dtype=np.float32)
+            token_len = max(1, len(self._tokenize(str(m.get("text", "")))))
+            role_weight = self._role_weight(str(m.get("role", "user")))
+            weight = max(1e-6, float(token_len) * float(role_weight))
+            weighted_embeddings.append(vec)
+            weights.append(weight)
+        if weighted_embeddings and weights:
+            matrix = np.stack(weighted_embeddings)
+            chunk_embedding = np.average(
+                matrix,
+                axis=0,
+                weights=np.asarray(weights, dtype=np.float32),
+            ).astype(np.float32)
+        else:
+            chunk_embedding = np.mean(
+                np.stack([m["embedding"] for m in self.buffer]), axis=0
+            ).astype(np.float32)
         dominant_role = self._dominant_role([m["role"] for m in self.buffer])
+        role_hist = self._role_hist([str(m.get("role", "user")) for m in self.buffer])
         dominant_session_id = self._dominant_text([str(m.get("session_id", "")) for m in self.buffer])
         dominant_session_date = self._dominant_text([str(m.get("session_date", "")) for m in self.buffer])
-        chunk_has_answer = 1 if any(bool(m.get("has_answer", False)) for m in self.buffer) else 0
+        secondary_session_dates = self._secondary_values(
+            values=[str(m.get("session_date", "")) for m in self.buffer],
+            primary=dominant_session_date,
+        )
+        chunk_has_answer_count = sum(1 for m in self.buffer if bool(m.get("has_answer", False)))
+        chunk_answer_density = float(chunk_has_answer_count) / float(max(1, len(self.buffer)))
+        chunk_has_answer = 1 if chunk_has_answer_count > 0 else 0
         times: List[str] = []
-        for m in self.buffer:
+        time_sources: List[Dict[str, Any]] = []
+        for buffer_index, m in enumerate(self.buffer):
             for t in list(m.get("times", []) or []):
                 tt = str(t).strip().lower()
-                if tt and tt not in times:
+                if not tt:
+                    continue
+                if tt not in times:
                     times.append(tt)
+                time_sources.append(
+                    {
+                        "time": tt,
+                        "buffer_index": int(buffer_index),
+                        "source_part_index": int(m.get("source_part_index", -1)),
+                    }
+                )
         self.buffer.clear()
         self._add_chunk(
             chunk_text,
             chunk_embedding,
             dominant_role,
+            role_hist,
             dominant_session_id,
             dominant_session_date,
+            secondary_session_dates,
             chunk_has_answer,
+            chunk_has_answer_count,
+            chunk_answer_density,
             times,
+            time_sources,
         )
+
+    @staticmethod
+    def _secondary_values(values: Sequence[str], primary: str) -> List[str]:
+        out: List[str] = []
+        seen: set[str] = set()
+        p = str(primary).strip()
+        for value in values:
+            v = str(value or "").strip()
+            if not v or v == p:
+                continue
+            if v in seen:
+                continue
+            seen.add(v)
+            out.append(v)
+        return out
+
+    @staticmethod
+    def _role_hist(roles: Sequence[str]) -> List[str]:
+        counts: Dict[str, int] = {}
+        first_index: Dict[str, int] = {}
+        for idx, role in enumerate(roles):
+            r = str(role or "").strip().lower() or "user"
+            counts[r] = counts.get(r, 0) + 1
+            if r not in first_index:
+                first_index[r] = idx
+        ordered = sorted(
+            counts.keys(),
+            key=lambda x: (-counts[x], first_index[x]),
+        )
+        return ordered
 
     @staticmethod
     def _dominant_text(values: Sequence[str]) -> str:
@@ -341,123 +381,81 @@ class MidMemory:
         chunk_text: str,
         chunk_embedding: np.ndarray,
         chunk_role: str,
+        chunk_role_hist: Sequence[str],
         chunk_session_id: str,
         chunk_session_date: str,
+        chunk_session_dates: Sequence[str],
         chunk_has_answer: int,
+        chunk_has_answer_count: int,
+        chunk_answer_density: float,
         chunk_times: Sequence[str],
+        chunk_time_sources: Sequence[Dict[str, Any]],
     ) -> None:
-        topic_ids = self._assign_topics(chunk_embedding, chunk_role)
-        created_new_topic = False
-
-        if not topic_ids:
-            topic_ids = [self._create_topic(chunk_embedding)]
-            created_new_topic = True
-            logger.info(f"MidMemory._add_chunk: created topic {topic_ids[0]}.")
-        else:
-            logger.info("MidMemory._add_chunk: matched topics=" + ",".join(topic_ids))
-
-        for topic_id in topic_ids:
-            cursor = self.conn.execute(
-                """
-                INSERT INTO chunks(
-                  topic_id, text, chunk_embedding, chunk_role,
-                  chunk_session_id, chunk_session_date, chunk_has_answer, chunk_times
-                )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    topic_id,
-                    chunk_text,
-                    self._arr_to_blob(chunk_embedding),
-                    chunk_role,
-                    chunk_session_id,
-                    chunk_session_date,
-                    int(chunk_has_answer),
-                    json.dumps(list(chunk_times)),
-                ),
+        cursor = self.conn.execute(
+            """
+            INSERT INTO chunks(
+              text, chunk_embedding, chunk_role, chunk_role_hist,
+              chunk_session_id, chunk_session_date, chunk_session_dates,
+              chunk_has_answer, chunk_has_answer_count, chunk_answer_density,
+              chunk_times, chunk_time_sources
             )
-            chunk_id = int(cursor.lastrowid)
-            self._index_chunk_fts(chunk_id, topic_id, chunk_text)
-            self._update_topic(topic_id, created_new_topic)
-
-        self._merge_topics()
-        self._deactivate_topics()
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                chunk_text,
+                self._arr_to_blob(chunk_embedding),
+                chunk_role,
+                json.dumps(list(chunk_role_hist)),
+                chunk_session_id,
+                chunk_session_date,
+                json.dumps(list(chunk_session_dates)),
+                int(chunk_has_answer),
+                int(chunk_has_answer_count),
+                float(chunk_answer_density),
+                json.dumps(list(chunk_times)),
+                json.dumps(list(chunk_time_sources)),
+            ),
+        )
+        chunk_id = int(cursor.lastrowid)
+        self._index_chunk_fts(chunk_id, chunk_text)
         self._enforce_fifo_limit()
         self.conn.commit()
 
-    def _assign_topics(self, chunk_embedding: np.ndarray, chunk_role: str) -> List[str]:
-        return topicing.assign_topics(self, chunk_embedding, chunk_role)
-
-    def _create_topic(self, topic_embedding: np.ndarray) -> str:
-        return topicing.create_topic(self, topic_embedding)
-
-    def _update_topic(self, topic_id: str, _created_new_topic: bool) -> None:
-        self._recompute_topic_embedding(topic_id)
-        self.conn.execute(
-            "UPDATE topics SET last_updated_step = ?, active = 1 WHERE topic_id = ?",
-            (self.current_step, topic_id),
-        )
-
-    def _recompute_topic_embedding(self, topic_id: str) -> None:
-        topicing.recompute_topic_embedding(self, topic_id)
-
-    def _merge_topics(self) -> None:
-        topicing.merge_topics(self)
-
-    def _merge_topic_pair(self, target_topic_id: str, source_topic_id: str) -> None:
-        topicing.merge_topic_pair(self, target_topic_id, source_topic_id)
-
-    def _deduplicate_topic_chunks(self, topic_id: str) -> None:
-        topicing.deduplicate_topic_chunks(self, topic_id)
-
-    def _merge_keywords(self, left: Sequence[str], right: Sequence[str]) -> List[str]:
-        return topicing.merge_keywords(self, left, right)
-
-    def _deactivate_topics(self) -> None:
-        topicing.deactivate_topics(self)
-
     def _enforce_fifo_limit(self) -> None:
-        topicing.enforce_fifo_limit(self)
-
-    @staticmethod
-    def _keyword_overlap(query_tokens: Sequence[str], target_tokens: Sequence[str]) -> float:
-        return retrieval.keyword_overlap(query_tokens, target_tokens)
-
-    def _select_diverse_topics(self, scored: Sequence[Topic]) -> List[Topic]:
-        return retrieval.select_diverse_topics(self, scored)
-
-    def search(self, query: str) -> List[Topic]:
-        """Hybrid level 1: topic retrieval."""
-        return retrieval.search_topics(self, query)
-
-    def rerank_chunks(self, query: str, topics: Sequence[Topic]) -> List[Chunk]:
-        """Hybrid level 2: chunk rerank via dense+lexical rank fusion (RRF)."""
-        return retrieval.rerank_chunks(self, query, topics)
+        overflow = max(0, int(self.debug_stats().get("chunks", 0)) - int(self.max_size))
+        if overflow <= 0:
+            return
+        rows = self.conn.execute(
+            "SELECT chunk_id FROM chunks ORDER BY chunk_id ASC LIMIT ?",
+            (overflow,),
+        ).fetchall()
+        chunk_ids = [int(r["chunk_id"]) for r in rows]
+        if not chunk_ids:
+            return
+        placeholders = ",".join(["?"] * len(chunk_ids))
+        self.conn.execute(f"DELETE FROM chunks WHERE chunk_id IN ({placeholders})", tuple(chunk_ids))
+        self._delete_chunk_fts(chunk_ids)
 
     def search_chunks_global(
         self,
         query: str,
-        topic_score_map: Optional[Dict[str, float]] = None,
     ) -> List[Chunk]:
-        """Global chunk retrieval without topic gate (dense + lexical + keyword + topic prior)."""
+        """Global chunk retrieval (dense + lexical + keyword)."""
         return retrieval.rerank_chunks_global(
             self,
             query=query,
-            topic_score_map=topic_score_map or {},
         )
 
     def search_chunks_global_with_limit(
         self,
         query: str,
         *,
-        topic_score_map: Optional[Dict[str, float]] = None,
         top_n: Optional[int] = None,
     ) -> List[Chunk]:
         """Global chunk retrieval with optional temporary top-N override."""
         return retrieval.rerank_chunks_global(
             self,
             query=query,
-            topic_score_map=topic_score_map or {},
             top_n_override=top_n,
         )
 
@@ -469,7 +467,7 @@ class MidMemory:
         )
 
     def debug_stats(self) -> Dict[str, int]:
-        """Return topic/chunk statistics."""
+        """Return chunk statistics."""
         return self.store.debug_stats()
 
     def clear_all(self) -> None:
@@ -477,7 +475,7 @@ class MidMemory:
         self.store.clear_all()
         self.buffer.clear()
         self.current_step = 0
-        logger.info("MidMemory.clear_all: cleared topics, chunks, and runtime buffer.")
+        logger.info("MidMemory.clear_all: cleared chunks and runtime buffer.")
 
     def commit(self) -> None:
         """Commit current transaction."""
