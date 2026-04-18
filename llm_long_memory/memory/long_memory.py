@@ -995,14 +995,7 @@ class LongMemory:
             self._normalize_long_memory_chunk(dict(x))
             for x in chunks
         ]
-        ranked.sort(
-            key=lambda x: (
-                float(x.get("score", 0.0)),
-                float(x.get("answer_density", 0.0)),
-                int(x.get("has_answer_count", 0)),
-            ),
-            reverse=True,
-        )
+        ranked.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
         if not self.offline_adaptive_top_chunks_enabled:
             return ranked[:base]
 
