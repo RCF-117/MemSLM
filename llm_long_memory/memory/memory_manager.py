@@ -45,17 +45,6 @@ class _NoOpLongMemory:
     def build_context_snippets_multi(self, query_texts: List[str]) -> List[str]:
         return []
 
-    def retrieve_from_chunks(
-        self,
-        *,
-        query: str,
-        chunks: List[Dict[str, Any]],
-        top_chunks: int,
-        max_chars_per_chunk: int,
-        top_events: int,
-    ) -> List[str]:
-        return []
-
     def ingest_from_chunks(
         self,
         *,

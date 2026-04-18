@@ -466,9 +466,6 @@ class LongMemory:
             sentence_min_chars=1,
         ).tokenize(text)
 
-    def _is_noise_keyword(self, token: str) -> bool:
-        return self._text.is_noise_keyword(token)
-
     def _keyword_candidates_from_text(self, text: str) -> List[str]:
         out = self._text.keyword_candidates(text)
         if not self.extractor_keyword_blacklist:
@@ -808,90 +805,6 @@ class LongMemory:
     def extract_events_structured(self, message: Message, force: bool = False) -> List[Dict[str, Any]]:
         return self._extractor_engine.extract_events_structured(message, force=force)
 
-    def retrieve_from_chunks(
-        self,
-        *,
-        query: str,
-        chunks: List[Dict[str, Any]],
-        top_chunks: int,
-        max_chars_per_chunk: int,
-        top_events: int,
-    ) -> List[str]:
-        """Build query-time event skeleton graph from retrieved chunks and return top snippets."""
-        if not self.extractor_enabled:
-            return []
-        query_text = str(query).strip()
-        if not query_text:
-            return []
-        if not chunks:
-            return []
-
-        normalized_chunks = [
-            self._normalize_long_memory_chunk(dict(item))
-            for item in list(chunks)
-        ]
-        selected = normalized_chunks[: max(1, int(top_chunks))]
-        extracted_events: List[Dict[str, Any]] = []
-        for item in selected:
-            text = str(item.get("text", "")).strip()
-            if not text:
-                continue
-            msg = {
-                "role": str(item.get("role", "user")).strip().lower() or "user",
-                "content": text[: max(32, int(max_chars_per_chunk))],
-            }
-            events = self.extract_events_structured(msg, force=True)
-            extracted_events.extend(events)
-        if not extracted_events:
-            return []
-
-        q_struct = self._extract_query_struct(query_text)
-        q_keywords = set(
-            self._keyword_candidates_from_text(" ".join([str(x) for x in list(q_struct.get("keywords", []))]))
-        )
-        if not q_keywords:
-            q_keywords = set(self._tokenize(query_text))
-        q_emb = self._safe_embed(str(q_struct.get("skeleton", query_text)))
-
-        nodes: List[Dict[str, Any]] = []
-        for event in extracted_events:
-            event_text = str(event.get("event_text", "")).strip()
-            if not event_text:
-                continue
-            keywords = [
-                str(x).strip().lower() for x in list(event.get("keywords", [])) if str(x).strip()
-            ]
-            emb = self._safe_embed(event_text)
-            corpus = set(keywords) | set(self._tokenize(event_text))
-            overlap_count, keyword_score = self._keyword_overlap_features(q_keywords, corpus)
-            emb_score = self._cosine(q_emb, emb)
-            if overlap_count >= self.keyword_primary_min_overlap:
-                score = (self.lexical_weight * keyword_score) + (self.embedding_weight * emb_score)
-            else:
-                score = self.embedding_fallback_weight * emb_score
-            nodes.append(
-                {
-                    "event_text": event_text,
-                    "keywords": keywords,
-                    "time": str(event.get("time", "")).strip(),
-                    "location": str(event.get("location", "")).strip(),
-                    "score": float(score),
-                }
-            )
-        if not nodes:
-            return []
-
-        nodes.sort(key=lambda x: float(x["score"]), reverse=True)
-        out: List[str] = []
-        for item in nodes[: max(1, int(top_events))]:
-            parts = [str(item["event_text"]).strip()]
-            if item["time"]:
-                parts.append(f"time: {item['time']}")
-            if item["location"]:
-                parts.append(f"location: {item['location']}")
-            out.append(" | ".join(parts))
-        return out
-
     def ingest_from_chunks(
         self,
         *,
@@ -1082,7 +995,14 @@ class LongMemory:
             self._normalize_long_memory_chunk(dict(x))
             for x in chunks
         ]
-        ranked.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        ranked.sort(
+            key=lambda x: (
+                float(x.get("score", 0.0)),
+                float(x.get("answer_density", 0.0)),
+                int(x.get("has_answer_count", 0)),
+            ),
+            reverse=True,
+        )
         if not self.offline_adaptive_top_chunks_enabled:
             return ranked[:base]
 
