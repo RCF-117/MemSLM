@@ -9,10 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from llm_long_memory.memory.long_memory_anchor_utils import (
-    select_anchor_sentences,
-    sentence_feature_score,
-)
+from llm_long_memory.memory.long_memory_anchor_utils import sentence_feature_score
 from llm_long_memory.memory.long_memory_extractor import LongMemoryExtractor
 from llm_long_memory.memory.long_memory_graph_nodes import upsert_event_nodes
 from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
@@ -20,7 +17,6 @@ from llm_long_memory.memory.long_memory_entity_norm import LongMemoryEntityNorma
 from llm_long_memory.memory.long_memory_gate import LongMemoryGate, LongMemoryGateConfig
 from llm_long_memory.memory.long_memory_json_utils import (
     extract_first_json_block,
-    safe_json_loads,
     safe_json_loads_relaxed,
 )
 from llm_long_memory.memory.long_memory_query_engine import LongMemoryQueryEngine
@@ -101,6 +97,10 @@ class LongMemory:
         self.graph_neighbor_limit = int(graph_cfg.get("neighbor_limit", 4))
         self.graph_neighbor_weight = float(graph_cfg.get("neighbor_weight", 0.15))
         self.graph_max_edges_per_event = int(graph_cfg.get("max_edges_per_event", 6))
+        self.graph_same_subject_enabled = bool(graph_cfg.get("same_subject_enabled", True))
+        self.graph_same_subject_weight = float(graph_cfg.get("same_subject_weight", 0.25))
+        self.graph_co_source_enabled = bool(graph_cfg.get("co_source_enabled", True))
+        self.graph_co_source_weight = float(graph_cfg.get("co_source_weight", 0.18))
         self.offline_pack_enabled = bool(offline_graph_cfg.get("evidence_pack_enabled", True))
         self.offline_pack_max_packs = int(offline_graph_cfg.get("evidence_pack_max_packs", 4))
         self.offline_pack_max_chars = int(offline_graph_cfg.get("evidence_pack_max_chars", 220))
@@ -109,19 +109,6 @@ class LongMemory:
         )
         self.offline_pack_top_sentences_per_chunk = int(
             offline_graph_cfg.get("evidence_pack_top_sentences_per_chunk", 3)
-        )
-        self.offline_anchor_filter_enabled = bool(
-            offline_graph_cfg.get("anchor_filter_enabled", True)
-        )
-        self.offline_anchor_min_score = float(offline_graph_cfg.get("anchor_min_score", 1.6))
-        self.offline_anchor_top_sentences_per_chunk = int(
-            offline_graph_cfg.get("anchor_top_sentences_per_chunk", 3)
-        )
-        self.offline_anchor_sentence_max_chars = int(
-            offline_graph_cfg.get("anchor_sentence_max_chars", 260)
-        )
-        self.offline_anchor_keep_full_if_empty = bool(
-            offline_graph_cfg.get("anchor_keep_full_if_empty", True)
         )
         self.offline_use_full_chunk_text = bool(
             offline_graph_cfg.get("use_full_chunk_text", True)
@@ -180,6 +167,7 @@ class LongMemory:
         }
 
         self.extractor_enabled = bool(extractor_cfg.get("enabled", False))
+        self.extractor_mode = str(extractor_cfg.get("mode", "sentence_fact")).strip().lower()
         self.extractor_model = str(extractor_cfg.get("model", llm_cfg["default_model"]))
         self.extractor_temperature = float(extractor_cfg.get("temperature", 0.1))
         self.extractor_timeout_sec = int(extractor_cfg.get("timeout_sec", 60))
@@ -467,19 +455,6 @@ class LongMemory:
                 out.append({"role": role, "text": piece, "session_date": session_date})
         return out
 
-    def _build_anchor_sentence_pieces(self, text: str, max_chars: int) -> List[str]:
-        return select_anchor_sentences(
-            text=text,
-            split_sentences_fn=self._split_sentences,
-            tokenize_fn=self._tokenize,
-            fact_keywords=self.fact_filter_fact_keywords,
-            hint_keywords=self.fact_filter_hint_keywords,
-            min_sentence_chars=self.offline_pack_min_sentence_chars,
-            min_score=self.offline_anchor_min_score,
-            top_k=self.offline_anchor_top_sentences_per_chunk,
-            max_chars=max(32, min(int(max_chars), self.offline_anchor_sentence_max_chars)),
-        )
-
     @staticmethod
     def _tokenize(text: str) -> List[str]:
         # Compatibility wrapper for internal callers.
@@ -573,36 +548,6 @@ class LongMemory:
                 return False
         return True
 
-    @staticmethod
-    def _clip01(value: float) -> float:
-        return LongMemoryGate._clip01(value)
-
-    def _keyword_noise_ratio(self, keywords: List[str]) -> float:
-        return self._gate.keyword_noise_ratio(keywords)
-
-    def _event_quality_score(
-        self,
-        *,
-        subject: str,
-        action: str,
-        obj: str,
-        time_text: str,
-        location_text: str,
-        evidence_span: str,
-        source_content: str,
-        keywords: List[str],
-    ) -> float:
-        return self._gate.quality_score(
-            subject=subject,
-            action=action,
-            obj=obj,
-            time_text=time_text,
-            location_text=location_text,
-            evidence_span=evidence_span,
-            source_content=source_content,
-            keywords=keywords,
-        )
-
     def _record_reject(self, reason: str) -> None:
         self._ingest_event_rejected += 1
         key = str(reason).strip() or "unknown"
@@ -683,113 +628,6 @@ class LongMemory:
             safe_embed_fn=self._safe_embed,
         )
 
-    def _classify_fact_type(
-        self,
-        *,
-        action: str,
-        event_text: str,
-        keywords: List[str],
-        value_type: str = "",
-        fact_slot: str = "",
-        time_text: str = "",
-        location_text: str = "",
-    ) -> str:
-        bag = set(self._tokenize(action)) | set(self._tokenize(event_text))
-        bag.update({str(x).strip().lower() for x in keywords if str(x).strip()})
-        slot = str(fact_slot).strip().lower()
-        vtype = str(value_type).strip().lower()
-
-        state_terms = {
-            "current",
-            "currently",
-            "latest",
-            "now",
-            "own",
-            "owned",
-            "have",
-            "has",
-            "is",
-            "are",
-            "was",
-            "were",
-            "live",
-            "lives",
-            "reside",
-            "resides",
-            "located",
-            "location",
-            "degree",
-            "graduated",
-            "graduate",
-            "graduation",
-            "certification",
-            "certificate",
-            "completed",
-            "finish",
-            "finished",
-            "preference",
-            "prefer",
-            "favorite",
-            "favourite",
-            "best",
-            "score",
-            "ratio",
-            "count",
-            "total",
-            "number",
-            "age",
-            "price",
-            "cost",
-            "weight",
-            "height",
-            "status",
-        }
-        episodic_terms = {
-            "met",
-            "meet",
-            "visited",
-            "visit",
-            "bought",
-            "buy",
-            "traveled",
-            "travel",
-            "went",
-            "go",
-            "called",
-            "sent",
-            "received",
-            "booked",
-            "scheduled",
-            "started",
-            "finished",
-            "planned",
-            "moved",
-            "attended",
-            "walked",
-            "played",
-            "watched",
-            "ate",
-            "had",
-        }
-        if slot in {"count", "location", "time"}:
-            return "state_fact"
-        if vtype in {"number", "location", "time"}:
-            return "state_fact"
-        if bag.intersection(state_terms):
-            return "state_fact"
-        if bag.intersection(episodic_terms):
-            return "episodic_fact"
-        if time_text and location_text:
-            return "episodic_fact"
-        if self.fact_filter_enabled:
-            has_fact = bool(bag.intersection(self.fact_filter_fact_keywords))
-            has_hint = bool(bag.intersection(self.fact_filter_hint_keywords))
-            if has_fact and (not has_hint):
-                return "state_fact"
-            if has_hint and (not has_fact):
-                return "episodic_fact"
-        return "episodic_fact"
-
     @staticmethod
     def _split_sentences(text: str) -> List[str]:
         return LongMemoryTextUtils.split_sentences(text)
@@ -800,10 +638,6 @@ class LongMemory:
     @staticmethod
     def _extract_first_json_block(text: str) -> str:
         return extract_first_json_block(text)
-
-    @staticmethod
-    def _safe_json_loads(text: str) -> Any:
-        return safe_json_loads(text)
 
     @staticmethod
     def _safe_json_loads_relaxed(text: str) -> Any:
@@ -831,13 +665,6 @@ class LongMemory:
             logger.warn(f"LongMemory embedding fallback to zeros: {exc}")
             return np.zeros(self.embedding_dim, dtype=np.float32)
 
-    @staticmethod
-    def _split_skeleton_components(text: str) -> Tuple[str, str, str]:
-        parts = [str(x).strip() for x in str(text).split("|")]
-        while len(parts) < 3:
-            parts.append("")
-        return parts[0], parts[1], parts[2]
-
     def _keyword_overlap_features(
         self, query_tokens: set[str], corpus_tokens: set[str]
     ) -> Tuple[int, float]:
@@ -851,53 +678,6 @@ class LongMemory:
             self.keyword_density_weight * density
         )
         return overlap_count, float(keyword_score)
-
-    @staticmethod
-    def _build_compact_node_context(
-        *,
-        skeleton: str,
-        node_rows: List[Any],
-        max_chars: int,
-    ) -> str:
-        node_by_kind: Dict[str, str] = {}
-        keywords: List[str] = []
-        for row in node_rows:
-            kind = str(row["node_kind"]).strip().lower()
-            text = str(row["node_text"]).strip()
-            if not text:
-                continue
-            if kind == "keyword":
-                if text not in keywords:
-                    keywords.append(text)
-                continue
-            node_by_kind.setdefault(kind, text)
-
-        subject = node_by_kind.get("subject", "")
-        action = node_by_kind.get("predicate", "") or node_by_kind.get("action", "")
-        obj = node_by_kind.get("value", "") or node_by_kind.get("object", "")
-        time_text = node_by_kind.get("time", "")
-        location = node_by_kind.get("location", "")
-        evidence = node_by_kind.get("evidence", "")
-
-        chain_parts = [x for x in [subject, action, obj] if x]
-        chain_text = " -> ".join(chain_parts)
-        extras: List[str] = []
-        if time_text:
-            extras.append(f"time={time_text}")
-        if location:
-            extras.append(f"location={location}")
-        if keywords:
-            extras.append("keywords=" + ", ".join(keywords[:3]))
-        if evidence:
-            extras.append("evidence=" + evidence[:80])
-
-        out_parts = [str(skeleton).strip()]
-        if chain_text:
-            out_parts.append(f"chain: {chain_text}")
-        if extras:
-            out_parts.append(" | ".join(extras))
-        text = " || ".join([x for x in out_parts if x])
-        return text[: max(32, int(max_chars))]
 
     def _extract_query_struct(self, query: str) -> Dict[str, Any]:
         if not self.query_struct_enabled:
@@ -947,6 +727,60 @@ class LongMemory:
         except (RuntimeError, ValueError, TypeError, OSError):
             return {"keywords": self._keyword_candidates_from_text(query), "skeleton": query}
 
+    @staticmethod
+    def _strip_role_prefix(text: str) -> str:
+        value = str(text or "").strip()
+        if not value:
+            return ""
+        return re.sub(r"^\((?:user|assistant|system)\)\s*", "", value, flags=re.IGNORECASE).strip()
+
+    def _normalize_long_memory_chunk(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize mid-memory chunk payload into long-memory ingestion shape."""
+        raw_text = str(item.get("text", "")).strip()
+        role = str(item.get("role", "")).strip().lower()
+        if role not in {"user", "assistant", "system"}:
+            match = re.match(r"^\((user|assistant|system)\)\s*", raw_text, flags=re.IGNORECASE)
+            if match:
+                role = str(match.group(1)).strip().lower()
+        if role not in {"user", "assistant", "system"}:
+            role = "user"
+
+        text = self._strip_role_prefix(raw_text)
+
+        session_date = str(
+            item.get("session_date")
+            or item.get("date")
+            or item.get("timestamp")
+            or ""
+        ).strip()
+        if not session_date:
+            raw_session_dates = item.get("session_dates", [])
+            if isinstance(raw_session_dates, list):
+                for value in raw_session_dates:
+                    candidate = str(value or "").strip()
+                    if candidate:
+                        session_date = candidate
+                        break
+        if not session_date:
+            raw_time_sources = item.get("time_sources", [])
+            if isinstance(raw_time_sources, list):
+                for ts in raw_time_sources:
+                    if not isinstance(ts, dict):
+                        continue
+                    candidate = str(ts.get("time", "")).strip()
+                    if candidate:
+                        session_date = candidate
+                        break
+
+        return {
+            "role": role,
+            "text": text,
+            "session_date": session_date,
+            "score": float(item.get("score", 0.0) or 0.0),
+            "answer_density": float(item.get("answer_density", 0.0) or 0.0),
+            "has_answer_count": int(item.get("has_answer_count", 0) or 0),
+        }
+
     def _warmup_extractor(self) -> None:
         if (not self.extractor_warmup_enabled) or self._extractor_warmed_up:
             return
@@ -992,14 +826,18 @@ class LongMemory:
         if not chunks:
             return []
 
-        selected = chunks[: max(1, int(top_chunks))]
+        normalized_chunks = [
+            self._normalize_long_memory_chunk(dict(item))
+            for item in list(chunks)
+        ]
+        selected = normalized_chunks[: max(1, int(top_chunks))]
         extracted_events: List[Dict[str, Any]] = []
         for item in selected:
             text = str(item.get("text", "")).strip()
             if not text:
                 continue
             msg = {
-                "role": "user",
+                "role": str(item.get("role", "user")).strip().lower() or "user",
                 "content": text[: max(32, int(max_chars_per_chunk))],
             }
             events = self.extract_events_structured(msg, force=True)
@@ -1074,12 +912,7 @@ class LongMemory:
             {
                 "role": str(item.get("role", "user")).strip().lower() or "user",
                 "text": str(item.get("text", "")).strip(),
-                "session_date": str(
-                    item.get("session_date")
-                    or item.get("date")
-                    or item.get("timestamp")
-                    or ""
-                ).strip(),
+                "session_date": str(item.get("session_date", "")).strip(),
             }
             for item in selected
             if str(item.get("text", "")).strip()
@@ -1245,7 +1078,10 @@ class LongMemory:
         if not chunks:
             return []
         base = max(1, int(top_chunks))
-        ranked = [dict(x) for x in chunks]
+        ranked = [
+            self._normalize_long_memory_chunk(dict(x))
+            for x in chunks
+        ]
         ranked.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
         if not self.offline_adaptive_top_chunks_enabled:
             return ranked[:base]
@@ -1283,25 +1119,6 @@ class LongMemory:
 
     def _persist_event(self, event: Dict[str, Any]) -> None:
         self._persist_engine.persist_event(event)
-
-    def _link_fact_edges(
-        self,
-        *,
-        event_id: str,
-        fact_key: str,
-        subject: str,
-        action: str,
-        obj: str,
-        event_keywords: List[str],
-    ) -> None:
-        self._persist_engine.link_fact_edges(
-            event_id=event_id,
-            fact_key=fact_key,
-            subject=subject,
-            action=action,
-            obj=obj,
-            event_keywords=event_keywords,
-        )
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         return LongMemoryQueryEngine(self).query(query_text)

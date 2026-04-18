@@ -357,6 +357,7 @@ class LongMemoryPersistEngine:
             raw_span=raw_span,
             time_text=time_text,
             location_text=location_text,
+            source_date=source_date,
             fact_type=fact_type,
         )
         self.m.store.save_current_step(self.m.current_step)
@@ -398,38 +399,81 @@ class LongMemoryPersistEngine:
         raw_span: str,
         time_text: str,
         location_text: str,
+        source_date: str,
         fact_type: str,
     ) -> None:
-        """Connect only factual update chains; do not invent similarity-based event links."""
+        """Connect sparse factual relations between event sentences."""
         if self.m.graph_max_edges_per_event <= 0:
-            return
-        if fact_type != "state_fact":
             return
         rows = self.m.store.fetch_recent_events(
             self.m.history_max_candidates,
             exclude_event_id=event_id,
         )
+        subject_norm = str(subject_action_key or "").split("|", 1)[0].strip()
         seen_targets: set[str] = set()
         linked = 0
+
+        def add_edge(*, from_id: str, relation: str, weight: float) -> None:
+            nonlocal linked
+            if linked >= self.m.graph_max_edges_per_event:
+                return
+            rid = str(from_id or "").strip()
+            if (not rid) or rid == event_id:
+                return
+            dedup_key = f"{rid}|{relation}"
+            if dedup_key in seen_targets:
+                return
+            seen_targets.add(dedup_key)
+            edge_id = self.m._stable_id("edge", f"{rid}|{event_id}|{relation}")
+            self.m.store.insert_edge(
+                edge_id=edge_id,
+                from_event_id=rid,
+                to_event_id=event_id,
+                relation=relation,
+                weight=float(weight),
+                current_step=self.m.current_step,
+            )
+            linked += 1
+
         for row in rows:
             other_id = str(row["event_id"] or "").strip()
             other_fact_key = str(row["fact_key"] or "").strip()
             if (not other_id) or other_id == event_id:
                 continue
-            if not fact_key or not other_fact_key or fact_key != other_fact_key:
-                continue
-            if other_id in seen_targets:
-                continue
-            seen_targets.add(other_id)
-            edge_id = self.m._stable_id("edge", f"{other_id}|{event_id}|updates")
-            self.m.store.insert_edge(
-                edge_id=edge_id,
-                from_event_id=other_id,
-                to_event_id=event_id,
-                relation="updates",
-                weight=1.0,
-                current_step=self.m.current_step,
-            )
-            linked += 1
-            if linked >= self.m.graph_max_edges_per_event:
-                break
+            if fact_type == "state_fact":
+                if fact_key and other_fact_key and fact_key == other_fact_key:
+                    add_edge(from_id=other_id, relation="updates", weight=1.0)
+                    if linked >= self.m.graph_max_edges_per_event:
+                        break
+
+            if self.m.graph_same_subject_enabled and subject_norm:
+                other_subject = str(row["subject_action_key"] or "").split("|", 1)[0].strip()
+                if other_subject and other_subject == subject_norm:
+                    add_edge(
+                        from_id=other_id,
+                        relation="same_subject",
+                        weight=float(self.m.graph_same_subject_weight),
+                    )
+                    if linked >= self.m.graph_max_edges_per_event:
+                        break
+
+            if self.m.graph_co_source_enabled and str(source_date).strip():
+                src_row = self.m.store.conn.execute(
+                    """
+                    SELECT text
+                    FROM details
+                    WHERE event_id=? AND kind='source_date'
+                    ORDER BY created_step DESC
+                    LIMIT 1
+                    """,
+                    (other_id,),
+                ).fetchone()
+                other_source_date = str(src_row["text"]).strip() if src_row else ""
+                if other_source_date and other_source_date == str(source_date).strip():
+                    add_edge(
+                        from_id=other_id,
+                        relation="co_source",
+                        weight=float(self.m.graph_co_source_weight),
+                    )
+                    if linked >= self.m.graph_max_edges_per_event:
+                        break

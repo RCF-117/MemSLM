@@ -64,6 +64,20 @@ class LongMemoryExtractor:
         return normalized[: max(64, int(max_chars))]
 
     def _build_prompt(self, trimmed: str) -> str:
+        mode = str(getattr(self.m, "extractor_mode", "event")).strip().lower()
+        if mode in {"sentence_fact", "fact_sentence", "sentence"}:
+            return (
+                "Task: denoise one message into answer-bearing factual sentences.\n"
+                "Output JSON only, no markdown.\n"
+                'Schema: {"facts":[{"sentence":"","source_span":"","subject":"","value":"","time":"","location":"","fact_type":"state_fact|episodic_fact","confidence":0.0}]}\n'
+                "Rules:\n"
+                "- Keep complete factual sentences, remove chit-chat, hedging, and pure questions.\n"
+                "- Preserve qualifiers, numbers, negations, time anchors, and location anchors.\n"
+                "- sentence must be directly grounded by source_span from the message.\n"
+                "- If no factual sentence exists, return {\"facts\":[]}.\n"
+                f"Max facts: {self.m.extractor_max_events_per_message}\n"
+                f"Message:\n{trimmed}\n"
+            )
         return (
             "Task: extract answer-bearing atomic facts from one message.\n"
             "Output: JSON only, valid UTF-8, no markdown.\n"
@@ -116,15 +130,35 @@ class LongMemoryExtractor:
             else:
                 payload = {}
             self.m._extractor_json_success += 1
-            rows = payload.get("events", [])
+            mode = str(getattr(self.m, "extractor_mode", "event")).strip().lower()
+            if mode in {"sentence_fact", "fact_sentence", "sentence"}:
+                rows = payload.get("facts", payload.get("sentences", payload.get("items", [])))
+            else:
+                rows = payload.get("events", [])
             if isinstance(rows, dict):
                 rows = [rows]
             elif not isinstance(rows, list):
-                maybe_single = payload.get("event", None)
-                rows = [maybe_single] if isinstance(maybe_single, dict) else []
+                if mode in {"sentence_fact", "fact_sentence", "sentence"}:
+                    maybe_single = payload.get("fact", None)
+                    rows = [maybe_single] if isinstance(maybe_single, dict) else []
+                else:
+                    maybe_single = payload.get("event", None)
+                    rows = [maybe_single] if isinstance(maybe_single, dict) else []
             if not isinstance(rows, list):
                 self.m._extractor_failures += 1
                 return []
+            if mode in {"sentence_fact", "fact_sentence", "sentence"}:
+                normalized_rows: List[Dict[str, Any]] = []
+                for item in rows:
+                    if isinstance(item, str):
+                        item = {"sentence": item}
+                    if not isinstance(item, dict):
+                        continue
+                    normalized = self._normalize_sentence_fact_item(item=item, role=role)
+                    if normalized is None:
+                        continue
+                    normalized_rows.append(normalized)
+                rows = normalized_rows
 
             out: List[Dict[str, Any]] = []
             for item in rows[: self.m.extractor_max_events_per_message]:
@@ -324,6 +358,56 @@ class LongMemoryExtractor:
             logger.warn(f"LongMemory structured extraction failed: {exc}")
             return []
 
+    def _normalize_sentence_fact_item(self, *, item: Dict[str, Any], role: str) -> Dict[str, Any] | None:
+        sentence = str(
+            item.get("sentence", "")
+            or item.get("fact", "")
+            or item.get("text", "")
+        ).strip()
+        source_span = str(
+            item.get("source_span", "")
+            or item.get("evidence_span", "")
+            or item.get("raw_span", "")
+        ).strip()
+        if not source_span:
+            source_span = sentence
+        if not sentence and not source_span:
+            return None
+        if not sentence:
+            sentence = source_span
+
+        subject = str(item.get("subject", "")).strip() or ("user" if role == "user" else role)
+        slot = str(item.get("slot", "") or item.get("fact_slot", "")).strip().lower()
+        action = str(item.get("action", "")).strip() or slot or "states"
+        value = str(item.get("value", "")).strip() or sentence
+        fact_type = self._normalize_fact_type(str(item.get("fact_type", "")).strip().lower())
+        confidence_default = max(
+            float(getattr(self.m, "gating_hard_min_confidence", 0.0)),
+            float(getattr(self.m, "extractor_min_confidence", 0.0)),
+        )
+        confidence = item.get("confidence", None)
+        try:
+            confidence_num = float(confidence if confidence is not None else confidence_default)
+        except (TypeError, ValueError):
+            confidence_num = confidence_default
+
+        return {
+            "subject": subject,
+            "action": action,
+            "object": value,
+            "value": value,
+            "value_type": str(item.get("value_type", "")).strip().lower(),
+            "fact_slot": slot,
+            "canonical_fact": sentence,
+            "event_text": sentence,
+            "time": str(item.get("time", "")).strip(),
+            "location": str(item.get("location", "")).strip(),
+            "keywords": item.get("keywords", []),
+            "confidence": confidence_num,
+            "evidence_span": source_span,
+            "raw_span": source_span,
+        }
+
     @staticmethod
     def _schema_valid(item: Dict[str, Any]) -> bool:
         action = str(item.get("action", item.get("predicate", "")) or "").strip()
@@ -457,10 +541,6 @@ class LongMemoryExtractor:
         if subject and value_text:
             return "episodic_fact"
         return "episodic_fact"
-
-    def _span_grounded(self, span: str, content: str) -> bool:
-        ratio = self.m._gate.span_overlap_ratio(span, content)
-        return ratio >= float(self.m.extractor_span_grounding_min_overlap)
 
     @staticmethod
     def _infer_value_type(*, value_text: str, time_text: str, location_text: str) -> str:

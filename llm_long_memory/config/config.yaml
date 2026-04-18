@@ -75,6 +75,7 @@ memory:
     context_chain_max_chars: 900
     extractor:
       enabled: true
+      mode: sentence_fact
       model: qwen3:8b
       temperature: 0.1
       timeout_sec: 120
@@ -93,7 +94,7 @@ memory:
       max_output_tokens: 320
       force_json_output: true
       think: false
-      require_action: true
+      require_action: false
       min_filled_fields: 2
       require_evidence_span: true
       reject_pronoun_subject: false
@@ -199,7 +200,7 @@ memory:
       gating:
         enabled: true
         hard_only: true
-        hard_require_action: true
+        hard_require_action: false
         hard_require_subject_or_object: true
         hard_min_confidence: 0.3
         quality_threshold: 0.55
@@ -238,12 +239,10 @@ memory:
       neighbor_limit: 4
       neighbor_weight: 0.15
       max_edges_per_event: 6
-      edge_weight_same_fact: 1.0
-      edge_weight_subject_object: 0.8
-      edge_weight_same_subject: 0.7
-      edge_weight_same_object: 0.6
-      edge_weight_shared_keywords: 0.35
-      edge_min_shared_keywords: 2
+      same_subject_enabled: true
+      same_subject_weight: 0.25
+      co_source_enabled: true
+      co_source_weight: 0.18
     node_graph:
       enabled: true
       node_boost_weight: 0.2
@@ -285,11 +284,6 @@ memory:
         - when
         - how many
       ingest_input_max_chars: 1200
-      anchor_filter_enabled: false
-      anchor_min_score: 1.6
-      anchor_top_sentences_per_chunk: 3
-      anchor_sentence_max_chars: 260
-      anchor_keep_full_if_empty: true
       evidence_pack_enabled: false
       evidence_pack_max_packs: 4
       evidence_pack_max_chars: 220
