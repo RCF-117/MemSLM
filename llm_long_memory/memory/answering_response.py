@@ -56,23 +56,30 @@ class AnswerResponseHandler:
         self,
         input_text: str,
         graph_context: str,
+        query_plan: str = "",
         graph_tool_hints: str = "",
         rag_evidence: str = "",
         fallback_answer: str = "",
     ) -> str:
-        graph_text = self._normalize_space(graph_context).strip()
+        graph_text = str(graph_context or "").strip()
         if not graph_text:
             graph_text = "None"
-        graph_tool_text = self._normalize_space(graph_tool_hints).strip()
+        graph_tool_text = str(graph_tool_hints or "").strip()
         if not graph_tool_text:
             graph_tool_text = "None"
-        rag_text = self._normalize_space(rag_evidence).strip()
+        rag_text = str(rag_evidence or "").strip()
         if not rag_text:
             rag_text = "None"
+        plan_text = str(query_plan or "").strip()
+        if not plan_text:
+            plan_text = "None"
         fallback_text = self._normalize_space(fallback_answer).strip()
         if not fallback_text:
             fallback_text = "None"
         rules = (
+            "Use Query Plan to align target object/entities/time/state first.\n"
+            "Use RAG Evidence next, especially Evidence Pack lines.\n"
+            "For comparison questions (A or B), compare option_a vs option_b using action/time cues and ignore unrelated profile/location details.\n"
             "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
             "For count questions, first align object type, then use count_explicit_candidates, count_enumerated_items, and count_support_spans.\n"
             "Treat loose numeric fragments as weak clues unless object alignment is clear.\n"
@@ -92,6 +99,8 @@ class AnswerResponseHandler:
             f"{graph_tool_text}\n\n"
             "[Graph Evidence]\n"
             f"{graph_text}\n\n"
+            "[Query Plan]\n"
+            f"{plan_text}\n\n"
             "[RAG Evidence]\n"
             f"{rag_text}\n\n"
             "[Fallback Answer]\n"

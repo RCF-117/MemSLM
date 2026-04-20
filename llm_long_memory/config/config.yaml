@@ -4,9 +4,9 @@ memory:
     max_size: 2000
     min_chunk_size: 3
     max_chunk_size: 5
-    message_chunk_max_chars: 900
-    message_chunk_overlap_chars: 120
-    message_chunk_min_chars: 80
+    message_chunk_max_chars: 600
+    message_chunk_overlap_chars: 90
+    message_chunk_min_chars: 120
     message_chunk_boundary_window_chars: 80
     chunk_similarity_threshold: 0.55
     embedding_min_length: 20
@@ -327,6 +327,20 @@ retrieval:
     lexical_prefilter_top_n: 256
     recent_fallback_n: 64
     dedup_by_text: true
+  global_sentence_retrieval:
+    enabled: true
+    top_n: 48
+    rrf_k: 60
+    dense_weight: 1.2
+    lexical_weight: 1.0
+    keyword_weight: 0.1
+    prefilter_enabled: true
+    prefilter_top_n: 384
+    lexical_prefilter_top_n: 384
+    recent_fallback_n: 128
+    dedup_by_text: true
+    sentence_max_chars: 320
+    sentence_min_chars: 24
   temporal_anchor_retrieval:
     enabled: true
     require_temporal_cue: true
@@ -358,6 +372,21 @@ retrieval:
     max_output_tokens: 120
     force_json_output: true
     think: false
+  query_plan:
+    enabled: true
+    max_sub_queries: 6
+    slot_coverage_weight: 0.35
+    llm_assist_enabled: true
+    llm_phrase_max: 3
+    llm_phrase_min_tokens: 2
+  gap_detector:
+    enabled: true
+    max_rounds: 2
+    max_queries: 2
+    top_n_per_query: 10
+    additive_limit: 10
+  compare_option_pool:
+    top_n_chunks_per_option: 3
   graph_build_retry:
     enabled: true
     expanded_top_n: 64
@@ -388,8 +417,8 @@ retrieval:
       allow_fallback_override: true
       max_hint_lines: 8
     evidence_top_n_chunks: 10
-    evidence_top_n_sentences: 8
-    evidence_sentence_max_chars: 220
+    evidence_top_n_sentences: 12
+    evidence_sentence_max_chars: 280
     candidate_top_n: 3
     context_only: true
     log_decision_details: true

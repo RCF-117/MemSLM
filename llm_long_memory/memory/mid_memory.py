@@ -98,6 +98,42 @@ class MidMemory:
         )
         self.global_chunk_recent_fallback_n = int(global_chunk_cfg["recent_fallback_n"])
         self.global_chunk_dedup_by_text = bool(global_chunk_cfg["dedup_by_text"])
+        global_sentence_cfg = dict(self.retrieval_cfg.get("global_sentence_retrieval", {}))
+        self.global_sentence_retrieval_enabled = bool(
+            global_sentence_cfg.get("enabled", True)
+        )
+        self.global_sentence_top_n = int(global_sentence_cfg.get("top_n", 48))
+        self.global_sentence_rrf_k = int(global_sentence_cfg.get("rrf_k", 60))
+        self.global_sentence_dense_weight = float(
+            global_sentence_cfg.get("dense_weight", 1.2)
+        )
+        self.global_sentence_lexical_weight = float(
+            global_sentence_cfg.get("lexical_weight", 1.0)
+        )
+        self.global_sentence_keyword_weight = float(
+            global_sentence_cfg.get("keyword_weight", 0.1)
+        )
+        self.global_sentence_prefilter_enabled = bool(
+            global_sentence_cfg.get("prefilter_enabled", True)
+        )
+        self.global_sentence_prefilter_top_n = int(
+            global_sentence_cfg.get("prefilter_top_n", 384)
+        )
+        self.global_sentence_lexical_prefilter_top_n = int(
+            global_sentence_cfg.get("lexical_prefilter_top_n", 384)
+        )
+        self.global_sentence_recent_fallback_n = int(
+            global_sentence_cfg.get("recent_fallback_n", 128)
+        )
+        self.global_sentence_dedup_by_text = bool(
+            global_sentence_cfg.get("dedup_by_text", True)
+        )
+        self.global_sentence_max_chars = int(
+            global_sentence_cfg.get("sentence_max_chars", 320)
+        )
+        self.global_sentence_min_chars = int(
+            global_sentence_cfg.get("sentence_min_chars", 24)
+        )
 
         self.buffer: List[Dict[str, Any]] = []
         self.current_step = 0
@@ -165,8 +201,24 @@ class MidMemory:
     def _rebuild_chunk_fts(self) -> None:
         self.store.rebuild_chunk_fts()
 
+    def _index_sentence_fts(self, sentence_id: int, text: str) -> None:
+        self.store.index_sentence_fts(sentence_id=sentence_id, text=text)
+
+    def _delete_sentence_fts(self, sentence_ids: Sequence[int]) -> None:
+        self.store.delete_sentence_fts(sentence_ids=sentence_ids)
+
+    def _rebuild_sentence_fts(self) -> None:
+        self.store.rebuild_sentence_fts()
+
     def _lexical_rank_map_global(self, query: str, top_n: int) -> Dict[int, int]:
         return self.store.lexical_rank_map_global(
+            query=query,
+            tokenize=self._tokenize,
+            bm25_top_n=top_n,
+        )
+
+    def _lexical_rank_map_sentences(self, query: str, top_n: int) -> Dict[int, int]:
+        return self.store.lexical_rank_map_sentences(
             query=query,
             tokenize=self._tokenize,
             bm25_top_n=top_n,
@@ -418,8 +470,55 @@ class MidMemory:
         )
         chunk_id = int(cursor.lastrowid)
         self._index_chunk_fts(chunk_id, chunk_text)
+        self._add_sentences_for_chunk(
+            chunk_id=chunk_id,
+            chunk_text=chunk_text,
+            chunk_role=chunk_role,
+            chunk_session_id=chunk_session_id,
+            chunk_session_date=chunk_session_date,
+        )
         self._enforce_fifo_limit()
         self.conn.commit()
+
+    def _add_sentences_for_chunk(
+        self,
+        *,
+        chunk_id: int,
+        chunk_text: str,
+        chunk_role: str,
+        chunk_session_id: str,
+        chunk_session_date: str,
+    ) -> None:
+        units = chunking.split_sentences(chunk_text)
+        for idx, sentence in enumerate(units):
+            text = str(sentence).strip()
+            if not text:
+                continue
+            if len(text) < int(self.global_sentence_min_chars):
+                continue
+            if len(text) > int(self.global_sentence_max_chars):
+                text = text[: int(self.global_sentence_max_chars)].strip()
+            sent_embedding = embed(text, self.embedding_dim)
+            cursor = self.conn.execute(
+                """
+                INSERT INTO sentences(
+                  chunk_id, text, sentence_embedding, sentence_role,
+                  sentence_session_id, sentence_session_date, source_part_index
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(chunk_id),
+                    text,
+                    self._arr_to_blob(sent_embedding),
+                    chunk_role,
+                    chunk_session_id,
+                    chunk_session_date,
+                    int(idx),
+                ),
+            )
+            sentence_id = int(cursor.lastrowid)
+            self._index_sentence_fts(sentence_id, text)
 
     def _enforce_fifo_limit(self) -> None:
         overflow = max(0, int(self.debug_stats().get("chunks", 0)) - int(self.max_size))
@@ -432,9 +531,20 @@ class MidMemory:
         chunk_ids = [int(r["chunk_id"]) for r in rows]
         if not chunk_ids:
             return
+        marks = ",".join(["?"] * len(chunk_ids))
+        sent_rows = self.conn.execute(
+            f"SELECT sentence_id FROM sentences WHERE chunk_id IN ({marks})",
+            tuple(chunk_ids),
+        ).fetchall()
+        sentence_ids = [int(r["sentence_id"]) for r in sent_rows]
         placeholders = ",".join(["?"] * len(chunk_ids))
         self.conn.execute(f"DELETE FROM chunks WHERE chunk_id IN ({placeholders})", tuple(chunk_ids))
+        self.conn.execute(
+            f"DELETE FROM sentences WHERE chunk_id IN ({placeholders})",
+            tuple(chunk_ids),
+        )
         self._delete_chunk_fts(chunk_ids)
+        self._delete_sentence_fts(sentence_ids)
 
     def search_chunks_global(
         self,
@@ -454,6 +564,26 @@ class MidMemory:
     ) -> List[Chunk]:
         """Global chunk retrieval with optional temporary top-N override."""
         return retrieval.rerank_chunks_global(
+            self,
+            query=query,
+            top_n_override=top_n,
+        )
+
+    def search_sentences_global(self, query: str) -> List[Chunk]:
+        """Global sentence retrieval (dense + lexical + keyword)."""
+        return retrieval.rerank_sentences_global(
+            self,
+            query=query,
+        )
+
+    def search_sentences_global_with_limit(
+        self,
+        query: str,
+        *,
+        top_n: Optional[int] = None,
+    ) -> List[Chunk]:
+        """Global sentence retrieval with optional temporary top-N override."""
+        return retrieval.rerank_sentences_global(
             self,
             query=query,
             top_n_override=top_n,

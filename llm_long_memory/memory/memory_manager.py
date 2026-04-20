@@ -16,10 +16,14 @@ from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
 from llm_long_memory.memory.specialist_layer import SpecialistLayer
 from llm_long_memory.memory.memory_manager_utils import (
+    build_gap_queries,
+    build_query_plan,
     build_temporal_anchor_queries,
+    detect_missing_slots,
     dedup_chunks_keep_best,
     is_temporal_query,
     merge_anchor_chunks,
+    slot_coverage_score,
 )
 from llm_long_memory.memory.mid_memory import MidMemory
 from llm_long_memory.memory.short_memory import ShortMemory
@@ -202,6 +206,23 @@ class MemoryManager:
             query_focus_cfg.get("force_json_output", True)
         )
         self.query_focus_think = bool(query_focus_cfg.get("think", False))
+        query_plan_cfg = dict(self.config["retrieval"].get("query_plan", {}))
+        self.query_plan_enabled = bool(query_plan_cfg.get("enabled", True))
+        self.query_plan_max_sub_queries = int(query_plan_cfg.get("max_sub_queries", 4))
+        self.query_plan_slot_weight = float(query_plan_cfg.get("slot_coverage_weight", 0.35))
+        self.query_plan_llm_assist_enabled = bool(
+            query_plan_cfg.get("llm_assist_enabled", True)
+        )
+        self.query_plan_llm_phrase_max = int(query_plan_cfg.get("llm_phrase_max", 3))
+        self.query_plan_llm_phrase_min_tokens = int(
+            query_plan_cfg.get("llm_phrase_min_tokens", 2)
+        )
+        gap_cfg = dict(self.config["retrieval"].get("gap_detector", {}))
+        self.gap_detector_enabled = bool(gap_cfg.get("enabled", True))
+        self.gap_detector_max_rounds = int(gap_cfg.get("max_rounds", 2))
+        self.gap_detector_max_queries = int(gap_cfg.get("max_queries", 2))
+        self.gap_detector_top_n_per_query = int(gap_cfg.get("top_n_per_query", 10))
+        self.gap_detector_additive_limit = int(gap_cfg.get("additive_limit", 10))
 
         graph_retry_cfg = dict(self.config["retrieval"].get("graph_build_retry", {}))
         self.graph_build_retry_enabled = bool(graph_retry_cfg.get("enabled", False))
@@ -233,6 +254,7 @@ class MemoryManager:
             else None
         )
         self.last_prompt_eval_chunks: List[Dict[str, str]] = []
+        self.last_query_plan: Dict[str, object] = {}
         logger.info("MemoryManager initialized.")
 
     @staticmethod
@@ -283,8 +305,60 @@ class MemoryManager:
             return text[start : end + 1]
         return "{}"
 
-    def _extract_query_focus_struct(self, query: str) -> Dict[str, List[str]]:
-        if not self.query_focus_enabled:
+    @staticmethod
+    def _is_noun_like_phrase(text: str) -> bool:
+        toks = re.findall(r"[a-z0-9]+", str(text or "").lower())
+        if not toks or len(toks) > 8:
+            return False
+        banned = {
+            "first",
+            "last",
+            "before",
+            "after",
+            "when",
+            "did",
+            "do",
+            "does",
+            "is",
+            "are",
+            "was",
+            "were",
+            "have",
+            "has",
+            "had",
+            "why",
+            "how",
+            "what",
+            "which",
+            "who",
+        }
+        if toks[0] in banned:
+            return False
+        return not all(t in banned for t in toks)
+
+    @staticmethod
+    def _retrieval_noise_penalty(text: str) -> float:
+        low = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+        if not low:
+            return 0.0
+        penalty = 0.0
+        if "as an ai" in low or "i'm just an ai" in low:
+            penalty += 0.35
+        if re.search(r"\b(example script|tips?|how to|guide|best practices?)\b", low):
+            penalty += 0.18
+        if re.search(r"\b(you can|consider|try|should|recommended?)\b", low):
+            has_fact = bool(
+                re.search(
+                    r"\b(i|my|we|our)\b.{0,30}\b(was|were|have|had|did|moved|set|completed|own|bought|met|serviced|tried|led|graduated)\b",
+                    low,
+                )
+            )
+            if not has_fact:
+                penalty += 0.12
+        return min(0.45, float(penalty))
+
+    def _extract_query_focus_struct(self, query: str, force: bool = False) -> Dict[str, List[str]]:
+        if (not self.query_focus_enabled) and (not force):
             return {"objects": [], "anchors": [], "keywords": []}
         # Keep tests/offline stubs safe: only invoke structured Ollama path when llm has transport attrs.
         if (not hasattr(self.llm, "host")) or (not hasattr(self.llm, "model_name")):
@@ -353,6 +427,11 @@ class MemoryManager:
         base = re.sub(r"\s+", " ", str(query or "")).strip()
         if not base:
             return []
+        if self.query_plan_enabled:
+            plan = build_query_plan(base, max_sub_queries=max(1, self.query_plan_max_sub_queries))
+            planned = [str(x).strip() for x in list(plan.get("sub_queries", [])) if str(x).strip()]
+            if planned:
+                return planned[: max(1, int(self.query_focus_max_queries))]
         if not self.query_focus_enabled:
             return [base]
         qlow = base.lower()
@@ -376,6 +455,148 @@ class MemoryManager:
                 out.append(p)
                 if len(out) >= max(1, self.query_focus_max_queries):
                     return out
+        return out
+
+    def _build_query_plan(self, query: str) -> Dict[str, object]:
+        if not self.query_plan_enabled:
+            return {
+                "intent": "lookup",
+                "answer_type": "factoid",
+                "focus_phrases": [],
+                "sub_queries": [str(query or "").strip()],
+                "entities": [],
+                "time_range": "",
+                "constraints": [],
+                "need_latest_state": False,
+                "target_object": "",
+                "compare_options": [],
+                "time_terms": [],
+                "state_keys": [],
+                "count_unit": "",
+                "plan_keywords": [],
+                "must_keywords": [],
+                "constraint_keywords": [],
+                "keyword_query": "",
+            }
+        plan = build_query_plan(
+            str(query or ""),
+            max_sub_queries=max(1, self.query_plan_max_sub_queries),
+        )
+        if not self.query_plan_llm_assist_enabled:
+            return plan
+
+        focus = self._extract_query_focus_struct(str(query or ""), force=True)
+        llm_phrases: List[str] = []
+        seen: set[str] = set()
+        for key in ("objects", "anchors", "keywords"):
+            values = list(focus.get(key, []))
+            for raw in values:
+                txt = re.sub(r"\s+", " ", str(raw or "")).strip(" ,.;:!?\"'")
+                if not txt:
+                    continue
+                if len(re.findall(r"[a-z0-9]+", txt.lower())) < max(
+                    1, int(self.query_plan_llm_phrase_min_tokens)
+                ):
+                    continue
+                low = txt.lower()
+                if low in seen:
+                    continue
+                seen.add(low)
+                llm_phrases.append(txt)
+                if len(llm_phrases) >= max(1, int(self.query_plan_llm_phrase_max)):
+                    break
+            if len(llm_phrases) >= max(1, int(self.query_plan_llm_phrase_max)):
+                break
+
+        if not llm_phrases:
+            return plan
+
+        # Merge LLM focus phrases with heuristic focus phrases, then rebuild compact plan queries.
+        merged_focus: List[str] = []
+        seen_focus: set[str] = set()
+        for raw_focus in list(plan.get("focus_phrases", [])) + list(llm_phrases):
+            f = re.sub(r"\s+", " ", str(raw_focus or "")).strip(" ,.;:!?\"'")
+            if not f:
+                continue
+            low = f.lower()
+            if low in seen_focus:
+                continue
+            seen_focus.add(low)
+            merged_focus.append(f)
+            if len(merged_focus) >= 8:
+                break
+        plan["focus_phrases"] = merged_focus
+
+        entities = [str(x).strip() for x in list(plan.get("entities", [])) if str(x).strip()]
+        for p in merged_focus:
+            if p.lower() not in {e.lower() for e in entities}:
+                entities.append(p)
+        plan["entities"] = entities[:8]
+
+        if (not str(plan.get("target_object", "")).strip()) and merged_focus:
+            at = str(plan.get("answer_type", "factoid")).strip().lower()
+            if at in {"count", "update"} and self._is_noun_like_phrase(merged_focus[0]):
+                plan["target_object"] = merged_focus[0]
+
+        base_query = re.sub(r"\s+", " ", str(query or "")).strip()
+        keyword_tokens: List[str] = []
+        for phrase in merged_focus[:4]:
+            toks = re.findall(r"[a-z0-9]+", phrase.lower())
+            keyword_tokens.extend(toks[:2] if len(toks) >= 2 else toks)
+        keyword_tokens = list(dict.fromkeys([t for t in keyword_tokens if t]))
+        keyword_query = re.sub(r"\s+", " ", " ".join(keyword_tokens[:10])).strip()
+        if keyword_query:
+            plan["keyword_query"] = keyword_query
+
+        sub_queries: List[str] = [base_query]
+        if keyword_query and keyword_query.lower() != base_query.lower():
+            sub_queries.append(keyword_query)
+        focus_pair = re.sub(r"\s+", " ", " ".join(merged_focus[:2])).strip()
+        if len(re.findall(r"[a-z0-9]+", focus_pair.lower())) >= 2:
+            sub_queries.append(focus_pair)
+        answer_type = str(plan.get("answer_type", "factoid")).strip().lower()
+        if answer_type == "temporal_comparison" and len(merged_focus) >= 2:
+            sub_queries.append(f"{merged_focus[0]} {merged_focus[1]} first before after")
+        elif answer_type == "update" and merged_focus:
+            sub_queries.append(f"{merged_focus[0]} current latest update status")
+        elif answer_type.startswith("temporal") and merged_focus:
+            sub_queries.append(f"{merged_focus[0]} date time first before after")
+
+        dedup_sub_queries: List[str] = []
+        seen_sq: set[str] = set()
+        for sq in sub_queries:
+            normalized = re.sub(r"\s+", " ", str(sq or "")).strip()
+            if not normalized:
+                continue
+            low = normalized.lower()
+            if low in seen_sq:
+                continue
+            seen_sq.add(low)
+            dedup_sub_queries.append(normalized)
+            if len(dedup_sub_queries) >= max(1, int(self.query_plan_max_sub_queries)):
+                break
+        plan["sub_queries"] = dedup_sub_queries
+        return plan
+
+    def _apply_slot_coverage_rerank(
+        self,
+        units: List[Dict[str, object]],
+        plan: Dict[str, object],
+    ) -> List[Dict[str, object]]:
+        out: List[Dict[str, object]] = []
+        weight = max(0.0, float(self.query_plan_slot_weight))
+        for item in units:
+            row = dict(item)
+            text = str(row.get("text", "")).strip()
+            cov = slot_coverage_score(text, plan)
+            base = float(row.get("score", 0.0))
+            noise_penalty = self._retrieval_noise_penalty(text)
+            row["score_base"] = base
+            row["slot_coverage"] = cov
+            row["retrieval_noise_penalty"] = noise_penalty
+            row["score"] = base + (weight * cov) - noise_penalty
+            out.append(row)
+        out.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
         return out
 
     def _merge_anchor_chunks(
@@ -446,6 +667,8 @@ class MemoryManager:
                     continue
                 context_parts.append(f"[Chunk {index}]\n{text}")
             return "\n\n".join(context_parts), [], reranked_chunks
+        query_plan = self._build_query_plan(query)
+        self.last_query_plan = dict(query_plan)
         global_chunk_enabled = bool(
             getattr(self.mid_memory, "global_chunk_retrieval_enabled", False)
         )
@@ -503,8 +726,125 @@ class MemoryManager:
                         f"query_focus_queries={len(focus_queries)-1}, "
                         f"query_focus_candidates={len(focus_chunks)}."
                     )
+        elif hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+            focus_queries = self._build_query_focus_queries(query)
+            if len(focus_queries) > 1:
+                plan_focus_chunks: List[Dict[str, object]] = []
+                for fq in focus_queries[1:]:
+                    plan_focus_chunks.extend(
+                        self.mid_memory.search_chunks_global_with_limit(
+                            fq,
+                            top_n=max(6, int(self.query_focus_top_n_per_query)),
+                        )
+                    )
+                if plan_focus_chunks:
+                    reranked_chunks = self._merge_anchor_chunks(
+                        base_chunks=reranked_chunks,
+                        extra_chunks=self._dedup_chunks_keep_best(plan_focus_chunks),
+                        additive_limit=max(4, int(self.query_focus_additive_limit)),
+                    )
+                    logger.info(
+                        "MemoryManager.retrieve_context: "
+                        f"planned_sub_queries={len(focus_queries)-1}, "
+                        f"planned_candidates={len(plan_focus_chunks)}."
+                    )
+        merged_units: List[Dict[str, object]] = list(reranked_chunks)
+        sentence_enabled = bool(
+            getattr(self.mid_memory, "global_sentence_retrieval_enabled", False)
+        )
+        if sentence_enabled and hasattr(self.mid_memory, "search_sentences_global"):
+            sentence_results = self.mid_memory.search_sentences_global(query)
+            planned_queries = self._build_query_focus_queries(query)
+            if (
+                len(planned_queries) > 1
+                and hasattr(self.mid_memory, "search_sentences_global_with_limit")
+            ):
+                for sq in planned_queries[1:]:
+                    sentence_results.extend(
+                        self.mid_memory.search_sentences_global_with_limit(
+                            sq,
+                            top_n=max(6, int(self.query_focus_top_n_per_query)),
+                        )
+                    )
+                sentence_results = self._dedup_chunks_keep_best(sentence_results)
+            if sentence_results:
+                seen_texts = {
+                    re.sub(r"\s+", " ", str(x.get("text", "")).strip().lower())
+                    for x in merged_units
+                    if str(x.get("text", "")).strip()
+                }
+                added = 0
+                max_add = max(
+                    4,
+                    int(getattr(self.mid_memory, "global_sentence_top_n", 48)) // 2,
+                )
+                for item in sentence_results:
+                    text = str(item.get("text", "")).strip()
+                    norm = re.sub(r"\s+", " ", text.lower())
+                    if (not text) or (norm in seen_texts):
+                        continue
+                    seen_texts.add(norm)
+                    merged_units.append(dict(item))
+                    added += 1
+                    if added >= max_add:
+                        break
+                merged_units.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+                logger.info(
+                    "MemoryManager.retrieve_context: "
+                    f"sentence_candidates={len(sentence_results)}, added={added}."
+                )
+        merged_units = self._apply_slot_coverage_rerank(merged_units, query_plan)
+        if self.gap_detector_enabled and self.gap_detector_max_rounds >= 2:
+            missing_slots = detect_missing_slots(query_plan, merged_units, top_n=12)
+            if missing_slots:
+                gap_queries = build_gap_queries(
+                    query=query,
+                    plan=query_plan,
+                    missing_slots=missing_slots,
+                    max_queries=max(1, int(self.gap_detector_max_queries)),
+                )
+                if gap_queries and hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+                    gap_chunks: List[Dict[str, object]] = []
+                    for gq in gap_queries:
+                        gap_chunks.extend(
+                            self.mid_memory.search_chunks_global_with_limit(
+                                gq,
+                                top_n=max(4, int(self.gap_detector_top_n_per_query)),
+                            )
+                        )
+                    gap_chunks = self._dedup_chunks_keep_best(gap_chunks)
+                    if gap_chunks:
+                        merged_units = self._merge_anchor_chunks(
+                            base_chunks=merged_units,
+                            extra_chunks=gap_chunks,
+                            additive_limit=max(1, int(self.gap_detector_additive_limit)),
+                        )
+                    if (
+                        sentence_enabled
+                        and hasattr(self.mid_memory, "search_sentences_global_with_limit")
+                    ):
+                        gap_sentences: List[Dict[str, object]] = []
+                        for gq in gap_queries:
+                            gap_sentences.extend(
+                                self.mid_memory.search_sentences_global_with_limit(
+                                    gq,
+                                    top_n=max(4, int(self.gap_detector_top_n_per_query)),
+                                )
+                            )
+                        gap_sentences = self._dedup_chunks_keep_best(gap_sentences)
+                        if gap_sentences:
+                            merged_units = self._merge_anchor_chunks(
+                                base_chunks=merged_units,
+                                extra_chunks=gap_sentences,
+                                additive_limit=max(1, int(self.gap_detector_additive_limit)),
+                            )
+                    merged_units = self._apply_slot_coverage_rerank(merged_units, query_plan)
+                    logger.info(
+                        "MemoryManager.retrieve_context: "
+                        f"gap_missing={missing_slots}, gap_queries={gap_queries}."
+                    )
         context_parts: List[str] = []
-        for index, item in enumerate(reranked_chunks, start=1):
+        for index, item in enumerate(merged_units, start=1):
             text = str(item.get("text", "")).strip()
             if not text:
                 continue
@@ -533,7 +873,7 @@ class MemoryManager:
                     "MemoryManager.retrieve_context: "
                     f"long_memory_hits={len(long_snippets)}."
                 )
-        return context_text, [], reranked_chunks
+        return context_text, [], merged_units
 
     def ingest_message(self, message: Message) -> None:
         """Ingest one dataset message into memory without calling the LLM."""
@@ -605,6 +945,7 @@ class MemoryManager:
             evidence_candidate=evidence_candidate,
             candidates=candidates,
             best_evidence=best_evidence,
+            query_plan=dict(self.last_query_plan or {}),
         )
 
         prompt_text = self._build_generation_prompt(

@@ -1,4 +1,4 @@
-"""SQLite storage layer for MidMemory (chunk-first, no topic layer)."""
+"""SQLite storage layer for MidMemory (chunk + sentence dual-granularity)."""
 
 from __future__ import annotations
 
@@ -104,11 +104,31 @@ class MidMemoryStore:
             )
             """
         )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sentences(
+              sentence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              chunk_id INTEGER,
+              text TEXT,
+              sentence_embedding BLOB,
+              sentence_role TEXT,
+              sentence_session_id TEXT,
+              sentence_session_date TEXT,
+              source_part_index INTEGER
+            )
+            """
+        )
         if self.lexical_search_enabled:
             try:
                 self.conn.execute(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
+                    USING fts5(text)
+                    """
+                )
+                self.conn.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS sentences_fts
                     USING fts5(text)
                     """
                 )
@@ -119,6 +139,8 @@ class MidMemoryStore:
 
     def _create_indexes(self) -> None:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_chunk_id ON chunks(chunk_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_sentence_id ON sentences(sentence_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_chunk_id ON sentences(chunk_id)")
         self.conn.commit()
 
     def _ensure_schema_compat(self) -> None:
@@ -144,11 +166,52 @@ class MidMemoryStore:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_times TEXT")
         if "chunk_time_sources" not in chunk_names:
             self.conn.execute("ALTER TABLE chunks ADD COLUMN chunk_time_sources TEXT")
+        sentence_cols = self.conn.execute("PRAGMA table_info(sentences)").fetchall()
+        sentence_names = {str(row["name"]) for row in sentence_cols}
+        if not sentence_cols:
+            self.conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sentences(
+                  sentence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  chunk_id INTEGER,
+                  text TEXT,
+                  sentence_embedding BLOB,
+                  sentence_role TEXT,
+                  sentence_session_id TEXT,
+                  sentence_session_date TEXT,
+                  source_part_index INTEGER
+                )
+                """
+            )
+            sentence_names = {
+                "sentence_id",
+                "chunk_id",
+                "text",
+                "sentence_embedding",
+                "sentence_role",
+                "sentence_session_id",
+                "sentence_session_date",
+                "source_part_index",
+            }
+        if "sentence_role" not in sentence_names:
+            self.conn.execute("ALTER TABLE sentences ADD COLUMN sentence_role TEXT")
+        if "sentence_session_id" not in sentence_names:
+            self.conn.execute("ALTER TABLE sentences ADD COLUMN sentence_session_id TEXT")
+        if "sentence_session_date" not in sentence_names:
+            self.conn.execute("ALTER TABLE sentences ADD COLUMN sentence_session_date TEXT")
+        if "source_part_index" not in sentence_names:
+            self.conn.execute("ALTER TABLE sentences ADD COLUMN source_part_index INTEGER")
         if self.lexical_search_enabled:
             try:
                 self.conn.execute(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
+                    USING fts5(text)
+                    """
+                )
+                self.conn.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS sentences_fts
                     USING fts5(text)
                     """
                 )
@@ -174,12 +237,31 @@ class MidMemoryStore:
         except sqlite3.OperationalError as exc:
             logger.warn(f"MidMemory._index_chunk_fts failed: {exc}")
 
+    def index_sentence_fts(self, sentence_id: int, text: str) -> None:
+        if not self.lexical_search_enabled:
+            return
+        try:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO sentences_fts(rowid, text) VALUES(?, ?)",
+                (int(sentence_id), str(text)),
+            )
+        except sqlite3.OperationalError as exc:
+            logger.warn(f"MidMemory._index_sentence_fts failed: {exc}")
+
     def delete_chunk_fts(self, chunk_ids: Sequence[int]) -> None:
         if not self.lexical_search_enabled or not chunk_ids:
             return
         self.conn.executemany(
             "DELETE FROM chunks_fts WHERE rowid = ?",
             [(int(cid),) for cid in chunk_ids],
+        )
+
+    def delete_sentence_fts(self, sentence_ids: Sequence[int]) -> None:
+        if not self.lexical_search_enabled or not sentence_ids:
+            return
+        self.conn.executemany(
+            "DELETE FROM sentences_fts WHERE rowid = ?",
+            [(int(sid),) for sid in sentence_ids],
         )
 
     def rebuild_chunk_fts(self) -> None:
@@ -191,6 +273,17 @@ class MidMemoryStore:
             self.conn.execute(
                 "INSERT INTO chunks_fts(rowid, text) VALUES(?, ?)",
                 (int(row["chunk_id"]), str(row["text"])),
+            )
+
+    def rebuild_sentence_fts(self) -> None:
+        if not self.lexical_search_enabled:
+            return
+        rows = self.conn.execute("SELECT sentence_id, text FROM sentences").fetchall()
+        self.conn.execute("DELETE FROM sentences_fts")
+        for row in rows:
+            self.conn.execute(
+                "INSERT INTO sentences_fts(rowid, text) VALUES(?, ?)",
+                (int(row["sentence_id"]), str(row["text"])),
             )
 
     def lexical_rank_map_global(
@@ -221,17 +314,50 @@ class MidMemoryStore:
             return {}
         return {int(row["chunk_id"]): idx + 1 for idx, row in enumerate(rows)}
 
+    def lexical_rank_map_sentences(
+        self,
+        query: str,
+        tokenize: Callable[[str], List[str]],
+        bm25_top_n: int,
+    ) -> Dict[int, int]:
+        """Return lexical rank map across all sentence units."""
+        if not self.lexical_search_enabled:
+            return {}
+        query_tokens = tokenize(query)
+        if not query_tokens:
+            return {}
+        fts_query = " OR ".join(query_tokens)
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT rowid AS sentence_id
+                FROM sentences_fts
+                WHERE sentences_fts MATCH ?
+                ORDER BY bm25(sentences_fts) ASC
+                LIMIT ?
+                """,
+                (fts_query, int(bm25_top_n)),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {}
+        return {int(row["sentence_id"]): idx + 1 for idx, row in enumerate(rows)}
+
     def debug_stats(self) -> Dict[str, int]:
         c = self.conn.execute("SELECT COUNT(*) AS cnt FROM chunks").fetchone()
         chunks = int(c["cnt"]) if c else 0
+        s = self.conn.execute("SELECT COUNT(*) AS cnt FROM sentences").fetchone()
+        sentences = int(s["cnt"]) if s else 0
         return {
             "chunks": chunks,
+            "sentences": sentences,
         }
 
     def clear_all(self) -> None:
         self.conn.execute("DELETE FROM chunks")
+        self.conn.execute("DELETE FROM sentences")
         if self.lexical_search_enabled:
             self.conn.execute("DELETE FROM chunks_fts")
+            self.conn.execute("DELETE FROM sentences_fts")
         self.conn.commit()
 
     def commit(self) -> None:

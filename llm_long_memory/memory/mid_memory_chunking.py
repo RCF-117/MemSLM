@@ -92,6 +92,15 @@ def split_long_text(
     return final_parts
 
 
+def split_sentences(text: str) -> List[str]:
+    """Split text into sentence-like units and keep non-empty spans."""
+    clean = str(text or "").strip()
+    if not clean:
+        return []
+    sentences = re.split(r"(?<=[.!?。！？])\s+|\n+", clean)
+    return [s.strip() for s in sentences if s and s.strip()]
+
+
 def extract_time_terms(text: str, time_regexes: Sequence[re.Pattern[str]]) -> List[str]:
     """Extract normalized time expressions using configured regex patterns."""
     if not text:

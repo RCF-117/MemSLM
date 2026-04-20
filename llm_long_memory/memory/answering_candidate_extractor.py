@@ -230,7 +230,7 @@ class AnswerCandidateExtractor:
                         "text": clipped,
                         "score": score,
                         "topic_id": str(chunk.get("topic_id", "")),
-                        "chunk_id": int(chunk.get("chunk_id", 0)),
+                        "chunk_id": int(chunk.get("chunk_id", 0) or 0),
                         "session_date": str(chunk.get("session_date", "")),
                     }
                 )
