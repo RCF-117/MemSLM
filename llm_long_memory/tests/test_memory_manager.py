@@ -231,11 +231,11 @@ class TestMemoryManager(unittest.TestCase):
         self.assertIn("GPS system not functioning correctly", llm.last_messages[0]["content"])
         self.assertNotEqual(out, "Not found in retrieved context.")
 
-    def test_counting_fallback_is_used_before_top_candidate(self):
+    def test_counting_fallback_is_not_forced_without_evidence_support(self):
         manager, llm = self._build_manager(llm=FakeLLM("unrelated answer"))
-        manager.answering.counting.resolve = lambda **kwargs: {"answer": "4", "reason": "mock"}
+        manager.answering.reasoning_fallback_enabled = True
         out = manager.chat("How many items did I buy?")
-        self.assertEqual(out, "4")
+        self.assertEqual(out, "Not found in retrieved context.")
         self.assertGreaterEqual(llm.calls, 1)
 
     def test_chat_always_invokes_llm(self):

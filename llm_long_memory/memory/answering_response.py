@@ -74,7 +74,8 @@ class AnswerResponseHandler:
             fallback_text = "None"
         rules = (
             "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
-            "For count questions, prefer count_answer, count_items, and count_hint over loose numeric fragments.\n"
+            "For count questions, first align object type, then use count_explicit_candidates, count_enumerated_items, and count_support_spans.\n"
+            "Treat loose numeric fragments as weak clues unless object alignment is clear.\n"
             "For temporal_count questions, prefer duration_answer, duration_hint, and temporal_points, and preserve the asked unit.\n"
             "For preference questions, use preference_answer, preference_summary, and resource_hint to form a concise preference-aware answer.\n"
             "Use Graph Evidence next for any missing detail.\n"
@@ -132,6 +133,29 @@ class AnswerResponseHandler:
                 return True
         return False
 
+    def _fallback_usable(
+        self,
+        fallback_text: str,
+        evidence_sentences: List[Dict[str, object]],
+    ) -> bool:
+        text = self._normalize_space(fallback_text).strip()
+        if not text:
+            return False
+        low = text.lower()
+        if low.startswith("(user)") or low.startswith("(assistant)") or low.startswith("(system)"):
+            return False
+        if "example script:" in low:
+            return False
+        # Avoid using full raw evidence sentence as fallback answer.
+        if len(self._tokenize(text)) > 24:
+            return False
+        # Require evidence support; do not allow naked short-number fallback.
+        if self.response_in_evidence(text, evidence_sentences):
+            return True
+        if self.response_supported_by_evidence(text, evidence_sentences):
+            return True
+        return False
+
     def evaluate_response_fallback(
         self,
         response: str,
@@ -148,7 +172,7 @@ class AnswerResponseHandler:
         fallback_text = self._normalize_space(str(fallback_answer or "")).strip()
         normalized_response = self._normalize_space(response).lower()
         if normalized_response == "not found in retrieved context.":
-            if fallback_text:
+            if fallback_text and self._fallback_usable(fallback_text, evidence_sentences):
                 return {
                     "response": fallback_text,
                     "fallback_path": "fallback_to_reasoning_fallback",
@@ -202,7 +226,7 @@ class AnswerResponseHandler:
                             "fallback_path": "compress_supported_response_to_evidence_candidate",
                         }
             return {"response": response, "fallback_path": "llm_supported_by_evidence"}
-        if fallback_text:
+        if fallback_text and self._fallback_usable(fallback_text, evidence_sentences):
             return {
                 "response": fallback_text,
                 "fallback_path": "fallback_to_reasoning_fallback",
@@ -237,7 +261,7 @@ class AnswerResponseHandler:
         guidance = (
             "Re-check the same compact prompt.\n"
             "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
-            "For count questions, prefer count_answer, count_items, and count_hint.\n"
+            "For count questions, prioritize count_explicit_candidates, count_enumerated_items, and count_support_spans with object alignment.\n"
             "For temporal_count questions, prefer duration_answer, duration_hint, and temporal_points.\n"
             "For preference questions, prefer preference_answer, preference_summary, and resource_hint.\n"
             "Use Graph Evidence next if needed, then the Fallback Answer if needed.\n"

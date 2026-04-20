@@ -55,7 +55,7 @@ memory:
       - was
       - with
   long_memory:
-    enabled: false
+    enabled: true
     staging_enabled: true
     supersede_min_evidence_overlap: 0.25
     database_file: data/processed/long_memory.db
@@ -345,6 +345,19 @@ retrieval:
     extra_queries_per_option: 2
     top_n_per_query: 10
     additive_limit: 8
+  query_focus_retrieval:
+    enabled: false
+    require_cue: false
+    cue_keywords: []
+    model: qwen3:8b
+    temperature: 0.0
+    timeout_sec: 120
+    max_queries: 4
+    top_n_per_query: 12
+    additive_limit: 10
+    max_output_tokens: 120
+    force_json_output: true
+    think: false
   graph_build_retry:
     enabled: true
     expanded_top_n: 64
@@ -357,12 +370,23 @@ retrieval:
     assistant: 0.7
     system: 0.5
   long_memory_context:
-    enabled: false
+    enabled: true
     query_graph_enabled: false
     prepend_before_mid_context: true
   answering:
     graph_refiner_enabled: true
     graph_context_from_store_enabled: true
+    reasoning_fallback_enabled: false
+    specialist_layer:
+      enabled: true
+      modules:
+        - counting
+        - graph_toolkit
+      counting_enabled: true
+      graph_toolkit_enabled: true
+      min_confidence: 0.55
+      allow_fallback_override: true
+      max_hint_lines: 8
     evidence_top_n_chunks: 10
     evidence_top_n_sentences: 8
     evidence_sentence_max_chars: 220

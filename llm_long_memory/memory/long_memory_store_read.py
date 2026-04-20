@@ -144,6 +144,46 @@ class LongMemoryStoreReadMixin:
             (event_id, int(limit)),
         ).fetchall()
 
+    def fetch_edges_to(self, event_id: str, limit: int) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT from_event_id, to_event_id, relation, weight
+            FROM edges
+            WHERE to_event_id=?
+            ORDER BY weight DESC, created_step DESC
+            LIMIT ?
+            """,
+            (event_id, int(limit)),
+        ).fetchall()
+
+    def fetch_event_by_id(self, event_id: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            """
+            SELECT event_id, fact_key, skeleton_text, skeleton_embedding, keywords, role, salience, last_seen_step, fact_type
+            FROM events
+            WHERE event_id=?
+            LIMIT 1
+            """,
+            (event_id,),
+        ).fetchone()
+
+    def search_event_nodes(self, query_text: str, limit: int = 24) -> List[sqlite3.Row]:
+        q = str(query_text or "").strip()
+        if not q:
+            return []
+        pattern = f"%{q}%"
+        return self.conn.execute(
+            """
+            SELECT n.event_id, n.node_kind, n.node_text, n.is_core, n.created_step
+            FROM event_nodes n
+            JOIN events e ON e.event_id=n.event_id
+            WHERE e.is_latest=1 AND lower(n.node_text) LIKE lower(?)
+            ORDER BY n.is_core DESC, n.created_step DESC
+            LIMIT ?
+            """,
+            (pattern, int(limit)),
+        ).fetchall()
+
     def fetch_events_by_ids(self, event_ids: List[str]) -> List[sqlite3.Row]:
         if not event_ids:
             return []

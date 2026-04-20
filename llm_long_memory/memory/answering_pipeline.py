@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from llm_long_memory.memory.answering_candidate_extractor import AnswerCandidateExtractor
-from llm_long_memory.memory.counting_resolver import CountingResolver
 from llm_long_memory.memory.answering_response import AnswerResponseHandler
 from llm_long_memory.utils.logger import logger
 
@@ -16,6 +15,9 @@ class AnsweringPipeline:
     def __init__(self, answering_cfg: Dict[str, Any]) -> None:
         self.answering_cfg = dict(answering_cfg)
         self.answer_context_only = bool(self.answering_cfg["context_only"])
+        self.reasoning_fallback_enabled = bool(
+            self.answering_cfg.get("reasoning_fallback_enabled", True)
+        )
         self.log_decision_details = bool(self.answering_cfg["log_decision_details"])
         self.llm_fallback_to_top_candidate = bool(
             self.answering_cfg["llm_fallback_to_top_candidate"]
@@ -35,7 +37,6 @@ class AnsweringPipeline:
             self.answering_cfg["second_pass_use_evidence_candidate"]
         )
         self.candidate_extractor = AnswerCandidateExtractor(self.answering_cfg)
-        self.counting = CountingResolver(dict(self.answering_cfg.get("counting", {})))
         self.not_found_force_evidence_candidate_when_available = bool(
             self.answering_cfg.get("not_found_force_evidence_candidate_when_available", False)
         )
@@ -127,33 +128,6 @@ class AnsweringPipeline:
             evidence_sentences,
             candidates,
         )
-
-    def resolve_fallback_answer(
-        self,
-        query: str,
-        evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        reranked_chunks: List[Dict[str, object]],
-    ) -> str:
-        """Return a compact fallback answer without bypassing the main LLM."""
-        evidence_candidate = self.extract_evidence_candidate(query, evidence_sentences, candidates)
-        if evidence_candidate is not None:
-            fallback = str(evidence_candidate.get("answer", "")).strip()
-            if fallback:
-                return fallback
-        counting_result = self.counting.resolve(
-            query=query,
-            evidence=evidence_sentences,
-            candidates=candidates,
-            reranked_chunks=reranked_chunks,
-        )
-        if counting_result is not None:
-            answer = str(counting_result.get("answer", "")).strip()
-            if answer:
-                return answer
-        if candidates:
-            return str(candidates[0].get("text", "")).strip()
-        return ""
 
     def log_decision_snapshot(
         self,

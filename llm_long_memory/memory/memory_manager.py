@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 from llm_long_memory.llm.ollama_client import LLM
+from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
 from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
+from llm_long_memory.memory.graph_query_engine import GraphQueryEngine
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
 from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
+from llm_long_memory.memory.specialist_layer import SpecialistLayer
 from llm_long_memory.memory.memory_manager_utils import (
     build_temporal_anchor_queries,
     dedup_chunks_keep_best,
@@ -117,11 +122,15 @@ class MemoryManager:
         )
         answering_cfg = dict(self.config["retrieval"]["answering"])
         self.answering = AnsweringPipeline(answering_cfg)
+        self.specialist_layer = SpecialistLayer(
+            self,
+            dict(answering_cfg.get("specialist_layer", {})),
+        )
         self.graph_refiner_enabled = bool(answering_cfg.get("graph_refiner_enabled", False))
         self.graph_context_from_store_enabled = bool(
             answering_cfg.get("graph_context_from_store_enabled", False)
         )
-        self.graph_toolkit = GraphReasoningToolkit(self)
+        self.graph_toolkit = None
         self.retrieval_execution_mode = str(
             self.config["retrieval"].get("execution_mode", "memslm")
         ).strip().lower() or "memslm"
@@ -137,6 +146,13 @@ class MemoryManager:
         self.offline_graph_build_chunk_max_chars = int(
             offline_graph_cfg.get("build_chunk_max_chars", 260)
         )
+        if (
+            self.graph_refiner_enabled
+            and self.long_memory_enabled
+            and self.offline_graph_build_enabled
+            and self.graph_context_from_store_enabled
+        ):
+            self.graph_toolkit = GraphReasoningToolkit(self)
 
         temporal_anchor_cfg = dict(self.config["retrieval"].get("temporal_anchor_retrieval", {}))
         self.temporal_anchor_enabled = bool(temporal_anchor_cfg.get("enabled", False))
@@ -158,6 +174,34 @@ class MemoryManager:
             for x in list(temporal_anchor_cfg.get("cue_keywords", []))
             if str(x).strip()
         ]
+        query_focus_cfg = dict(self.config["retrieval"].get("query_focus_retrieval", {}))
+        self.query_focus_enabled = bool(query_focus_cfg.get("enabled", False))
+        self.query_focus_require_cue = bool(query_focus_cfg.get("require_cue", False))
+        self.query_focus_cue_keywords = {
+            str(x).strip().lower()
+            for x in list(
+                query_focus_cfg.get(
+                    "cue_keywords",
+                    [],
+                )
+            )
+            if str(x).strip()
+        }
+        self.query_focus_model = str(
+            query_focus_cfg.get("model", self.config["llm"]["default_model"])
+        )
+        self.query_focus_temperature = float(query_focus_cfg.get("temperature", 0.0))
+        self.query_focus_timeout_sec = int(query_focus_cfg.get("timeout_sec", 60))
+        self.query_focus_max_queries = int(query_focus_cfg.get("max_queries", 4))
+        self.query_focus_top_n_per_query = int(query_focus_cfg.get("top_n_per_query", 12))
+        self.query_focus_additive_limit = int(query_focus_cfg.get("additive_limit", 12))
+        self.query_focus_max_output_tokens = int(
+            query_focus_cfg.get("max_output_tokens", 120)
+        )
+        self.query_focus_force_json_output = bool(
+            query_focus_cfg.get("force_json_output", True)
+        )
+        self.query_focus_think = bool(query_focus_cfg.get("think", False))
 
         graph_retry_cfg = dict(self.config["retrieval"].get("graph_build_retry", {}))
         self.graph_build_retry_enabled = bool(graph_retry_cfg.get("enabled", False))
@@ -183,6 +227,11 @@ class MemoryManager:
             if str(k).strip()
         }
         self.chat_runtime = MemoryManagerChatRuntime(self)
+        self.graph_query_engine = (
+            GraphQueryEngine(self.long_memory)
+            if self.long_memory_enabled
+            else None
+        )
         self.last_prompt_eval_chunks: List[Dict[str, str]] = []
         logger.info("MemoryManager initialized.")
 
@@ -220,6 +269,114 @@ class MemoryManager:
             temporal_anchor_max_options=self.temporal_anchor_max_options,
             temporal_anchor_extra_queries_per_option=self.temporal_anchor_extra_queries_per_option,
         )
+
+    @staticmethod
+    def _extract_first_json_block(raw: str) -> str:
+        text = str(raw or "").strip()
+        if not text:
+            return "{}"
+        if text.startswith("{") and text.endswith("}"):
+            return text
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            return text[start : end + 1]
+        return "{}"
+
+    def _extract_query_focus_struct(self, query: str) -> Dict[str, List[str]]:
+        if not self.query_focus_enabled:
+            return {"objects": [], "anchors": [], "keywords": []}
+        # Keep tests/offline stubs safe: only invoke structured Ollama path when llm has transport attrs.
+        if (not hasattr(self.llm, "host")) or (not hasattr(self.llm, "model_name")):
+            return {"objects": [], "anchors": [], "keywords": []}
+        try:
+            host = str(getattr(self.llm, "host", self.config["llm"]["host"])).rstrip("/")
+            opener = getattr(self.llm, "_opener", None)
+            if opener is None:
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            prompt = (
+                "Extract retrieval focus from one QA query.\n"
+                'Return JSON only: {"objects":[],"anchors":[],"keywords":[]}\n'
+                "objects: noun phrases being asked about (for count/update/lookup).\n"
+                "anchors: compared entities or key mentions.\n"
+                "keywords: short retrieval terms.\n"
+                f"max each list: {max(1, self.query_focus_max_queries)}\n"
+                f"query: {query}\n"
+            )
+            raw = ollama_generate_with_retry(
+                host=host,
+                model=self.query_focus_model,
+                prompt=prompt,
+                temperature=self.query_focus_temperature,
+                timeout_sec=self.query_focus_timeout_sec,
+                opener=opener,
+                max_attempts=1,
+                backoff_sec=0.0,
+                retry_on_timeout=False,
+                retry_on_http_502=False,
+                retry_on_url_error=False,
+                max_output_tokens=self.query_focus_max_output_tokens,
+                think=self.query_focus_think,
+                response_format="json" if self.query_focus_force_json_output else None,
+            )
+            data = json.loads(self._extract_first_json_block(raw))
+            out: Dict[str, List[str]] = {}
+            for key in ("objects", "anchors", "keywords"):
+                raw_list = data.get(key, [])
+                if isinstance(raw_list, list):
+                    values = [str(x).strip() for x in raw_list if str(x).strip()]
+                else:
+                    values = [str(raw_list).strip()] if str(raw_list).strip() else []
+                uniq: List[str] = []
+                seen: set[str] = set()
+                for v in values:
+                    norm = re.sub(r"\s+", " ", v).strip()
+                    if not norm:
+                        continue
+                    low = norm.lower()
+                    if low in seen:
+                        continue
+                    seen.add(low)
+                    uniq.append(norm)
+                    if len(uniq) >= max(1, self.query_focus_max_queries):
+                        break
+                out[key] = uniq
+            return {
+                "objects": out.get("objects", []),
+                "anchors": out.get("anchors", []),
+                "keywords": out.get("keywords", []),
+            }
+        except (RuntimeError, ValueError, TypeError, OSError, json.JSONDecodeError):
+            return {"objects": [], "anchors": [], "keywords": []}
+
+    def _build_query_focus_queries(self, query: str) -> List[str]:
+        base = re.sub(r"\s+", " ", str(query or "")).strip()
+        if not base:
+            return []
+        if not self.query_focus_enabled:
+            return [base]
+        qlow = base.lower()
+        if self.query_focus_require_cue and (
+            (not self.query_focus_cue_keywords)
+            or (not any(c in qlow for c in self.query_focus_cue_keywords))
+        ):
+            return [base]
+        focus = self._extract_query_focus_struct(base)
+        out: List[str] = [base]
+        seen: set[str] = {base.lower()}
+        for key in ("objects", "anchors", "keywords"):
+            for phrase in list(focus.get(key, [])):
+                p = re.sub(r"\s+", " ", str(phrase or "")).strip()
+                if not p:
+                    continue
+                low = p.lower()
+                if low in seen:
+                    continue
+                seen.add(low)
+                out.append(p)
+                if len(out) >= max(1, self.query_focus_max_queries):
+                    return out
+        return out
 
     def _merge_anchor_chunks(
         self,
@@ -323,6 +480,28 @@ class MemoryManager:
                         "MemoryManager.retrieve_context: "
                         f"temporal_anchor_queries={len(anchor_queries)}, "
                         f"anchor_candidates={len(anchor_chunks)}."
+                    )
+        if self.query_focus_enabled and hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+            focus_queries = self._build_query_focus_queries(query)
+            if len(focus_queries) > 1:
+                focus_chunks: List[Dict[str, object]] = []
+                for fq in focus_queries[1:]:
+                    focus_chunks.extend(
+                        self.mid_memory.search_chunks_global_with_limit(
+                            fq,
+                            top_n=self.query_focus_top_n_per_query,
+                        )
+                    )
+                if focus_chunks:
+                    reranked_chunks = self._merge_anchor_chunks(
+                        base_chunks=reranked_chunks,
+                        extra_chunks=self._dedup_chunks_keep_best(focus_chunks),
+                        additive_limit=self.query_focus_additive_limit,
+                    )
+                    logger.info(
+                        "MemoryManager.retrieve_context: "
+                        f"query_focus_queries={len(focus_queries)-1}, "
+                        f"query_focus_candidates={len(focus_chunks)}."
                     )
         context_parts: List[str] = []
         for index, item in enumerate(reranked_chunks, start=1):

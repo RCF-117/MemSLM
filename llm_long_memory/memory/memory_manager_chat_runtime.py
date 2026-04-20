@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from llm_long_memory.utils.logger import logger
@@ -13,6 +12,7 @@ class MemoryManagerChatRuntime:
 
     def __init__(self, manager: Any) -> None:
         self.m = manager
+        self._last_specialist_payload: Dict[str, object] = {}
 
     def prepare_answer_inputs(
         self,
@@ -43,33 +43,39 @@ class MemoryManagerChatRuntime:
             evidence_candidate = None
             best_evidence = ""
             best_candidate = ""
-            graph_tool_answer = ""
+            self._last_specialist_payload = {}
         else:
             evidence_sentences = self.m.answering.collect_evidence_sentences(query, chunks)
             candidates = self.m.answering.extract_candidates(query, evidence_sentences)
             self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
-            fallback_answer = self.m.answering.resolve_fallback_answer(
-                query,
-                evidence_sentences,
-                candidates,
-                chunks,
-            )
+            fallback_answer = ""
             evidence_candidate = self.m.answering.extract_evidence_candidate(
                 query, evidence_sentences, candidates
             )
+            if bool(getattr(self.m.answering, "reasoning_fallback_enabled", True)):
+                # Base fallback comes from candidate extractor path only.
+                fallback_answer = (
+                    str((evidence_candidate or {}).get("answer", "")).strip()
+                    if evidence_candidate is not None
+                    else ""
+                )
             best_evidence = (
                 str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
             )
             best_candidate = str(candidates[0].get("text", "")) if candidates else ""
-            graph_tool_answer = self.m.graph_toolkit.build_tool_answer(
+            graph_context = self.build_graph_context(query=query, chunks=chunks)
+            self._last_specialist_payload = self.m.specialist_layer.run(
                 query=query,
-                graph_context=self.build_graph_context(query=query, chunks=chunks),
+                graph_context=graph_context,
                 evidence_sentences=evidence_sentences,
                 candidates=candidates,
                 chunks=chunks,
             )
-            if graph_tool_answer.strip():
-                fallback_answer = graph_tool_answer.strip()
+            specialist_fallback = str(
+                self._last_specialist_payload.get("fallback_answer", "")
+            ).strip()
+            if specialist_fallback:
+                fallback_answer = specialist_fallback
         return (
             context_text,
             topics,
@@ -212,26 +218,20 @@ class MemoryManagerChatRuntime:
         candidates: List[Dict[str, object]],
         chunks: List[Dict[str, object]],
     ) -> str:
-        if not self.m.graph_refiner_enabled:
-            return ""
-        if not bool(getattr(self.m, "long_memory_enabled", False)):
-            return ""
-        if not bool(getattr(self.m, "offline_graph_build_enabled", False)):
-            return ""
-        if not self.m.graph_context_from_store_enabled:
-            return ""
-        toolkit = getattr(self.m, "graph_toolkit", None)
-        if toolkit is None:
-            return ""
-        return str(
-            toolkit.build_tool_hints(
-                query=query,
-                graph_context=graph_context,
-                evidence_sentences=evidence_sentences,
-                candidates=candidates,
-                chunks=chunks,
-            )
-        ).strip()
+        # Kept method name for backward compatibility with prompt-builder call sites.
+        # In the current architecture, specialist hints come from the unified specialist layer.
+        hints = str(self._last_specialist_payload.get("hints", "")).strip()
+        if hints:
+            return hints
+        payload = self.m.specialist_layer.run(
+            query=query,
+            graph_context=graph_context,
+            evidence_sentences=evidence_sentences,
+            candidates=candidates,
+            chunks=chunks,
+        )
+        self._last_specialist_payload = payload
+        return str(payload.get("hints", "")).strip()
 
     def build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
         if not self.m.graph_refiner_enabled:
@@ -244,27 +244,24 @@ class MemoryManagerChatRuntime:
         # graph extraction is completed before answering; chat only reads stored graph evidence.
         if not self.m.graph_context_from_store_enabled:
             return ""
-        snippets = self.m.long_memory.build_context_snippets(query)
+        snippets: List[str] = []
+        engine = getattr(self.m, "graph_query_engine", None)
+        if engine is not None:
+            try:
+                pack = engine.query(
+                    query=query,
+                    max_items=min(4, max(1, int(getattr(self.m.long_memory, "context_max_items", 4)))),
+                )
+                raw_snippets = list(pack.get("snippets", [])) if isinstance(pack, dict) else []
+                snippets = [str(x).strip() for x in raw_snippets if str(x).strip()]
+            except (RuntimeError, ValueError, TypeError):
+                snippets = []
+        # Safe fallback to legacy snippet generation if graph query yielded nothing.
+        if not snippets:
+            snippets = self.m.long_memory.build_context_snippets(query)
         if not snippets:
             return ""
-        query_tokens = {
-            tok
-            for tok in re.findall(r"[a-z0-9]+", str(query).lower())
-            if tok and tok not in {"the", "a", "an", "to", "of", "and", "or", "in", "on", "my"}
-        }
-        if query_tokens:
-            filtered: List[str] = []
-            for snippet in snippets:
-                snippet_tokens = set(re.findall(r"[a-z0-9]+", str(snippet).lower()))
-                if not snippet_tokens:
-                    continue
-                shared = len(query_tokens.intersection(snippet_tokens))
-                overlap_ratio = float(shared) / float(max(1, len(query_tokens)))
-                if shared >= 2 or overlap_ratio >= 0.20:
-                    filtered.append(snippet)
-            max_items = min(3, max(1, int(getattr(self.m.long_memory, "context_max_items", 4))))
-            snippets = (filtered[:max_items] if filtered else snippets[:max_items])
-        return "[Long Memory Graph]\n" + "\n".join(f"- {line}" for line in snippets)
+        return "[Long Memory Graph]\n" + "\n".join(f"- {line}" for line in snippets[:4])
 
     def generate_with_fallback(
         self,

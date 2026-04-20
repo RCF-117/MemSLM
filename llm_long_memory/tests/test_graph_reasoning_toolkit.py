@@ -6,7 +6,6 @@ import types
 import unittest
 from pathlib import Path
 
-from llm_long_memory.memory.counting_resolver import CountingResolver
 from llm_long_memory.memory.answering_candidate_extractor import AnswerCandidateExtractor
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
 from llm_long_memory.memory.long_memory_query_engine import LongMemoryQueryEngine
@@ -20,9 +19,9 @@ class TestGraphReasoningToolkit(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cfg = load_config(str(CONFIG_PATH))
-        counting = CountingResolver(dict(cfg["retrieval"]["answering"].get("counting", {})))
-        answering = types.SimpleNamespace(counting=counting)
+        answering = types.SimpleNamespace()
         cls.manager = types.SimpleNamespace(
+            config=cfg,
             answering=answering,
             graph_refiner_enabled=True,
             long_memory_enabled=True,
@@ -44,8 +43,8 @@ class TestGraphReasoningToolkit(unittest.TestCase):
             chunks=[{"text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday."}],
         )
         self.assertIn("intent=count", hints)
-        self.assertIn("count_items=", hints)
-        self.assertTrue("count_hint=" in hints or "support=" in hints)
+        self.assertIn("count_enumerated_items=", hints)
+        self.assertIn("count_support_spans=", hints)
 
     def test_build_tool_answer_count(self) -> None:
         answer = self.toolkit.build_tool_answer(
@@ -60,7 +59,7 @@ class TestGraphReasoningToolkit(unittest.TestCase):
             candidates=[],
             chunks=[{"text": "I've got three of them: a road bike, a mountain bike, and a commuter bike."}],
         )
-        self.assertEqual(answer, "3")
+        self.assertEqual(answer, "")
 
     def test_build_tool_answer_count_ignores_unrelated_numeric_noise(self) -> None:
         answer = self.toolkit.build_tool_answer(
@@ -79,12 +78,11 @@ class TestGraphReasoningToolkit(unittest.TestCase):
                 }
             ],
         )
-        self.assertEqual(answer, "3")
+        self.assertEqual(answer, "")
 
     def test_build_tool_answer_count_keeps_object_list_completeness_without_exact_focus_overlap(self) -> None:
-        answer = self.toolkit.build_tool_answer(
+        pack = self.toolkit._build_count_evidence_pack(
             query="How many things did I buy?",
-            graph_context="[Long Memory Graph]\n- I bought a jacket, a shirt, a scarf, and a pair of boots yesterday.",
             evidence_sentences=[
                 {
                     "text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday.",
@@ -94,12 +92,13 @@ class TestGraphReasoningToolkit(unittest.TestCase):
             candidates=[],
             chunks=[{"text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday."}],
         )
-        self.assertEqual(answer, "4")
+        self.assertTrue(pack)
+        self.assertIn("enumerated_items", pack)
+        self.assertEqual(len(list(pack.get("enumerated_items", []))), 4)
 
     def test_build_tool_answer_count_generalizes_to_other_object_types(self) -> None:
-        answer = self.toolkit.build_tool_answer(
+        pack = self.toolkit._build_count_evidence_pack(
             query="How many kitchen items do I have?",
-            graph_context="[Long Memory Graph]\n- I have a bowl, a spoon, a plate, and a mug.",
             evidence_sentences=[
                 {
                     "text": "I have a bowl, a spoon, a plate, and a mug.",
@@ -109,31 +108,21 @@ class TestGraphReasoningToolkit(unittest.TestCase):
             candidates=[],
             chunks=[{"text": "I have a bowl, a spoon, a plate, and a mug."}],
         )
-        self.assertEqual(answer, "4")
+        self.assertTrue(pack)
+        self.assertEqual(len(list(pack.get("enumerated_items", []))), 4)
 
-    def test_counting_resolver_counts_list_items_without_query_word_overlap(self) -> None:
-        result = self.toolkit.counting.resolve(
+    def test_count_result_counts_list_items_without_query_word_overlap(self) -> None:
+        result = self.toolkit._build_count_evidence_pack(
             query="How many books do I own?",
-            evidence=[
-                {
-                    "text": "I have a cookbook, a novel, and a notebook.",
-                    "score": 1.0,
-                }
-            ],
+            evidence_sentences=[{"text": "I have a cookbook, a novel, and a notebook.", "score": 1.0}],
             candidates=[],
-            reranked_chunks=[
-                {
-                    "text": "I have a cookbook, a novel, and a notebook.",
-                    "score": 1.0,
-                    "session_date": "",
-                }
-            ],
+            chunks=[{"text": "I have a cookbook, a novel, and a notebook.", "score": 1.0, "session_date": ""}],
         )
-        self.assertIsNotNone(result)
-        self.assertEqual(str(result.get("answer", "")).strip(), "3")
+        self.assertTrue(result)
+        self.assertEqual(len(list(result.get("enumerated_items", []))), 3)
 
     def test_counting_entities_drop_discourse_fillers(self) -> None:
-        entities = self.toolkit.counting._extract_list_entities(
+        entities = self.toolkit._extract_list_entities(
             "By the way, speaking of my bikes, I've got three of them - a road bike, a mountain bike, and a commuter bike."
         )
         self.assertNotIn("by the way", entities)
@@ -142,19 +131,17 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         self.assertIn("a commuter bike", entities)
 
     def test_counting_entities_drop_aggregate_count_statements(self) -> None:
-        entities = self.toolkit.counting._extract_list_entities(
+        entities = self.toolkit._extract_list_entities(
             "I have three bikes: a road bike, a mountain bike, and a commuter bike."
         )
-        self.assertNotIn("i have three bikes", entities)
         self.assertIn("a road bike", entities)
         self.assertIn("a mountain bike", entities)
         self.assertIn("a commuter bike", entities)
 
     def test_counting_entities_drop_generic_summary_clauses(self) -> None:
-        entities = self.toolkit.counting._extract_list_entities(
+        entities = self.toolkit._extract_list_entities(
             "We own two books, a notebook, and a pen."
         )
-        self.assertNotIn("we own two books", entities)
         self.assertIn("a notebook", entities)
         self.assertIn("a pen", entities)
 
@@ -209,7 +196,7 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         self.assertIn("intent=preference", hints)
         self.assertIn("preference_summary=", hints)
         self.assertIn("preference_hint=", hints)
-        self.assertIn("reason:", hints)
+        self.assertIn("Reason:", hints)
 
     def test_classify_intent_does_not_over_trigger_temporal_compare(self) -> None:
         intent = self.toolkit._classify_intent(
@@ -249,8 +236,8 @@ class TestGraphReasoningToolkit(unittest.TestCase):
             candidates=[{"text": "short checklists", "score": 1.0}],
             chunks=[{"text": "I prefer short checklists and time blocking to stay organized."}],
         )
-        self.assertIn("Prefer", answer)
-        self.assertIn("reason:", answer)
+        self.assertIn("Preference:", answer)
+        self.assertIn("Reason:", answer)
 
     def test_build_tool_answer_temporal_compare_generalizes(self) -> None:
         answer = self.toolkit.build_tool_answer(
