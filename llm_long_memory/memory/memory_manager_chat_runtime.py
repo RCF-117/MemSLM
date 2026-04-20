@@ -285,14 +285,25 @@ class MemoryManagerChatRuntime:
                 if focus_list:
                     target = focus_list[0]
             count_unit = str(plan.get("count_unit", "")).strip().lower()
+            target_tokens = set(self._tokenize(target))
+
+            def _object_alignment(text: str) -> float:
+                low = text.lower()
+                stoks = set(self._tokenize(low))
+                if target and _contains_phrase(low, target):
+                    return 1.0
+                if target_tokens and stoks:
+                    return len(target_tokens.intersection(stoks)) / float(len(target_tokens))
+                return 0.0
 
             def _count_fact_score(text: str) -> float:
                 low = text.lower()
-                score = self._score_overlap(query, text)
-                if target and _contains_phrase(low, target):
-                    score += 0.8
+                align = _object_alignment(text)
+                if target and align <= 0.0:
+                    return -1.0
+                score = (0.9 * align) + (0.4 * self._score_overlap(query, text))
                 if self._contains_digit_or_number_word(text):
-                    score += 0.7
+                    score += 0.25
                 first_person_fact = bool(
                     re.search(
                         r"\b(i|my|we|our)\b.{0,40}\b(have|had|own|owned|bought|got|kept|led|managed|tried|completed|serviced|plan(?:ned)?|attended)\b",
@@ -300,9 +311,9 @@ class MemoryManagerChatRuntime:
                     )
                 )
                 if first_person_fact:
-                    score += 0.4
+                    score += 0.15
                 if count_unit and count_unit in low:
-                    score += 0.2
+                    score += 0.1
                 if re.search(r"\b(tips?|how to|guide|example script)\b", low):
                     score -= 0.5
                 return score
@@ -316,10 +327,10 @@ class MemoryManagerChatRuntime:
                     if not text:
                         continue
                     low = text.lower()
-                    if not _contains_phrase(low, target):
+                    if _object_alignment(text) < 0.5:
                         continue
                     score = _count_fact_score(text)
-                    if score < 0.55:
+                    if score < 0.58:
                         continue
                     key = low
                     if key in seen_count:
@@ -328,9 +339,26 @@ class MemoryManagerChatRuntime:
                     ranked.append((score, text))
                 ranked.sort(key=lambda x: x[0], reverse=True)
                 picked = [text for _, text in ranked[:6]]
+                if len(picked) < 2:
+                    relaxed: List[tuple[float, str]] = []
+                    for item in top:
+                        text = self._normalize_space(str(item.get("text", "")))
+                        if not text:
+                            continue
+                        low = text.lower()
+                        if low in seen_count:
+                            continue
+                        if _object_alignment(text) < 0.34:
+                            continue
+                        score = _count_fact_score(text)
+                        if score < 0.44:
+                            continue
+                        relaxed.append((score, text))
+                    relaxed.sort(key=lambda x: x[0], reverse=True)
+                    picked.extend([text for _, text in relaxed[: max(0, 6 - len(picked))]])
                 if not picked:
                     insufficient = True
-                    picked = _pick(limit=4)
+                    picked = _pick(limit=4, must=[target])
             else:
                 picked = _pick(limit=5)
             lines.extend([f"- {x}" for x in picked[:6]])
