@@ -342,7 +342,15 @@ class MemoryManager:
         if not low:
             return 0.0
         penalty = 0.0
-        if "as an ai" in low or "i'm just an ai" in low:
+        if (
+            "as an ai" in low
+            or "i'm just an ai" in low
+            or "large language model" in low
+            or "don't have personal experiences" in low
+            or "do not have personal experiences" in low
+            or "don't have access" in low
+            or "do not have access" in low
+        ):
             penalty += 0.35
         if re.search(r"\b(example script|tips?|how to|guide|best practices?)\b", low):
             penalty += 0.18
@@ -355,6 +363,13 @@ class MemoryManager:
             )
             if not has_fact:
                 penalty += 0.12
+        if low.endswith("?"):
+            penalty += 0.08
+        if len(low) > 600 and not re.search(
+            r"\b(i|my|we|our)\b.{0,40}\b(was|were|have|had|did|moved|set|completed|own|bought|met|serviced|tried|led|graduated)\b",
+            low,
+        ):
+            penalty += 0.12
         return min(0.45, float(penalty))
 
     def _extract_query_focus_struct(self, query: str, force: bool = False) -> Dict[str, List[str]]:
@@ -539,13 +554,48 @@ class MemoryManager:
                 plan["target_object"] = merged_focus[0]
 
         base_query = re.sub(r"\s+", " ", str(query or "")).strip()
+        keyword_stop = {
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+            "they",
+            "their",
+            "the",
+            "a",
+            "an",
+            "of",
+            "to",
+            "for",
+            "with",
+            "in",
+            "on",
+            "at",
+            "do",
+            "did",
+            "does",
+            "is",
+            "are",
+            "was",
+            "were",
+            "what",
+            "which",
+            "who",
+            "when",
+            "where",
+            "how",
+        }
         keyword_tokens: List[str] = []
         for phrase in merged_focus[:4]:
             toks = re.findall(r"[a-z0-9]+", phrase.lower())
-            keyword_tokens.extend(toks[:2] if len(toks) >= 2 else toks)
+            content = [t for t in toks if len(t) >= 3 and t not in keyword_stop]
+            keyword_tokens.extend(content[:2] if len(content) >= 2 else content)
         keyword_tokens = list(dict.fromkeys([t for t in keyword_tokens if t]))
         keyword_query = re.sub(r"\s+", " ", " ".join(keyword_tokens[:10])).strip()
-        if keyword_query:
+        if len(re.findall(r"[a-z0-9]+", keyword_query.lower())) >= 2:
             plan["keyword_query"] = keyword_query
 
         sub_queries: List[str] = [base_query]
@@ -564,6 +614,7 @@ class MemoryManager:
 
         dedup_sub_queries: List[str] = []
         seen_sq: set[str] = set()
+        max_sub_q = min(max(1, int(self.query_plan_max_sub_queries)), 4)
         for sq in sub_queries:
             normalized = re.sub(r"\s+", " ", str(sq or "")).strip()
             if not normalized:
@@ -573,7 +624,7 @@ class MemoryManager:
                 continue
             seen_sq.add(low)
             dedup_sub_queries.append(normalized)
-            if len(dedup_sub_queries) >= max(1, int(self.query_plan_max_sub_queries)):
+            if len(dedup_sub_queries) >= max_sub_q:
                 break
         plan["sub_queries"] = dedup_sub_queries
         return plan

@@ -329,7 +329,7 @@ retrieval:
     dedup_by_text: true
   global_sentence_retrieval:
     enabled: true
-    top_n: 48
+    top_n: 40
     rrf_k: 60
     dense_weight: 1.2
     lexical_weight: 1.0
@@ -367,14 +367,14 @@ retrieval:
     temperature: 0.0
     timeout_sec: 120
     max_queries: 4
-    top_n_per_query: 12
-    additive_limit: 10
+    top_n_per_query: 8
+    additive_limit: 6
     max_output_tokens: 120
     force_json_output: true
     think: false
   query_plan:
     enabled: true
-    max_sub_queries: 6
+    max_sub_queries: 4
     slot_coverage_weight: 0.35
     llm_assist_enabled: true
     llm_phrase_max: 3
@@ -383,8 +383,8 @@ retrieval:
     enabled: true
     max_rounds: 2
     max_queries: 2
-    top_n_per_query: 10
-    additive_limit: 10
+    top_n_per_query: 8
+    additive_limit: 6
   compare_option_pool:
     top_n_chunks_per_option: 3
   graph_build_retry:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -260,6 +261,103 @@ def _score_row_quality(row: Dict[str, object]) -> Dict[str, object]:
     return {"quality_tier": tier, "quality_score": score, "quality_reasons": reasons}
 
 
+_AUDIT_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_AUDIT_NOISE_RE = re.compile(
+    r"\b("
+    r"tips?|how to|guide|tutorial|example script|i'm a large language model|"
+    r"i do not have|don't have personal|recommendations?"
+    r")\b"
+)
+
+
+def _audit_tokens(text: str) -> List[str]:
+    return _AUDIT_TOKEN_RE.findall(_as_text(text).lower())
+
+
+def _row_audit_metrics(row: Dict[str, object]) -> Dict[str, float]:
+    items = list(row.get("source_1_rag_evidence_top", []))
+    total = max(1, len(items))
+    noisy = 0
+    long_plan = 0
+    gold_tokens = set(_audit_tokens(_as_text(row.get("gold", ""))))
+    best_f1 = 0.0
+    best_rec = 0.0
+
+    for item in items:
+        text = _as_text(item.get("text", ""))
+        if _AUDIT_NOISE_RE.search(text.lower()):
+            noisy += 1
+        if _as_text(item.get("channel", "")) == "plan_combined_evidence" and len(text) > 600:
+            long_plan += 1
+        cand_tokens = set(_audit_tokens(text))
+        if gold_tokens and cand_tokens:
+            overlap = len(gold_tokens.intersection(cand_tokens))
+            if overlap > 0:
+                precision = float(overlap) / float(len(cand_tokens))
+                recall = float(overlap) / float(len(gold_tokens))
+                f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+                best_f1 = max(best_f1, f1)
+                best_rec = max(best_rec, recall)
+
+    return {
+        "noisy_ratio": float(noisy) / float(total),
+        "long_plan_ratio": float(long_plan) / float(total),
+        "best_f1": best_f1,
+        "best_rec": best_rec,
+    }
+
+
+def _summarize_rows(rows: List[Dict[str, object]]) -> Dict[str, object]:
+    total = max(1, len(rows))
+    quality_high = 0
+    quality_medium = 0
+    quality_low = 0
+    sum_quality = 0.0
+    sum_noisy = 0.0
+    sum_long_plan = 0.0
+    sum_best_f1 = 0.0
+    sum_best_rec = 0.0
+    coverage_f1_pos = 0
+    coverage_rec50 = 0
+
+    for row in rows:
+        tier = _as_text(row.get("quality_tier", ""))
+        if tier == "high":
+            quality_high += 1
+        elif tier == "medium":
+            quality_medium += 1
+        else:
+            quality_low += 1
+        sum_quality += float(row.get("quality_score", 0.0))
+
+        metrics = dict(row.get("audit_metrics", {}) or {})
+        noisy_ratio = float(metrics.get("noisy_ratio", 0.0))
+        long_plan_ratio = float(metrics.get("long_plan_ratio", 0.0))
+        best_f1 = float(metrics.get("best_f1", 0.0))
+        best_rec = float(metrics.get("best_rec", 0.0))
+        sum_noisy += noisy_ratio
+        sum_long_plan += long_plan_ratio
+        sum_best_f1 += best_f1
+        sum_best_rec += best_rec
+        if best_f1 > 0.0:
+            coverage_f1_pos += 1
+        if best_rec >= 0.5:
+            coverage_rec50 += 1
+
+    return {
+        "quality_high": quality_high,
+        "quality_medium": quality_medium,
+        "quality_low": quality_low,
+        "avg_quality_score": sum_quality / float(total),
+        "avg_noisy_ratio": sum_noisy / float(total),
+        "avg_long_plan_ratio": sum_long_plan / float(total),
+        "avg_best_f1": sum_best_f1 / float(total),
+        "avg_best_rec": sum_best_rec / float(total),
+        "coverage_f1_pos": coverage_f1_pos,
+        "coverage_rec50": coverage_rec50,
+    }
+
+
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
@@ -367,6 +465,7 @@ def main() -> None:
             },
         }
         row.update(_score_row_quality(row))
+        row["audit_metrics"] = _row_audit_metrics(row)
         rows.append(row)
 
         print(
@@ -383,6 +482,21 @@ def main() -> None:
 
     out_json = output_dir / f"{prefix}_{tag}__{stem}.json"
     out_json.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary = _summarize_rows(rows)
+    out_summary = output_dir / f"{prefix}_{tag}__{stem}__summary.json"
+    out_summary.write_text(
+        json.dumps(
+            {
+                "dataset": Path(dataset_path).name,
+                "total": len(rows),
+                "source_json": out_json.name,
+                "metrics": summary,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     out_md = output_dir / f"{prefix}_{tag}__{stem}.md"
     lines: List[str] = [
@@ -390,6 +504,19 @@ def main() -> None:
         f"- dataset: {Path(dataset_path).name}",
         f"- total: {len(rows)}",
         f"- output_json: {out_json.name}",
+        f"- output_summary_json: {out_summary.name}",
+        "",
+        "## Summary Metrics",
+        f"- quality_high: {int(summary['quality_high'])}",
+        f"- quality_medium: {int(summary['quality_medium'])}",
+        f"- quality_low: {int(summary['quality_low'])}",
+        f"- avg_quality_score: {float(summary['avg_quality_score']):.4f}",
+        f"- avg_noisy_ratio: {float(summary['avg_noisy_ratio']):.4f}",
+        f"- avg_long_plan_ratio: {float(summary['avg_long_plan_ratio']):.4f}",
+        f"- avg_best_f1: {float(summary['avg_best_f1']):.4f}",
+        f"- avg_best_rec: {float(summary['avg_best_rec']):.4f}",
+        f"- coverage_f1_pos: {int(summary['coverage_f1_pos'])}",
+        f"- coverage_rec50: {int(summary['coverage_rec50'])}",
         "",
     ]
     for row in rows:
@@ -415,6 +542,7 @@ def main() -> None:
     out_md.write_text("\n".join(lines), encoding="utf-8")
 
     print(f"saved_json {out_json}")
+    print(f"saved_summary_json {out_summary}")
     print(f"saved_md {out_md}")
     manager.close()
 

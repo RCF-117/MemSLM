@@ -859,20 +859,101 @@ def build_gap_queries(
     out: List[str] = []
     base = _normalize_space(query)
     focus_phrases = [str(x).strip() for x in list(plan.get("focus_phrases", []))]
+    stop = {
+        "what",
+        "which",
+        "who",
+        "where",
+        "when",
+        "why",
+        "how",
+        "did",
+        "do",
+        "does",
+        "is",
+        "are",
+        "was",
+        "were",
+        "have",
+        "has",
+        "had",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "you",
+        "your",
+        "they",
+        "their",
+        "the",
+        "a",
+        "an",
+        "of",
+        "to",
+        "for",
+        "with",
+        "in",
+        "on",
+        "at",
+    }
+
+    def _compact_query(text: str, limit: int = 10) -> str:
+        toks: List[str] = []
+        seen: set[str] = set()
+        for token in _tokenize(text):
+            if len(token) < 2 or token in stop or token in seen:
+                continue
+            seen.add(token)
+            toks.append(token)
+            if len(toks) >= max(1, int(limit)):
+                break
+        return _normalize_space(" ".join(toks))
+
+    def _merge_query(primary: str, context: str, context_limit: int = 4) -> str:
+        merged: List[str] = []
+        seen: set[str] = set()
+        for token in _tokenize(primary):
+            if len(token) < 2 or token in stop or token in seen:
+                continue
+            seen.add(token)
+            merged.append(token)
+        extra = 0
+        for token in _tokenize(context):
+            if len(token) < 2 or token in stop or token in seen:
+                continue
+            seen.add(token)
+            merged.append(token)
+            extra += 1
+            if extra >= max(1, int(context_limit)):
+                break
+        return _normalize_space(" ".join(merged))
+
+    base_compact = _compact_query(base, limit=12)
+    base_context = _compact_query(base, limit=6)
 
     for item in missing_slots:
         if item.startswith("focus_phrase:"):
             phrase = item.split(":", 1)[1].strip()
-            if phrase:
-                out.extend([phrase, f"{base} {phrase}"])
+            phrase_compact = _compact_query(phrase, limit=10)
+            if phrase_compact:
+                out.append(phrase_compact)
+                if base_context:
+                    out.append(_merge_query(phrase_compact, base_context, context_limit=4))
         elif item.startswith("compare_option:"):
             opt = item.split(":", 1)[1].strip()
             if opt:
-                out.extend([opt, f"{base} {opt}"])
+                opt_compact = _compact_query(opt, limit=6) or _normalize_space(opt)
+                out.append(opt_compact)
+                if base_context:
+                    out.append(_merge_query(opt_compact, base_context, context_limit=4))
         elif item == "time_anchor":
-            out.append(f"{base} date time")
+            out.append(_merge_query(base_compact or "date time", "date time when", context_limit=3))
         elif item == "state_key":
             for key in focus_phrases[:1]:
-                out.extend([key, f"{key} current latest"])
+                key_compact = _compact_query(key, limit=8) or _normalize_space(key)
+                if key_compact:
+                    out.append(key_compact)
+                    out.append(_merge_query(key_compact, "current latest recent", context_limit=3))
 
     return _dedup_texts(out, max_queries)

@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from llm_long_memory.evaluation.eval_store import EvalStore
+from llm_long_memory.experiments.report_audit_utils import (
+    iter_audit_summary_lines,
+    load_latest_source_audit_summary,
+)
 from llm_long_memory.experiments.llm_judge import LLMJudge
 from llm_long_memory.utils.helpers import resolve_project_path, sanitize_filename_part
 
@@ -29,6 +33,17 @@ def _row_to_dict(row: sqlite3.Row | None) -> Dict[str, Any]:
     if row is None:
         return {}
     return {str(k): row[k] for k in row.keys()}
+
+
+def _run_exists(conn: sqlite3.Connection, run_table: str, run_id: str | None) -> bool:
+    candidate = str(run_id or "").strip()
+    if not candidate:
+        return False
+    row = conn.execute(
+        f"SELECT 1 FROM {run_table} WHERE run_id=? LIMIT 1",
+        (candidate,),
+    ).fetchone()
+    return row is not None
 
 
 def _collect_type_metrics(payload: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
@@ -74,10 +89,13 @@ def _resolve_mode_run_id(
     report_dir: Path,
 ) -> str:
     if explicit_run_id:
-        return str(explicit_run_id)
+        candidate = str(explicit_run_id).strip()
+        if _run_exists(conn, eval_store.run_table, candidate):
+            return candidate
+        raise ValueError(f"Explicit run_id not found in eval db for mode={mode}: {candidate}")
     if dataset_name:
         latest = eval_store.get_latest_thesis_mode_run(dataset_name=dataset_name, mode=mode)
-        if latest:
+        if latest and _run_exists(conn, eval_store.run_table, latest):
             return latest
     row = conn.execute(
         f"""
@@ -89,12 +107,16 @@ def _resolve_mode_run_id(
         """,
         (mode,),
     ).fetchone()
-    if row is not None:
+    if row is not None and _run_exists(conn, eval_store.run_table, str(row["run_id"])):
         return str(row["run_id"])
     legacy = _latest_compare_report(report_dir, dataset_name=dataset_name)
-    if mode in legacy:
+    if mode in legacy and _run_exists(conn, eval_store.run_table, legacy[mode]):
         return legacy[mode]
-    raise ValueError(f"Unable to resolve run_id for mode={mode}. Provide an explicit run id.")
+    raise ValueError(
+        f"Unable to resolve a valid run_id for mode={mode}. "
+        f"Current eval db has no matching run in {eval_store.run_table}; "
+        "old comparison artifacts are ignored unless their run_id still exists."
+    )
 
 
 def _load_mode_payload(
@@ -202,6 +224,7 @@ def _write_comparison_report(
     model_name: str,
     judge_model: str,
     mode_payloads: Dict[str, Dict[str, Any]],
+    source_audit_summary: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     out_dir = resolve_project_path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -250,6 +273,8 @@ def _write_comparison_report(
         "type_answer_acc": type_answer_rows,
         "type_latency_sec": type_latency_rows,
     }
+    if source_audit_summary:
+        comparison["source_audit_summary"] = source_audit_summary
 
     json_path = out_dir / f"{artifact_prefix}_comparison.json"
     md_path = out_dir / f"{artifact_prefix}_comparison.md"
@@ -283,11 +308,17 @@ def _write_comparison_report(
         "- primary_mode: `memslm`",
         "- note: this report is a single consolidated comparison; no per-mode reports are emitted.",
         "",
-        "## Run Summary",
-        "",
-        "| mode | run_id | final_answer_acc | avg_latency_sec | retrieval_answer_span_hit_rate | retrieval_support_sentence_hit_rate | graph_answer_span_hit_rate | graph_support_sentence_hit_rate | graph_ingest_accept_rate |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    if source_audit_summary:
+        md_lines.extend(list(iter_audit_summary_lines(source_audit_summary)))
+    md_lines.extend(
+        [
+            "## Run Summary",
+            "",
+            "| mode | run_id | final_answer_acc | avg_latency_sec | retrieval_answer_span_hit_rate | retrieval_support_sentence_hit_rate | graph_answer_span_hit_rate | graph_support_sentence_hit_rate | graph_ingest_accept_rate |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     for row in summary_rows:
         md_lines.append(
             "| {mode} | {run_id} | {final_answer_acc:.4f} | {avg_latency_sec:.4f} | {retrieval_answer_span_hit_rate:.4f} | {retrieval_support_sentence_hit_rate:.4f} | {graph_answer_span_hit_rate:.4f} | {graph_support_sentence_hit_rate:.4f} | {graph_ingest_accept_rate:.4f} |".format(
@@ -418,6 +449,7 @@ def build_consolidated_report(
                     break
         if not resolved_dataset_name:
             resolved_dataset_name = "unknown"
+        source_audit_summary = load_latest_source_audit_summary(report_root, resolved_dataset_name)
 
         artifact_prefix = "__".join(
             [
@@ -434,6 +466,7 @@ def build_consolidated_report(
             model_name=model_name,
             judge_model=judge_model,
             mode_payloads=mode_payloads,
+            source_audit_summary=source_audit_summary,
         )
     finally:
         conn.close()

@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from llm_long_memory.evaluation.eval_store import EvalStore
+from llm_long_memory.experiments.report_audit_utils import (
+    iter_audit_summary_lines,
+    load_latest_source_audit_summary,
+)
 from llm_long_memory.experiments.llm_judge import LLMJudge
 from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
@@ -202,18 +206,20 @@ def export_report(
             if node_graph_file.exists():
                 node_graph_payload = json.loads(node_graph_file.read_text(encoding="utf-8"))
 
+        out_dir = resolve_project_path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        source_audit_summary = load_latest_source_audit_summary(out_dir, resolved_dataset_name)
         payload = {
             "run": summary,
             "question_type_metrics": grouped,
             "rows": enriched_rows,
         }
+        if source_audit_summary:
+            payload["source_audit_summary"] = source_audit_summary
         if graph_payload:
             payload["graph_eval"] = graph_payload
         if node_graph_payload:
             payload["node_graph_eval"] = node_graph_payload
-
-        out_dir = resolve_project_path(output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
         file_prefix = artifact_prefix or "__".join(
             [
                 sanitize_filename_part(resolved_run_id),
@@ -250,6 +256,8 @@ def export_report(
             f"- graph_ingest_accept_rate: `{_safe_float(summary.get('graph_ingest_accept_rate')) or 0.0:.4f}`",
             f"- avg_latency_sec: `{_safe_float(summary.get('avg_latency_sec')) or 0.0:.4f}`",
         ]
+        if source_audit_summary:
+            md_lines.extend([""] + list(iter_audit_summary_lines(source_audit_summary)))
         if judge_enabled:
             md_lines.extend(
                 [
@@ -352,6 +360,13 @@ def export_report(
             f"{_safe_float(summary.get('graph_ingest_accept_rate')) or 0.0:.4f}"
         )
         print(f"- avg_latency_sec: {_safe_float(summary.get('avg_latency_sec')) or 0.0:.4f}")
+        if source_audit_summary:
+            print("- answer_source_audit_summary:")
+            for line in iter_audit_summary_lines(source_audit_summary):
+                clean = str(line).strip()
+                if not clean or clean.startswith("## "):
+                    continue
+                print(f"  {clean}")
         print("- type_latency_sec:")
         for row in grouped:
             print(

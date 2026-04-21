@@ -211,6 +211,38 @@ class AnswerCandidateExtractor:
     def collect_evidence_sentences(
         self, query: str, reranked_chunks: List[Dict[str, object]]
     ) -> List[Dict[str, object]]:
+        query_tokens = set(self.tokenize(query))
+
+        def _sentence_noise_penalty(sentence: str, overlap: float) -> float:
+            low = self.normalize_space(sentence).lower()
+            if not low:
+                return 1.0
+            penalty = 0.0
+            if (
+                "large language model" in low
+                or "as an ai" in low
+                or "i'm just an ai" in low
+                or "don't have personal experiences" in low
+                or "do not have personal experiences" in low
+                or "don't have access" in low
+                or "do not have access" in low
+            ):
+                penalty += 0.38
+            if re.search(r"\b(tips?|how to|guide|tutorial|best practices?)\b", low):
+                penalty += 0.18
+            if low.endswith("?"):
+                penalty += 0.10
+            if re.search(r"\b(you can|consider|try|should|recommended?)\b", low):
+                penalty += 0.08
+            tok_count = len(self.tokenize(low))
+            if tok_count <= 3 and overlap < 0.40:
+                penalty += 0.10
+            if overlap >= 0.45:
+                penalty *= 0.5
+            elif overlap >= 0.30:
+                penalty *= 0.75
+            return penalty
+
         top_chunks = sorted(
             reranked_chunks,
             key=lambda x: float(x.get("score", 0.0)),
@@ -224,7 +256,18 @@ class AnswerCandidateExtractor:
                 clipped = sentence[: self.evidence_sentence_max_chars].strip()
                 if not clipped:
                     continue
-                score = self.sentence_overlap_score(query, clipped, chunk_score)
+                stoks = set(self.tokenize(clipped))
+                overlap = (
+                    float(len(query_tokens.intersection(stoks))) / float(len(query_tokens))
+                    if query_tokens and stoks
+                    else 0.0
+                )
+                penalty = _sentence_noise_penalty(clipped, overlap)
+                if penalty >= 0.55 and overlap < 0.24:
+                    continue
+                score = self.sentence_overlap_score(query, clipped, chunk_score) - penalty
+                if score <= 0.0:
+                    continue
                 evidence.append(
                     {
                         "text": clipped,
