@@ -62,8 +62,8 @@ def run_eval(
     offline_graph_build_enabled = bool(eval_cfg.get("offline_graph_build_enabled", False))
     graph_metric_enabled = bool(
         offline_graph_build_enabled
+        or bool(getattr(manager, "evidence_graph_enabled", False))
         or bool(getattr(manager, "long_memory_enabled", False))
-        or bool(getattr(manager, "long_memory_query_graph_enabled", False))
     )
 
     prev_temporal_disabled = bool(getattr(manager.mid_memory, "temporal_weight_disabled", False))
@@ -177,7 +177,13 @@ def run_eval(
                         manager.long_memory, "export_snapshot_to_store"
                     ):
                         manager.long_memory.export_snapshot_to_store(graph_accumulator_store)
-                if graph_metric_enabled and hasattr(manager.long_memory, "build_context_snippets"):
+                if bool(getattr(manager, "evidence_graph_enabled", False)):
+                    graph_bundle = manager.build_evidence_graph_bundle(
+                        question,
+                        precomputed_context=precomputed_context,
+                    )
+                    graph_context_chunks = manager.chat_runtime.graph_bundle_to_chunks(graph_bundle)
+                elif graph_metric_enabled and hasattr(manager.long_memory, "build_context_snippets"):
                     graph_snippets = manager.long_memory.build_context_snippets(question)
                     graph_context_chunks = [{"text": snippet} for snippet in graph_snippets if str(snippet).strip()]
                 if compute_evidence_recall:

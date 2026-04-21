@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
 from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
-from llm_long_memory.memory.graph_query_engine import GraphQueryEngine
+from llm_long_memory.memory.evidence_filter import EvidenceFilter
+from llm_long_memory.memory.evidence_graph_extractor import EvidenceGraphExtractor
+from llm_long_memory.memory.evidence_light_graph import EvidenceLightGraph
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
 from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
@@ -37,21 +39,13 @@ Message = Dict[str, Any]
 class _NoOpLongMemory:
     """Disabled long-memory stub to avoid runtime overhead and code-path noise."""
 
-    query_rewrite_enabled = False
-    query_rewrite_max = 0
     cleared = False
     closed = False
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         return []
 
-    def query_multi(self, query_texts: List[str]) -> List[Dict[str, Any]]:
-        return []
-
     def build_context_snippets(self, query_text: str) -> List[str]:
-        return []
-
-    def build_context_snippets_multi(self, query_texts: List[str]) -> List[str]:
         return []
 
     def ingest_from_chunks(
@@ -113,15 +107,11 @@ class MemoryManager:
         short_size = int(self.config["memory"]["short_memory_size"])
         self.short_memory = ShortMemory(max_turns=short_size, config=self.config)
         self.mid_memory = MidMemory(config=self.config)
-        lm_ctx_cfg = dict(self.config["retrieval"].get("long_memory_context", {}))
         long_mem_cfg = dict(self.config["memory"]["long_memory"])
         self.long_memory_enabled = bool(long_mem_cfg.get("enabled", False))
-        self.long_memory_query_graph_enabled = bool(
-            lm_ctx_cfg.get("query_graph_enabled", False)
-        )
         self.long_memory = (
             LongMemory(config=self.config)
-            if (self.long_memory_enabled or self.long_memory_query_graph_enabled)
+            if self.long_memory_enabled
             else _NoOpLongMemory()
         )
         answering_cfg = dict(self.config["retrieval"]["answering"])
@@ -223,6 +213,20 @@ class MemoryManager:
         self.gap_detector_max_queries = int(gap_cfg.get("max_queries", 2))
         self.gap_detector_top_n_per_query = int(gap_cfg.get("top_n_per_query", 10))
         self.gap_detector_additive_limit = int(gap_cfg.get("additive_limit", 10))
+        self.evidence_graph_cfg = dict(self.config["retrieval"].get("evidence_graph", {}))
+        self.evidence_graph_enabled = bool(self.evidence_graph_cfg.get("enabled", False))
+        self.evidence_filter_enabled = bool(
+            self.evidence_graph_cfg.get("filter_enabled", self.evidence_graph_enabled)
+        )
+        self.evidence_graph_claims_enabled = bool(
+            self.evidence_graph_cfg.get("claims_enabled", self.evidence_graph_enabled)
+        )
+        self.evidence_light_graph_enabled = bool(
+            self.evidence_graph_cfg.get("light_graph_enabled", self.evidence_graph_enabled)
+        )
+        self.evidence_filter = EvidenceFilter(self.evidence_graph_cfg)
+        self.evidence_graph_extractor = EvidenceGraphExtractor(self, self.evidence_graph_cfg)
+        self.evidence_light_graph = EvidenceLightGraph(self.evidence_graph_cfg)
 
         graph_retry_cfg = dict(self.config["retrieval"].get("graph_build_retry", {}))
         self.graph_build_retry_enabled = bool(graph_retry_cfg.get("enabled", False))
@@ -248,13 +252,9 @@ class MemoryManager:
             if str(k).strip()
         }
         self.chat_runtime = MemoryManagerChatRuntime(self)
-        self.graph_query_engine = (
-            GraphQueryEngine(self.long_memory)
-            if self.long_memory_enabled
-            else None
-        )
         self.last_prompt_eval_chunks: List[Dict[str, str]] = []
         self.last_query_plan: Dict[str, object] = {}
+        self.last_evidence_graph_bundle: Dict[str, object] = {}
         logger.info("MemoryManager initialized.")
 
     @staticmethod
@@ -663,38 +663,6 @@ class MemoryManager:
             additive_limit=additive_limit,
         )
 
-    def _rewrite_query_for_long_memory(self, query: str) -> List[str]:
-        """Use main LLM once to create a few retrieval-friendly rewrites."""
-        if not bool(getattr(self.long_memory, "query_rewrite_enabled", False)):
-            return [query]
-        max_rewrites = max(0, int(getattr(self.long_memory, "query_rewrite_max", 2)))
-        if max_rewrites <= 0:
-            return [query]
-        prompt = (
-            "Rewrite the query into short retrieval-oriented paraphrases.\n"
-            "Return strict JSON only with format: "
-            '{"rewrites":["...","..."]}\n'
-            f"max_rewrites={max_rewrites}\n"
-            f"query={query}"
-        )
-        try:
-            raw = self.llm.chat([{"role": "user", "content": prompt}])
-            data = json.loads(str(raw).strip())
-            rewrites = [
-                str(x).strip()
-                for x in list(data.get("rewrites", []))
-                if str(x).strip()
-            ]
-            uniq: List[str] = [query]
-            for rw in rewrites:
-                if rw not in uniq:
-                    uniq.append(rw)
-                if len(uniq) >= (max_rewrites + 1):
-                    break
-            return uniq
-        except (RuntimeError, ValueError, TypeError, json.JSONDecodeError):
-            return [query]
-
     def retrieve_context(
         self, query: str
     ) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]:
@@ -901,30 +869,262 @@ class MemoryManager:
                 continue
             context_parts.append(f"[Chunk {index}]\n{text}")
         context_text = "\n\n".join(context_parts)
-
-        lm_ctx_cfg = dict(self.config["retrieval"].get("long_memory_context", {}))
-        if bool(lm_ctx_cfg.get("enabled", False)):
-            rewritten_queries = self._rewrite_query_for_long_memory(query)
-            if len(rewritten_queries) > 1:
-                long_snippets = self.long_memory.build_context_snippets_multi(rewritten_queries)
-            else:
-                long_snippets = self.long_memory.build_context_snippets(query)
-            if long_snippets:
-                long_block = "[Long Memory]\n" + "\n".join(long_snippets)
-                prepend_long = bool(lm_ctx_cfg.get("prepend_before_mid_context", True))
-                if prepend_long and context_text:
-                    context_text = f"{long_block}\n\n{context_text}"
-                elif prepend_long:
-                    context_text = long_block
-                elif context_text:
-                    context_text = f"{context_text}\n\n{long_block}"
-                else:
-                    context_text = long_block
-                logger.info(
-                    "MemoryManager.retrieve_context: "
-                    f"long_memory_hits={len(long_snippets)}."
-                )
         return context_text, [], merged_units
+
+    @staticmethod
+    def _top_text_items(items: List[Dict[str, object]], limit: int = 5) -> List[Dict[str, object]]:
+        ranked = sorted(items, key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        out: List[Dict[str, object]] = []
+        for item in ranked[: max(1, int(limit))]:
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            out.append(
+                {
+                    "text": text,
+                    "score": float(item.get("score", 0.0)),
+                    "chunk_id": int(item.get("chunk_id", 0) or 0),
+                    "session_date": str(item.get("session_date", "")),
+                }
+            )
+        return out
+
+    def _build_plan_combined_evidence(
+        self,
+        *,
+        chunks: List[Dict[str, object]],
+        plan: Dict[str, object],
+        limit: int = 5,
+    ) -> List[Dict[str, object]]:
+        focus_phrases = [
+            str(x).strip()
+            for x in (
+                list(plan.get("focus_phrases", []))
+                + list(plan.get("entities", []))
+                + list(plan.get("compare_options", []))
+                + list(plan.get("state_keys", []))
+            )
+            if str(x).strip()
+        ]
+        target_object = str(plan.get("target_object", "")).strip()
+        if target_object:
+            focus_phrases.insert(0, target_object)
+        dedup_focus: List[str] = []
+        seen_focus: set[str] = set()
+        for phrase in focus_phrases:
+            low = phrase.lower()
+            if low in seen_focus:
+                continue
+            seen_focus.add(low)
+            dedup_focus.append(phrase)
+            if len(dedup_focus) >= 8:
+                break
+
+        plan_keywords = [
+            str(x).strip().lower()
+            for x in (
+                list(plan.get("must_keywords", []))
+                + list(plan.get("constraint_keywords", []))
+                + list(plan.get("plan_keywords", []))
+            )
+            if str(x).strip()
+        ]
+
+        def _contains_phrase(text_low: str, phrase: str) -> bool:
+            p = str(phrase or "").strip().lower()
+            if not p:
+                return False
+            ptoks = re.findall(r"[a-z0-9]+", p)
+            ttoks = set(re.findall(r"[a-z0-9]+", text_low))
+            if not ptoks or not ttoks:
+                return False
+            if len(ptoks) == 1:
+                return ptoks[0] in ttoks
+            return all(tok in ttoks for tok in ptoks)
+
+        ranked: List[Dict[str, object]] = []
+        for item in chunks:
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            low = text.lower()
+            phrase_hits = sum(1 for phrase in dedup_focus if _contains_phrase(low, phrase))
+            keyword_hits = sum(1 for kw in plan_keywords if kw and kw in low)
+            if phrase_hits <= 0 and keyword_hits <= 1:
+                continue
+            score = (
+                float(item.get("score", 0.0))
+                + (0.26 * min(phrase_hits, 3))
+                + (0.08 * min(keyword_hits, 4))
+            )
+            ranked.append(
+                {
+                    "text": text,
+                    "score": score,
+                    "chunk_id": int(item.get("chunk_id", 0) or 0),
+                    "session_date": str(item.get("session_date", "")),
+                    "channel": "plan_combined_evidence",
+                }
+            )
+        ranked.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        out: List[Dict[str, object]] = []
+        seen: set[str] = set()
+        for item in ranked:
+            norm = re.sub(r"\s+", " ", str(item.get("text", "")).strip().lower())
+            if not norm or norm in seen:
+                continue
+            seen.add(norm)
+            out.append(item)
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
+    def _build_evidence_graph_source(
+        self,
+        *,
+        query: str,
+        chunks: List[Dict[str, object]],
+        evidence_sentences: List[Dict[str, object]],
+        evidence_pack: Dict[str, object],
+        plan: Dict[str, object],
+    ) -> List[Dict[str, object]]:
+        rag_items = [
+            {**item, "channel": "rag_evidence"}
+            for item in self._top_text_items(evidence_sentences, limit=6)
+        ]
+        if not rag_items:
+            rag_items = [
+                {**item, "channel": "rag_evidence"}
+                for item in self._top_text_items(chunks, limit=4)
+            ]
+        pack_items: List[Dict[str, object]] = []
+        for raw in list(evidence_pack.get("lines", []))[:8]:
+            text = str(raw).strip()
+            if text.startswith("- "):
+                text = text[2:].strip()
+            if not text:
+                continue
+            pack_items.append(
+                {
+                    "text": text,
+                    "score": 0.0,
+                    "chunk_id": 0,
+                    "session_date": "",
+                    "channel": "evidence_pack",
+                }
+            )
+        plan_items = self._build_plan_combined_evidence(chunks=chunks, plan=plan, limit=6)
+
+        merged: List[Dict[str, object]] = []
+        seen: set[str] = set()
+        for item in rag_items + pack_items + plan_items:
+            text = str(item.get("text", "")).strip()
+            key = re.sub(r"\s+", " ", text.lower())
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            merged.append(
+                {
+                    "text": text,
+                    "score": float(item.get("score", 0.0)),
+                    "chunk_id": int(item.get("chunk_id", 0) or 0),
+                    "session_date": str(item.get("session_date", "")),
+                    "channel": str(item.get("channel", "")),
+                }
+            )
+            if len(merged) >= 24:
+                break
+        return merged
+
+    def build_evidence_graph_bundle(
+        self,
+        query: str,
+        precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]] = None,
+        evidence_sentences: Optional[List[Dict[str, object]]] = None,
+        evidence_pack: Optional[Dict[str, object]] = None,
+        enable_filter: Optional[bool] = None,
+        enable_claims: Optional[bool] = None,
+        enable_light_graph: Optional[bool] = None,
+    ) -> Dict[str, object]:
+        if precomputed_context is None:
+            _context_text, _topics, chunks = self.retrieve_context(query)
+        else:
+            _context_text, _topics, chunks = precomputed_context
+            if not self.last_query_plan:
+                self.last_query_plan = self._build_query_plan(query)
+        plan = dict(self.last_query_plan or self._build_query_plan(query))
+        use_filter = self.evidence_filter_enabled if enable_filter is None else bool(enable_filter)
+        use_claims = (
+            self.evidence_graph_claims_enabled if enable_claims is None else bool(enable_claims)
+        )
+        use_light_graph = (
+            self.evidence_light_graph_enabled
+            if enable_light_graph is None
+            else bool(enable_light_graph)
+        )
+        if use_light_graph and not use_claims:
+            use_claims = True
+        if use_claims and not use_filter:
+            use_filter = True
+        evidence_sentences = list(evidence_sentences or [])
+        if not evidence_sentences:
+            evidence_sentences = self.answering.collect_evidence_sentences(query, chunks)
+        pack_payload = dict(evidence_pack or {})
+        if not pack_payload:
+            pack_payload = self.chat_runtime._build_evidence_pack(
+                query=query,
+                evidence_sentences=evidence_sentences,
+                chunks=chunks,
+            )
+        unified_source = self._build_evidence_graph_source(
+            query=query,
+            chunks=chunks,
+            evidence_sentences=evidence_sentences,
+            evidence_pack=pack_payload,
+            plan=plan,
+        )
+        filtered_pack: Dict[str, object] = {}
+        if use_filter:
+            filtered_pack = self.evidence_filter.build_filtered_pack(
+                query=query,
+                query_plan=plan,
+                unified_source=unified_source,
+            )
+        extraction: Dict[str, object] = {
+            "enabled": False,
+            "model": getattr(self.evidence_graph_extractor, "model", ""),
+            "claims": [],
+            "raw_batches": [],
+            "stats": {
+                "selected_evidence": 0,
+                "batches": 0,
+                "claims": 0,
+            },
+        }
+        if use_claims and filtered_pack:
+            extraction = self.evidence_graph_extractor.extract_claims(filtered_pack)
+        graph: Dict[str, object] = {"query": str(query or ""), "answer_type": str(plan.get("answer_type", "")), "nodes": [], "edges": [], "stats": {"node_count": 0, "edge_count": 0, "entity_count": 0, "claim_count": 0}}
+        if use_light_graph and filtered_pack:
+            graph = self.evidence_light_graph.build_graph(
+                query=query,
+                filtered_pack=filtered_pack,
+                claims=list(extraction.get("claims", [])),
+            )
+        bundle = {
+            "query": str(query or ""),
+            "query_plan": plan,
+            "stage_flags": {
+                "filter_enabled": use_filter,
+                "claims_enabled": use_claims,
+                "light_graph_enabled": use_light_graph,
+            },
+            "unified_source": unified_source,
+            "filtered_pack": filtered_pack,
+            "claim_result": extraction,
+            "light_graph": graph,
+        }
+        self.last_evidence_graph_bundle = bundle
+        return bundle
 
     def ingest_message(self, message: Message) -> None:
         """Ingest one dataset message into memory without calling the LLM."""
@@ -1091,9 +1291,6 @@ class MemoryManager:
             fallback_answer=fallback_answer,
             evidence_candidate=evidence_candidate,
         )
-
-    def _build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
-        return self.chat_runtime.build_graph_context(query, chunks)
 
     def offline_build_long_graph_from_chunks(
         self,

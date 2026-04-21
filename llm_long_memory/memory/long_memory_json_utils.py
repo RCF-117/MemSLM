@@ -20,12 +20,22 @@ def extract_first_json_block(text: str) -> str:
     )
     if code_block:
         return str(code_block.group(1)).strip()
+    if stripped.startswith("{"):
+        obj_end = stripped.rfind("}")
+        if obj_end > 0:
+            return stripped[: obj_end + 1]
+    if stripped.startswith("["):
+        array_end = stripped.rfind("]")
+        if array_end > 0:
+            return stripped[: array_end + 1]
     array_start = stripped.find("[")
     array_end = stripped.rfind("]")
-    if array_start >= 0 and array_end > array_start:
-        return stripped[array_start : array_end + 1]
     obj_start = stripped.find("{")
     obj_end = stripped.rfind("}")
+    if obj_start >= 0 and (array_start < 0 or obj_start < array_start) and obj_end > obj_start:
+        return stripped[obj_start : obj_end + 1]
+    if array_start >= 0 and array_end > array_start:
+        return stripped[array_start : array_end + 1]
     if obj_start >= 0 and obj_end > obj_start:
         return stripped[obj_start : obj_end + 1]
     return stripped
@@ -63,4 +73,3 @@ def safe_json_loads_relaxed(text: str) -> Any:
         except (ValueError, SyntaxError):
             continue
     return {}
-

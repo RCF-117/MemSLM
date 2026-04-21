@@ -352,9 +352,6 @@ class LongMemory:
         self._extractor_retry_compact = 0
         self.staging_enabled = bool(self.cfg.get("staging_enabled", True))
 
-        self.query_rewrite_enabled = bool(self.cfg.get("query_rewrite_enabled", False))
-        self.query_rewrite_max = max(0, int(self.cfg.get("query_rewrite_max", 2)))
-
         self.store = LongMemoryStore(
             database_file=str(self.cfg["database_file"]),
             sqlite_busy_timeout_ms=int(self.cfg.get("sqlite_busy_timeout_ms", 5000)),
@@ -504,20 +501,11 @@ class LongMemory:
     def _normalize_space(text: str) -> str:
         return LongMemoryTextUtils.normalize_space(text)
 
-    def _span_grounded(self, span: str, content: str) -> bool:
-        return self._gate.span_overlap_ratio(span, content) >= 0.8
-
     def _span_overlap_ratio(self, span: str, content: str) -> float:
         return self._gate.span_overlap_ratio(span, content)
 
     def _normalize_fact_component(self, text: str) -> str:
         return self._text.normalize_fact_component(text)
-
-    def _build_fact_key(self, subject: str, action: str, obj: str) -> str:
-        return self._text.build_fact_key(subject, action, obj)
-
-    def _is_pronoun_subject(self, subject: str) -> bool:
-        return self._gate.is_pronoun_subject(subject)
 
     def _event_is_valid(
         self,
@@ -536,12 +524,12 @@ class LongMemory:
             return False
         if self.extractor_require_action and not action:
             return False
-        if self.extractor_reject_pronoun_subject and self._is_pronoun_subject(subject):
+        if self.extractor_reject_pronoun_subject and self._gate.is_pronoun_subject(subject):
             return False
         if self.extractor_require_evidence_span:
             if not evidence_span:
                 return False
-            if not self._span_grounded(evidence_span, source_content):
+            if self._gate.span_overlap_ratio(evidence_span, source_content) < 0.8:
                 return False
         return True
 
@@ -572,7 +560,7 @@ class LongMemory:
         skeleton = str(event_text).strip() or f"{subject} | {action} | {obj}".strip()
         if not skeleton:
             return
-        fact_key = self._build_fact_key(subject, action, obj)
+        fact_key = self._text.build_fact_key(subject, action, obj)
         staging_id = self._stable_id(
             "staging",
             f"{fact_key}|{skeleton}|{raw_span}|{reason}|{self.current_step + 1}",
@@ -628,9 +616,6 @@ class LongMemory:
     @staticmethod
     def _split_sentences(text: str) -> List[str]:
         return LongMemoryTextUtils.split_sentences(text)
-
-    def _pack_sentences(self, text: str, max_chars: int) -> List[str]:
-        return self._text.pack_sentences(text, max_chars)
 
     @staticmethod
     def _extract_first_json_block(text: str) -> str:
@@ -725,12 +710,6 @@ class LongMemory:
             return {"keywords": self._keyword_candidates_from_text(query), "skeleton": query}
 
     @staticmethod
-    def _strip_role_prefix(text: str) -> str:
-        value = str(text or "").strip()
-        if not value:
-            return ""
-        return re.sub(r"^\((?:user|assistant|system)\)\s*", "", value, flags=re.IGNORECASE).strip()
-
     def _normalize_long_memory_chunk(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize mid-memory chunk payload into long-memory ingestion shape."""
         raw_text = str(item.get("text", "")).strip()
@@ -742,7 +721,7 @@ class LongMemory:
         if role not in {"user", "assistant", "system"}:
             role = "user"
 
-        text = self._strip_role_prefix(raw_text)
+        text = re.sub(r"^\((?:user|assistant|system)\)\s*", "", raw_text, flags=re.IGNORECASE).strip()
 
         session_date = str(
             item.get("session_date")
@@ -849,7 +828,7 @@ class LongMemory:
                 if self.offline_pack_enabled:
                     packs = self._build_evidence_packs([text], int(max_chars_per_chunk))
                 else:
-                    packs = self._pack_sentences(text, int(max_chars_per_chunk))
+                    packs = self._text.pack_sentences(text, int(max_chars_per_chunk))
                 for packed in packs:
                     supplement.append({"role": role, "text": packed, "session_date": session_date})
             merged: List[Dict[str, str]] = []
@@ -894,7 +873,7 @@ class LongMemory:
                 if dedup_key in seen_event_keys:
                     continue
                 seen_event_keys.add(dedup_key)
-                self._persist_event(event)
+                self._persist_engine.persist_event(event)
                 accepted += 1
         if accepted > 0:
             self.store.commit()
@@ -1030,51 +1009,11 @@ class LongMemory:
 
         return self._dedup_chunks_keep_best(chosen)
 
-    def _persist_event(self, event: Dict[str, Any]) -> None:
-        self._persist_engine.persist_event(event)
-
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         return LongMemoryQueryEngine(self).query(query_text)
 
-    def query_multi(self, query_texts: List[str]) -> List[Dict[str, Any]]:
-        merged: Dict[str, Dict[str, Any]] = {}
-        for q in query_texts:
-            for item in self.query(q):
-                eid = str(item.get("event_id", ""))
-                if not eid:
-                    continue
-                prev = merged.get(eid)
-                if prev is None or float(item["score"]) > float(prev["score"]):
-                    merged[eid] = dict(item)
-        out = sorted(merged.values(), key=lambda x: float(x["score"]), reverse=True)
-        return out[: self.retrieval_top_k]
-
     def build_context_snippets(self, query_text: str) -> List[str]:
         items = self.query(query_text)
-        out: List[str] = []
-        start_idx = 0
-        if self.context_chain_enabled and items:
-            chain_size = max(1, int(self.context_chain_size))
-            chain_items = items[:chain_size]
-            chain_lines: List[str] = []
-            for idx, item in enumerate(chain_items, start=1):
-                text = str(item.get("text", "")).strip()
-                if not text:
-                    continue
-                chain_lines.append(f"[{idx}] {text[: self.context_max_chars_per_item]}")
-            if chain_lines:
-                out.append(" || ".join(chain_lines)[: self.context_chain_max_chars])
-                start_idx = len(chain_items)
-
-        for item in items[start_idx : start_idx + max(0, self.context_max_items)]:
-            text = str(item.get("text", "")).strip()
-            if not text:
-                continue
-            out.append(text[: self.context_max_chars_per_item])
-        return out
-
-    def build_context_snippets_multi(self, query_texts: List[str]) -> List[str]:
-        items = self.query_multi(query_texts)
         out: List[str] = []
         start_idx = 0
         if self.context_chain_enabled and items:

@@ -606,6 +606,67 @@ class MemoryManagerChatRuntime:
             return ""
         return "[Evidence Pack]\n" + "\n".join(lines)
 
+    @staticmethod
+    def _claim_to_text(claim: Dict[str, object]) -> str:
+        subject = str(claim.get("subject", "")).strip()
+        predicate = str(claim.get("predicate", "")).strip()
+        value = str(claim.get("value", "")).strip()
+        if not subject or not predicate or not value:
+            return ""
+        parts = [f"{subject} | {predicate} | {value}"]
+        time_anchor = str(claim.get("time_anchor", "")).strip()
+        status = str(claim.get("status", "")).strip().lower()
+        if time_anchor:
+            parts.append(f"time={time_anchor}")
+        if status and status != "unknown":
+            parts.append(f"status={status}")
+        return " | ".join(parts)
+
+    def graph_bundle_to_chunks(
+        self,
+        bundle: Dict[str, object],
+        *,
+        max_claims: int = 6,
+        max_evidence: int = 4,
+    ) -> List[Dict[str, str]]:
+        chunks: List[Dict[str, str]] = []
+        claims = list(dict(bundle.get("claim_result", {}) or {}).get("claims", []))
+        seen: set[str] = set()
+        for claim in claims[: max(1, int(max_claims))]:
+            text = self._normalize_space(self._claim_to_text(dict(claim)))
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            chunks.append({"text": text, "section": "graph_claim"})
+
+        if not chunks:
+            filtered = dict(bundle.get("filtered_pack", {}) or {})
+            selected = list(filtered.get("core_evidence", [])) + list(filtered.get("supporting_evidence", []))
+            for item in selected[: max(1, int(max_evidence))]:
+                text = self._normalize_space(str(item.get("text", "")))
+                if not text:
+                    continue
+                key = text.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                chunks.append({"text": text, "section": "graph_evidence"})
+
+        conflict_items = list(dict(bundle.get("filtered_pack", {}) or {}).get("conflict_evidence", []))
+        for item in conflict_items[:2]:
+            text = self._normalize_space(str(item.get("text", "")))
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            chunks.append({"text": f"Conflict candidate: {text}", "section": "graph_conflict"})
+        return chunks
+
     def prepare_answer_inputs(
         self,
         query: str,
@@ -643,6 +704,16 @@ class MemoryManagerChatRuntime:
                 evidence_sentences=evidence_sentences,
                 chunks=chunks,
             )
+            if bool(getattr(self.m, "evidence_graph_enabled", False)):
+                try:
+                    self.m.build_evidence_graph_bundle(
+                        query,
+                        precomputed_context=(context_text, topics, chunks),
+                        evidence_sentences=evidence_sentences,
+                        evidence_pack=self._last_evidence_pack,
+                    )
+                except (RuntimeError, ValueError, TypeError):
+                    self.m.last_evidence_graph_bundle = {}
             candidates = self.m.answering.extract_candidates(query, evidence_sentences)
             self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
             fallback_answer = ""
@@ -876,32 +947,26 @@ class MemoryManagerChatRuntime:
     def build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
         if not self.m.graph_refiner_enabled:
             return ""
-        if not bool(getattr(self.m, "long_memory_enabled", False)):
+        if not bool(getattr(self.m, "evidence_graph_enabled", False)):
             return ""
-        if not bool(getattr(self.m, "offline_graph_build_enabled", False)):
-            return ""
-        # Enforce offline-first long-memory usage:
-        # graph extraction is completed before answering; chat only reads stored graph evidence.
-        if not self.m.graph_context_from_store_enabled:
-            return ""
-        snippets: List[str] = []
-        engine = getattr(self.m, "graph_query_engine", None)
-        if engine is not None:
+        bundle = dict(getattr(self.m, "last_evidence_graph_bundle", {}) or {})
+        if str(bundle.get("query", "")).strip() != str(query or "").strip():
             try:
-                pack = engine.query(
-                    query=query,
-                    max_items=min(4, max(1, int(getattr(self.m.long_memory, "context_max_items", 4)))),
+                bundle = self.m.build_evidence_graph_bundle(
+                    query,
+                    precomputed_context=("", [], chunks),
+                    evidence_pack=self._last_evidence_pack,
                 )
-                raw_snippets = list(pack.get("snippets", [])) if isinstance(pack, dict) else []
-                snippets = [str(x).strip() for x in raw_snippets if str(x).strip()]
             except (RuntimeError, ValueError, TypeError):
-                snippets = []
-        # Safe fallback to legacy snippet generation if graph query yielded nothing.
-        if not snippets:
-            snippets = self.m.long_memory.build_context_snippets(query)
-        if not snippets:
+                bundle = {}
+        graph_chunks = self.graph_bundle_to_chunks(bundle)
+        if not graph_chunks:
             return ""
-        return "[Long Memory Graph]\n" + "\n".join(f"- {line}" for line in snippets[:4])
+        return "[Evidence Graph]\n" + "\n".join(
+            f"- {str(item.get('text', '')).strip()}"
+            for item in graph_chunks[:6]
+            if str(item.get("text", "")).strip()
+        )
 
     def generate_with_fallback(
         self,

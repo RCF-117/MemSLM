@@ -57,6 +57,26 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable specialist toolkit hints/fallback for this audit run.",
     )
+    parser.add_argument(
+        "--enable-evidence-graph",
+        action="store_true",
+        help="Also export filtered evidence, extracted claims, and light graph.",
+    )
+    parser.add_argument(
+        "--enable-evidence-filter",
+        action="store_true",
+        help="Export filtered evidence pack derived from unified RAG source.",
+    )
+    parser.add_argument(
+        "--enable-evidence-claims",
+        action="store_true",
+        help="Run 8B fixed-schema claim extraction on filtered evidence.",
+    )
+    parser.add_argument(
+        "--enable-evidence-light-graph",
+        action="store_true",
+        help="Build deterministic light graph from extracted claims.",
+    )
     return parser.parse_args()
 
 
@@ -361,6 +381,13 @@ def _summarize_rows(rows: List[Dict[str, object]]) -> Dict[str, object]:
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
+    stage_filter = bool(args.enable_evidence_filter or args.enable_evidence_claims or args.enable_evidence_light_graph)
+    stage_claims = bool(args.enable_evidence_claims or args.enable_evidence_light_graph)
+    stage_light_graph = bool(args.enable_evidence_light_graph)
+    if args.enable_evidence_graph:
+        stage_filter = True
+        stage_claims = True
+        stage_light_graph = True
     if args.disable_long_memory:
         cfg["memory"]["long_memory"]["enabled"] = False
         cfg["memory"]["long_memory"].setdefault("offline_graph", {})["enabled"] = False
@@ -374,6 +401,11 @@ def main() -> None:
         sp["counting_enabled"] = False
         sp["graph_toolkit_enabled"] = False
         sp["allow_fallback_override"] = False
+    evidence_graph_cfg = cfg["retrieval"].setdefault("evidence_graph", {})
+    evidence_graph_cfg["enabled"] = bool(stage_filter or stage_claims or stage_light_graph)
+    evidence_graph_cfg["filter_enabled"] = bool(stage_filter)
+    evidence_graph_cfg["claims_enabled"] = bool(stage_claims)
+    evidence_graph_cfg["light_graph_enabled"] = bool(stage_light_graph)
     dataset_path = resolve_project_path(str(args.dataset))
     output_dir = resolve_project_path(str(args.output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -411,11 +443,6 @@ def main() -> None:
         manager.archive_short_to_mid(clear_short=True)
 
         question = _as_text(item.get("question", ""))
-        _ctx_before, _topics_before, chunks_before = manager.retrieve_context(question)
-        try:
-            manager.offline_build_long_graph_from_chunks(chunks=chunks_before, query=question)
-        except Exception:
-            pass
         _ctx, _topics, chunks = manager.retrieve_context(question)
         sentence_units = sum(1 for c in chunks if str(c.get("unit_type", "")) == "sentence")
         chunk_units = sum(1 for c in chunks if str(c.get("unit_type", "")) != "sentence")
@@ -464,15 +491,47 @@ def main() -> None:
                 "sub_queries": [str(x) for x in list(plan.get("sub_queries", []))[:6]],
             },
         }
+        if stage_filter or stage_claims or stage_light_graph:
+            graph_bundle = manager.build_evidence_graph_bundle(
+                question,
+                precomputed_context=(_ctx, _topics, chunks),
+                enable_filter=stage_filter,
+                enable_claims=stage_claims,
+                enable_light_graph=stage_light_graph,
+            )
+            claim_result = dict(graph_bundle.get("claim_result", {}) or {})
+            row.update(
+                {
+                    "evidence_graph_stage_flags": dict(graph_bundle.get("stage_flags", {}) or {}),
+                    "evidence_graph_source": list(graph_bundle.get("unified_source", [])),
+                    "filtered_evidence_pack": dict(graph_bundle.get("filtered_pack", {}) or {}),
+                    "evidence_graph_claim_result": {
+                        "enabled": bool(claim_result.get("enabled", False)),
+                        "model": _as_text(claim_result.get("model", "")),
+                        "claims": list(claim_result.get("claims", [])),
+                        "stats": dict(claim_result.get("stats", {}) or {}),
+                        "raw_batches": list(claim_result.get("raw_batches", [])),
+                    },
+                    "evidence_light_graph": dict(graph_bundle.get("light_graph", {}) or {}),
+                }
+            )
         row.update(_score_row_quality(row))
         row["audit_metrics"] = _row_audit_metrics(row)
         rows.append(row)
 
+        claim_count = 0
+        if stage_claims:
+            claim_count = int(
+                dict(row.get("evidence_graph_claim_result", {}) or {})
+                .get("stats", {})
+                .get("claims", 0)
+            )
         print(
             f"[{i}/{total}] {row['question_id']} | {row['question_type']} | "
             f"unified_source={len(row['source_1_rag_evidence_top'])} "
             f"units=chunk:{row['retrieved_chunk_units']}/sent:{row['retrieved_sentence_units']} "
-            f"quality={row['quality_tier']}:{row['quality_score']}",
+            f"quality={row['quality_tier']}:{row['quality_score']}"
+            + (f" claims={claim_count}" if stage_claims else ""),
             flush=True,
         )
 
@@ -505,6 +564,9 @@ def main() -> None:
         f"- total: {len(rows)}",
         f"- output_json: {out_json.name}",
         f"- output_summary_json: {out_summary.name}",
+        f"- evidence_filter_enabled: {bool(stage_filter)}",
+        f"- evidence_claims_enabled: {bool(stage_claims)}",
+        f"- evidence_light_graph_enabled: {bool(stage_light_graph)}",
         "",
         "## Summary Metrics",
         f"- quality_high: {int(summary['quality_high'])}",
@@ -530,6 +592,26 @@ def main() -> None:
         lines.append(f"- query_plan: {_as_text(row.get('query_plan', {}))}")
         lines.append(f"- quality: {row['quality_tier']} (score={row['quality_score']})")
         lines.append(f"- quality_reasons: {_as_text(row['quality_reasons'])}")
+        if stage_filter or stage_claims or stage_light_graph:
+            graph_stats = dict(dict(row.get("evidence_light_graph", {}) or {}).get("stats", {}) or {})
+            filter_pack = dict(row.get("filtered_evidence_pack", {}) or {})
+            claim_stats = dict(dict(row.get("evidence_graph_claim_result", {}) or {}).get("stats", {}) or {})
+            lines.append(f"- evidence_graph_stage_flags: {_as_text(row.get('evidence_graph_stage_flags', {}))}")
+            lines.append(
+                "- evidence_graph_stats: "
+                + json.dumps(
+                    {
+                        "source_count": len(list(row.get("evidence_graph_source", []))),
+                        "core": len(list(filter_pack.get("core_evidence", []))),
+                        "supporting": len(list(filter_pack.get("supporting_evidence", []))),
+                        "conflict": len(list(filter_pack.get("conflict_evidence", []))),
+                        "claims": int(claim_stats.get("claims", 0)),
+                        "graph_nodes": int(graph_stats.get("node_count", 0)),
+                        "graph_edges": int(graph_stats.get("edge_count", 0)),
+                    },
+                    ensure_ascii=False,
+                )
+            )
         lines.append("- source_1_rag_evidence_top:")
         for ev in list(row["source_1_rag_evidence_top"])[:10]:
             lines.append(
@@ -538,6 +620,25 @@ def main() -> None:
                 f"({float(ev.get('score', 0.0)):.4f}) "
                 f"{_as_text(ev.get('text', ''))[:220]}"
             )
+        if stage_filter or stage_claims or stage_light_graph:
+            lines.append("- filtered_core_evidence:")
+            for ev in list(dict(row.get("filtered_evidence_pack", {}) or {}).get("core_evidence", []))[:8]:
+                lines.append("  - " + json.dumps(ev, ensure_ascii=False))
+            lines.append("- filtered_supporting_evidence:")
+            for ev in list(dict(row.get("filtered_evidence_pack", {}) or {}).get("supporting_evidence", []))[:6]:
+                lines.append("  - " + json.dumps(ev, ensure_ascii=False))
+            if stage_claims:
+                lines.append("- evidence_graph_claims:")
+                for claim in list(dict(row.get("evidence_graph_claim_result", {}) or {}).get("claims", []))[:8]:
+                    lines.append("  - " + json.dumps(claim, ensure_ascii=False))
+            if stage_light_graph:
+                lines.append(
+                    "- evidence_light_graph_stats: "
+                    + json.dumps(
+                        dict(dict(row.get("evidence_light_graph", {}) or {}).get("stats", {}) or {}),
+                        ensure_ascii=False,
+                    )
+                )
         lines.append("")
     out_md.write_text("\n".join(lines), encoding="utf-8")
 
