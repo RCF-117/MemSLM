@@ -400,9 +400,10 @@ retrieval:
     extractor_max_claims_per_batch: 12
     extractor_max_batches: 3
     filter_max_core: 8
-    filter_max_supporting: 8
+    filter_max_supporting: 10
     filter_max_conflict: 6
-    filter_max_selected: 18
+    filter_max_backup: 3
+    filter_max_selected: 22
     filter_split_long_chars: 380
     filter_min_sentence_chars: 18
     filter_core_min_score: 0.34

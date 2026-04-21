@@ -138,6 +138,7 @@ class EvidenceFilter:
         self.max_core = max(1, int(cfg.get("filter_max_core", 8)))
         self.max_supporting = max(0, int(cfg.get("filter_max_supporting", 8)))
         self.max_conflict = max(0, int(cfg.get("filter_max_conflict", 6)))
+        self.max_backup = max(0, int(cfg.get("filter_max_backup", 3)))
         self.max_selected = max(1, int(cfg.get("filter_max_selected", 18)))
         self.split_long_chars = max(160, int(cfg.get("filter_split_long_chars", 380)))
         self.min_sentence_chars = max(8, int(cfg.get("filter_min_sentence_chars", 18)))
@@ -179,6 +180,22 @@ class EvidenceFilter:
         return [" ".join(x.split()) for x in pieces if " ".join(x.split())]
 
     @staticmethod
+    def _looks_structured(text: str) -> bool:
+        normalized = str(text or "")
+        low = normalized.lower()
+        if normalized.count("|") >= 2:
+            return True
+        if normalized.count(":") >= 2 and len(normalized) >= 80:
+            return True
+        if normalized.count(";") >= 2 and len(normalized) >= 80:
+            return True
+        if re.search(r"(?:^|\s)(?:\d+[.)]|[-*])\s+\w", normalized):
+            return True
+        if len(re.findall(r"\b\d{1,2}:\d{2}\s?(?:am|pm)?\b", low, flags=re.IGNORECASE)) >= 2:
+            return True
+        return False
+
+    @staticmethod
     def _contains_phrase(text_low: str, phrase: str) -> bool:
         phrase_low = " ".join(str(phrase or "").strip().lower().split())
         if not phrase_low:
@@ -218,6 +235,7 @@ class EvidenceFilter:
         if not low:
             return 0.0
         penalty = 0.0
+        structured = self._looks_structured(low)
         for pattern in _NOISE_PATTERNS:
             if pattern.search(low):
                 penalty += 0.18
@@ -225,7 +243,7 @@ class EvidenceFilter:
             penalty += 0.05
         if re.search(r"\b(you can|consider|try|should|recommended?)\b", low):
             penalty += 0.08
-        if len(low) > 420:
+        if len(low) > 420 and not structured:
             penalty += 0.06
         return min(0.42, penalty)
 
@@ -438,6 +456,7 @@ class EvidenceFilter:
                 low,
             )
         )
+        structured_hit = self._looks_structured(text)
         query_overlap = (
             float(len(query_tokens.intersection(tokens))) / float(len(query_tokens))
             if query_tokens and tokens
@@ -468,6 +487,8 @@ class EvidenceFilter:
             focus_overlap += 0.10 * len(matched_state[:2])
         if target_match:
             focus_overlap += 0.16
+        if structured_hit:
+            focus_overlap += 0.08
 
         score = (
             (0.34 * float(item.get("score", 0.0)))
@@ -508,6 +529,9 @@ class EvidenceFilter:
         if reason_hit:
             signals.append("reason_signal")
             score += 0.06
+        if structured_hit:
+            signals.append("structured_format")
+            score += 0.06
         if first_person_fact:
             signals.append("first_person_fact")
             if answer_type in {"count", "update"}:
@@ -532,7 +556,17 @@ class EvidenceFilter:
             "temporal_comparison",
         }
         if needs_action_alignment and action_tokens and action_overlap < 0.20 and not matched_action_focus:
-            if not (first_person_fact or update_hit or time_anchors or numeric_values):
+            strong_subject_alignment = bool(
+                target_match or matched_subject_focus or matched_entities or matched_state or matched_compare
+            )
+            if not (
+                first_person_fact
+                or update_hit
+                or time_anchors
+                or numeric_values
+                or strong_subject_alignment
+                or structured_hit
+            ):
                 if channel == "plan_combined_evidence":
                     penalty += 0.12
                 elif channel == "evidence_pack":
@@ -582,6 +616,7 @@ class EvidenceFilter:
             "subject_hint": subject_hint,
             "value_signature": self._extract_value_signature(text),
             "slot_keys": slot_keys,
+            "structured_format": structured_hit,
             "noise_penalty": round(penalty, 4),
             "query_overlap": round(query_overlap, 4),
             "content_overlap": round(content_overlap, 4),
@@ -613,6 +648,37 @@ class EvidenceFilter:
             sentences = [text]
             if channel == "plan_combined_evidence" or len(text) > self.split_long_chars or "\n" in text:
                 sentences = self._split_sentences(text) or [text]
+            backup_group = f"{channel}:{int(raw_item.get('chunk_id', 0) or 0)}:{raw_rank}"
+            add_window_backup = len(sentences) > 1 and (
+                self._looks_structured(text) or len(sentences) >= 3 or "\n" in str(raw_item.get("text", ""))
+            )
+
+            if add_window_backup:
+                key = self._text_key(text)
+                if key and key not in seen:
+                    seen.add(key)
+                    evidence_counter += 1
+                    backup_item = {
+                        "evidence_id": f"ev_{evidence_counter:03d}",
+                        "text": text,
+                        "channel": channel,
+                        "score": float(raw_item.get("score", 0.0)) * 0.92,
+                        "chunk_id": int(raw_item.get("chunk_id", 0) or 0),
+                        "session_date": str(raw_item.get("session_date", "")),
+                        "raw_rank": raw_rank,
+                        "sentence_index": 0,
+                        "window_backup": True,
+                        "backup_group": backup_group,
+                    }
+                    backup_item.update(
+                        self._sentence_signals(
+                            query=query,
+                            text=text,
+                            item=backup_item,
+                            guidance=guidance,
+                        )
+                    )
+                    prepared.append(backup_item)
 
             for sent_idx, sentence in enumerate(sentences, start=1):
                 sent = self._normalize_space(sentence)
@@ -644,6 +710,8 @@ class EvidenceFilter:
                     "session_date": str(raw_item.get("session_date", "")),
                     "raw_rank": raw_rank,
                     "sentence_index": sent_idx,
+                    "window_backup": False,
+                    "backup_group": backup_group,
                 }
                 item.update(self._sentence_signals(query=query, text=sent, item=item, guidance=guidance))
                 prepared.append(item)
@@ -720,6 +788,17 @@ class EvidenceFilter:
             return True
         return False
 
+    @staticmethod
+    def _is_anchor_item(item: Dict[str, Any]) -> bool:
+        return bool(
+            item.get("target_match")
+            or list(item.get("matched_focus", []))
+            or list(item.get("matched_entities", []))
+            or list(item.get("matched_state", []))
+            or list(item.get("matched_compare", []))
+            or bool(item.get("structured_format", False))
+        )
+
     def _select_core(self, items: Sequence[Dict[str, Any]], answer_type: str) -> List[Dict[str, Any]]:
         selected: List[Dict[str, Any]] = []
         seen_slots: Set[str] = set()
@@ -763,18 +842,29 @@ class EvidenceFilter:
         out: List[Dict[str, Any]] = []
         seen_slots = self._slot_set(selected_core)
         selected_ids = {str(x.get("evidence_id", "")) for x in selected_core}
+        selected_groups = {
+            str(x.get("backup_group", "")).strip()
+            for x in selected_core
+            if str(x.get("backup_group", "")).strip()
+        }
         for item in items:
             if len(out) >= self.max_supporting:
                 break
             evidence_id = str(item.get("evidence_id", ""))
             if evidence_id in selected_ids:
                 continue
-            if float(item.get("score", 0.0)) < self.supporting_min_score and not self._adds_new_slot(
-                item, seen_slots
+            adds_slot = self._adds_new_slot(item, seen_slots)
+            anchor_item = self._is_anchor_item(item)
+            backup_item = bool(item.get("window_backup", False))
+            if float(item.get("score", 0.0)) < self.supporting_min_score and not (
+                adds_slot or anchor_item or backup_item
             ):
                 continue
-            if not self._adds_new_slot(item, seen_slots) and float(item.get("score", 0.0)) < (
-                self.supporting_min_score + 0.08
+            if (
+                not adds_slot
+                and not anchor_item
+                and not backup_item
+                and float(item.get("score", 0.0)) < (self.supporting_min_score + 0.08)
             ):
                 continue
             out.append(item)
@@ -782,6 +872,24 @@ class EvidenceFilter:
             selected_ids.add(evidence_id)
             if len(selected_core) + len(out) >= self.max_selected:
                 break
+
+        backup_added = 0
+        for item in items:
+            if len(out) >= self.max_supporting or len(selected_core) + len(out) >= self.max_selected:
+                break
+            if backup_added >= self.max_backup:
+                break
+            evidence_id = str(item.get("evidence_id", ""))
+            if evidence_id in selected_ids or not bool(item.get("window_backup", False)):
+                continue
+            backup_group = str(item.get("backup_group", "")).strip()
+            if not backup_group or backup_group not in selected_groups:
+                continue
+            if not self._is_anchor_item(item):
+                continue
+            out.append(item)
+            selected_ids.add(evidence_id)
+            backup_added += 1
         return out[: self.max_supporting]
 
     def _select_conflicts(
