@@ -17,6 +17,170 @@ from llm_long_memory.memory.long_memory_json_utils import (
 class EvidenceGraphExtractor:
     """Extract fixed-schema claims from filtered evidence with an 8B model."""
 
+    _CONTENT_TOKEN_RE = re.compile(r"[a-z0-9]+")
+    _NAMED_TOKEN_RE = re.compile(r"\b[A-Z][A-Za-z0-9'/-]+\b")
+    _CONTENT_STOPWORDS = {
+        "a",
+        "an",
+        "and",
+        "any",
+        "about",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "but",
+        "by",
+        "can",
+        "could",
+        "did",
+        "do",
+        "for",
+        "from",
+        "get",
+        "good",
+        "have",
+        "help",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "learn",
+        "me",
+        "more",
+        "my",
+        "of",
+        "on",
+        "or",
+        "our",
+        "should",
+        "some",
+        "stay",
+        "suggest",
+        "suggestions",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "these",
+        "this",
+        "to",
+        "use",
+        "using",
+        "video",
+        "ways",
+        "what",
+        "where",
+        "with",
+        "work",
+        "working",
+        "would",
+        "you",
+        "your",
+    }
+    _NAMED_TOKEN_STOPWORDS = {
+        "A",
+        "An",
+        "And",
+        "Any",
+        "Can",
+        "Could",
+        "Do",
+        "Does",
+        "For",
+        "I",
+        "I'd",
+        "I've",
+        "If",
+        "In",
+        "My",
+        "Of",
+        "Or",
+        "The",
+        "This",
+        "What",
+        "When",
+        "Where",
+        "Which",
+        "Who",
+        "Would",
+        "You",
+        "Your",
+    }
+    _PREFERENCE_QUERY_RE = re.compile(
+        r"\b("
+        r"recommend|suggest(?:ion|ions)?|advice|tips?|"
+        r"what should i|which .* should i|"
+        r"ways to|resources? where i can learn|learn more about|"
+        r"any suggestions|ideas? for"
+        r")\b"
+    )
+    _PREFERENCE_SIGNAL_RE = re.compile(
+        r"\b("
+        r"recommend|suggest|resource|course|tutorial|guide|recipe|activity|"
+        r"option|idea|learn|serve|schedule|discussion|feedback|break"
+        r")\b"
+    )
+    _PREFERENCE_DIRECTION_PREDICATES = {
+        "recommend",
+        "recommendation",
+        "suggestion",
+        "name",
+        "serve",
+        "resource",
+        "resources",
+        "schedule",
+    }
+    _GENERIC_VALUE_HINTS = {
+        "",
+        "resource",
+        "resources",
+        "recipe",
+        "recipes",
+        "option",
+        "options",
+        "activity",
+        "activities",
+        "suggestion",
+        "suggestions",
+        "idea",
+        "ideas",
+    }
+    _META_ADVICE_RE = re.compile(
+        r"\b("
+        r"i(?:'m| am)? happy to help|i(?:'d| would) be happy to help|"
+        r"once i have a better understanding|"
+        r"let me ask you|let me know|"
+        r"before i give you|"
+        r"better understanding of your needs|"
+        r"narrow down the options|"
+        r"what's your budget|"
+        r"what type of|"
+        r"a few questions"
+        r")\b"
+    )
+    _GENERIC_PREFERENCE_PHRASES = {
+        "advice",
+        "generic advice",
+        "personalized recommendation",
+        "personalized recommendations",
+        "recommendation",
+        "recommendations",
+        "suggestion",
+        "suggestions",
+        "tips",
+    }
+    _META_PREDICATES = {
+        "asking",
+        "can give",
+    }
+
     def __init__(self, manager: Any, cfg: Optional[Dict[str, Any]] = None) -> None:
         cfg = dict(cfg or {})
         self.manager = manager
@@ -62,6 +226,58 @@ class EvidenceGraphExtractor:
             "Prefer claims that preserve directly usable facts, states, rows, or list entries from the evidence. "
             "Do not summarize away important details."
         )
+
+    @classmethod
+    def _extract_content_tokens(cls, *texts: str) -> List[str]:
+        seen = set()
+        out: List[str] = []
+        for text in texts:
+            for token in cls._CONTENT_TOKEN_RE.findall(str(text or "").lower()):
+                if len(token) <= 2 or token in cls._CONTENT_STOPWORDS or token in seen:
+                    continue
+                seen.add(token)
+                out.append(token)
+        return out
+
+    @classmethod
+    def _extract_named_tokens(cls, *texts: str) -> List[str]:
+        seen = set()
+        out: List[str] = []
+        for text in texts:
+            for token in cls._NAMED_TOKEN_RE.findall(str(text or "")):
+                if token in cls._NAMED_TOKEN_STOPWORDS or token in seen:
+                    continue
+                seen.add(token)
+                out.append(token)
+        return out
+
+    @classmethod
+    def _infer_answer_type_from_query(cls, query: str) -> str:
+        low = str(query or "").strip().lower()
+        if not low:
+            return ""
+        if re.search(r"\b(how many|number of|count)\b", low):
+            return "count"
+        if re.search(r"\b(before|after|first|second|earlier|later|how long|weeks? after|days? after)\b", low):
+            return "temporal" if " or " not in low else "temporal_comparison"
+        if re.search(r"\b(currently|now|updated|change(?:d)?|switched|moved|where is|where are)\b", low):
+            return "update"
+        if cls._PREFERENCE_QUERY_RE.search(low):
+            return "preference"
+        return ""
+
+    def _effective_answer_type(self, filtered_pack: Dict[str, Any]) -> str:
+        answer_type = self._normalize_space(str(filtered_pack.get("answer_type", ""))).lower()
+        query = str(filtered_pack.get("query", ""))
+        inferred = self._infer_answer_type_from_query(query)
+        if inferred == "preference" and self._PREFERENCE_QUERY_RE.search(query.lower()):
+            if answer_type not in {"count", "temporal", "temporal_comparison"}:
+                return "preference"
+        if answer_type in {"count", "temporal", "temporal_comparison", "update", "preference"}:
+            return answer_type
+        if answer_type in {"", "factoid", "lookup"} and inferred:
+            return inferred
+        return answer_type or inferred or "factoid"
 
     @staticmethod
     def _fallback_guidance() -> str:
@@ -240,6 +456,7 @@ class EvidenceGraphExtractor:
         batch: Sequence[Dict[str, Any]],
         fallback_mode: bool = False,
     ) -> str:
+        effective_answer_type = self._effective_answer_type(filtered_pack)
         lines: List[str] = []
         for item in batch:
             evidence_id = str(item.get("evidence_id", "")).strip()
@@ -307,7 +524,7 @@ class EvidenceGraphExtractor:
             "First preserve support units tied to evidence lines; then produce higher-level claims only when they remain directly grounded.",
             "Leave compare_role empty unless the question explicitly compares two options.",
             "Use state_snapshot for changeable attributes, event_record for dated actions, fact_statement for stable facts.",
-            self._answer_type_guidance(filtered_pack.get("answer_type", "")),
+            self._answer_type_guidance(effective_answer_type),
         ]
         if fallback_mode:
             prompt_lines.append(self._fallback_guidance())
@@ -317,7 +534,7 @@ class EvidenceGraphExtractor:
                 json.dumps(schema, ensure_ascii=True),
                 f"Question: {self._normalize_space(str(filtered_pack.get('query', '')))}",
                 f"Intent: {self._normalize_space(str(filtered_pack.get('intent', 'lookup')))}",
-                f"Answer type: {self._normalize_space(str(filtered_pack.get('answer_type', 'factoid')))}",
+                f"Answer type: {self._normalize_space(effective_answer_type)}",
                 f"Target object: {self._normalize_space(str(filtered_pack.get('target_object', '')))}",
                 f"Focus phrases: {json.dumps(list(filtered_pack.get('focus_phrases', [])), ensure_ascii=True)}",
                 f"Max support units: {self.max_support_units_per_batch}",
@@ -605,7 +822,7 @@ class EvidenceGraphExtractor:
         support_units: Sequence[Dict[str, Any]],
         fallback_claim_id: str,
     ) -> Optional[Dict[str, Any]]:
-        answer_type = str(filtered_pack.get("answer_type", "")).strip().lower()
+        answer_type = self._effective_answer_type(filtered_pack)
         if answer_type != "count" or not support_units:
             return None
         target_object = self._normalize_space(str(filtered_pack.get("target_object", "")))
@@ -681,6 +898,431 @@ class EvidenceGraphExtractor:
             ),
         }
 
+    def _trim_clause(self, text: str, *, max_words: int = 20) -> str:
+        clean = self._normalize_space(str(text or ""))
+        if not clean:
+            return ""
+        clean = re.sub(r"^\d+\.\s*", "", clean)
+        clean = clean.strip("-* ")
+        parts = re.split(r"(?<=[.!?])\s+|[:;]\s+", clean, maxsplit=1)
+        head = self._normalize_space(parts[0])
+        words = head.split()
+        if len(words) > max_words:
+            head = " ".join(words[:max_words]).strip()
+        return head.strip(" ,.;:")
+
+    def _preference_subject(self, filtered_pack: Dict[str, Any]) -> str:
+        target_object = self._normalize_space(str(filtered_pack.get("target_object", "")))
+        if target_object:
+            return target_object
+        for phrase in list(filtered_pack.get("focus_phrases", [])):
+            norm = self._normalize_space(str(phrase))
+            if norm:
+                return norm
+        query = self._normalize_space(str(filtered_pack.get("query", "")))
+        if query:
+            return query.rstrip(" ?.!")[:120]
+        return "user preference"
+
+    def _preference_unit_phrase(self, unit: Dict[str, Any]) -> str:
+        text = self._normalize_space(str(unit.get("text", "")))
+        subject = self._normalize_space(str(unit.get("subject_hint", "")))
+        predicate = self._normalize_space(str(unit.get("predicate_hint", ""))).lower()
+        value = self._normalize_space(str(unit.get("value_hint", "")))
+        unit_type = self._normalize_space(str(unit.get("unit_type", ""))).lower()
+        verbatim = self._normalize_space(str(unit.get("verbatim_span", "")))
+
+        if unit_type == "list_item" and text:
+            return self._trim_clause(text, max_words=18)
+        if value and value.lower() not in self._GENERIC_VALUE_HINTS:
+            if predicate in self._META_PREDICATES:
+                return self._trim_clause(value, max_words=18)
+            if predicate in self._PREFERENCE_DIRECTION_PREDICATES:
+                return self._trim_clause(value, max_words=18)
+            if subject and predicate and predicate not in {"is", "are", "use"}:
+                return self._trim_clause(f"{subject} {predicate} {value}", max_words=18)
+            return self._trim_clause(value, max_words=18)
+        if text:
+            return self._trim_clause(text, max_words=18)
+        if verbatim:
+            return self._trim_clause(verbatim, max_words=18)
+        return ""
+
+    def _preference_reason_phrase(self, text: str) -> str:
+        clean = self._normalize_space(str(text or ""))
+        if not clean:
+            return ""
+        if self._META_ADVICE_RE.search(clean.lower()):
+            return ""
+        clean = clean.replace("**", " ").replace("*", " ")
+        segments = [self._normalize_space(seg) for seg in re.split(r"[:;]\s+|(?<=[.!?])\s+", clean) if self._normalize_space(seg)]
+        for seg in segments:
+            content = self._extract_content_tokens(seg)
+            if len(content) >= 4:
+                return self._trim_clause(seg, max_words=24)
+        return self._trim_clause(clean, max_words=24)
+
+    def _is_meta_advice_text(self, text: str) -> bool:
+        return bool(self._META_ADVICE_RE.search(self._normalize_space(str(text or "")).lower()))
+
+    def _is_generic_preference_phrase(self, phrase: str) -> bool:
+        norm = self._text_key(phrase)
+        return norm in self._GENERIC_PREFERENCE_PHRASES
+
+    def _named_alignment_score(
+        self,
+        *,
+        query_named_tokens: Sequence[str],
+        text: str,
+    ) -> float:
+        query_named = {str(x).lower() for x in list(query_named_tokens) if str(x).strip()}
+        if not query_named:
+            return 0.0
+        candidate_named = {str(x).lower() for x in self._extract_named_tokens(text)}
+        if not candidate_named:
+            return 0.0
+        if candidate_named.intersection(query_named):
+            return 2.0
+        return -4.0
+
+    def _preference_unit_score(
+        self,
+        *,
+        filtered_pack: Dict[str, Any],
+        unit: Dict[str, Any],
+    ) -> float:
+        query_tokens = self._extract_content_tokens(
+            str(filtered_pack.get("query", "")),
+            " ".join(str(x) for x in list(filtered_pack.get("focus_phrases", []))),
+            str(filtered_pack.get("target_object", "")),
+        )
+        blob = " ".join(
+            [
+                str(unit.get("text", "")),
+                str(unit.get("subject_hint", "")),
+                str(unit.get("predicate_hint", "")),
+                str(unit.get("value_hint", "")),
+                str(unit.get("verbatim_span", "")),
+            ]
+        ).lower()
+        score = float(sum(1 for token in query_tokens if token in blob))
+        if str(unit.get("unit_type", "")).strip().lower() == "list_item":
+            score += 1.0
+        predicate = self._normalize_space(str(unit.get("predicate_hint", ""))).lower()
+        if predicate in self._PREFERENCE_DIRECTION_PREDICATES:
+            score += 1.5
+        if str(unit.get("state_key", "")).strip().lower() == "preference":
+            score += 0.75
+        if self._PREFERENCE_SIGNAL_RE.search(blob):
+            score += 0.5
+        return score
+
+    def _preference_evidence_score(
+        self,
+        *,
+        filtered_pack: Dict[str, Any],
+        item: Dict[str, Any],
+    ) -> float:
+        query_tokens = self._extract_content_tokens(
+            str(filtered_pack.get("query", "")),
+            " ".join(str(x) for x in list(filtered_pack.get("focus_phrases", []))),
+            str(filtered_pack.get("target_object", "")),
+        )
+        blob = self._normalize_space(str(item.get("text", ""))).lower()
+        score = float(sum(1 for token in query_tokens if token in blob))
+        if bool(item.get("structured_format", False)):
+            score += 0.5
+        if self._PREFERENCE_SIGNAL_RE.search(blob):
+            score += 1.0
+        return score
+
+    def _preference_claim_score(
+        self,
+        *,
+        filtered_pack: Dict[str, Any],
+        claim: Dict[str, Any],
+    ) -> float:
+        query_tokens = self._extract_content_tokens(
+            str(filtered_pack.get("query", "")),
+            " ".join(str(x) for x in list(filtered_pack.get("focus_phrases", []))),
+            str(filtered_pack.get("target_object", "")),
+        )
+        blob = " ".join(
+            [
+                str(claim.get("subject", "")),
+                str(claim.get("predicate", "")),
+                str(claim.get("value", "")),
+                str(claim.get("verbatim_span", "")),
+            ]
+        ).lower()
+        score = float(sum(1 for token in query_tokens if token in blob))
+        predicate = self._normalize_space(str(claim.get("predicate", ""))).lower()
+        state_key = self._normalize_space(str(claim.get("state_key", ""))).lower()
+        if predicate in {"preferred_direction", "supported_reason", "recommend", "recommendation", "suggestion"}:
+            score += 1.0
+        if state_key == "preference":
+            score += 0.75
+        if self._PREFERENCE_SIGNAL_RE.search(blob):
+            score += 0.5
+        return score
+
+    def _filter_preference_support_units(
+        self,
+        *,
+        filtered_pack: Dict[str, Any],
+        support_units: Sequence[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        if self._effective_answer_type(filtered_pack) != "preference":
+            return list(support_units)
+        query_named_tokens = self._extract_named_tokens(
+            str(filtered_pack.get("query", "")),
+            " ".join(str(x) for x in list(filtered_pack.get("focus_phrases", []))),
+            str(filtered_pack.get("target_object", "")),
+        )
+        kept: List[Dict[str, Any]] = []
+        for unit in list(support_units):
+            source_text = self._normalize_space(
+                str(unit.get("verbatim_span", "")) or str(unit.get("text", ""))
+            )
+            phrase = self._preference_unit_phrase(unit)
+            if self._is_meta_advice_text(source_text):
+                continue
+            score = self._preference_unit_score(filtered_pack=filtered_pack, unit=unit)
+            alignment = self._named_alignment_score(
+                query_named_tokens=query_named_tokens,
+                text=" ".join([phrase, source_text]),
+            )
+            predicate = self._normalize_space(str(unit.get("predicate_hint", ""))).lower()
+            if predicate in self._META_PREDICATES and (not phrase or self._is_generic_preference_phrase(phrase)):
+                continue
+            if alignment < 0.0 and score < 2.5:
+                continue
+            if phrase and self._is_generic_preference_phrase(phrase) and score < 2.0:
+                continue
+            kept.append(unit)
+        return kept
+
+    def _filter_preference_claims(
+        self,
+        *,
+        filtered_pack: Dict[str, Any],
+        claims: Sequence[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        if self._effective_answer_type(filtered_pack) != "preference":
+            return list(claims)
+        query_named_tokens = self._extract_named_tokens(
+            str(filtered_pack.get("query", "")),
+            " ".join(str(x) for x in list(filtered_pack.get("focus_phrases", []))),
+            str(filtered_pack.get("target_object", "")),
+        )
+        kept: List[Dict[str, Any]] = []
+        for claim in list(claims):
+            source_text = self._normalize_space(
+                str(claim.get("verbatim_span", ""))
+                or " ".join(
+                    str(x) for x in [claim.get("subject", ""), claim.get("predicate", ""), claim.get("value", "")] if str(x).strip()
+                )
+            )
+            phrase = self._trim_clause(
+                " ".join(
+                    str(x) for x in [claim.get("subject", ""), claim.get("predicate", ""), claim.get("value", "")] if str(x).strip()
+                ),
+                max_words=18,
+            )
+            if self._is_meta_advice_text(source_text):
+                continue
+            score = self._preference_claim_score(filtered_pack=filtered_pack, claim=claim)
+            alignment = self._named_alignment_score(
+                query_named_tokens=query_named_tokens,
+                text=" ".join([phrase, source_text]),
+            )
+            predicate = self._normalize_space(str(claim.get("predicate", ""))).lower()
+            if predicate in self._META_PREDICATES:
+                continue
+            if alignment < 0.0 and score < 2.5:
+                continue
+            if self._is_generic_preference_phrase(self._normalize_space(str(claim.get("value", "")))) and score < 2.0:
+                continue
+            kept.append(claim)
+        return kept
+
+    def _synthesize_preference_summary_claims(
+        self,
+        *,
+        filtered_pack: Dict[str, Any],
+        selected_evidence: Sequence[Dict[str, Any]],
+        support_units: Sequence[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        if self._effective_answer_type(filtered_pack) != "preference":
+            return []
+
+        option_candidates: List[Tuple[float, float, str, List[str], str]] = []
+        reason_candidates: List[Tuple[float, float, str, List[str], str]] = []
+        seen_direction = set()
+        seen_reason = set()
+        query_named_tokens = self._extract_named_tokens(
+            str(filtered_pack.get("query", "")),
+            " ".join(str(x) for x in list(filtered_pack.get("focus_phrases", []))),
+            str(filtered_pack.get("target_object", "")),
+        )
+
+        for unit in list(support_units):
+            source_text = self._normalize_space(
+                str(unit.get("verbatim_span", "")) or str(unit.get("text", ""))
+            )
+            phrase = self._preference_unit_phrase(unit)
+            if phrase and not self._is_generic_preference_phrase(phrase) and not self._is_meta_advice_text(source_text):
+                score = self._preference_unit_score(filtered_pack=filtered_pack, unit=unit)
+                alignment = self._named_alignment_score(
+                    query_named_tokens=query_named_tokens,
+                    text=" ".join([phrase, source_text]),
+                )
+                score += alignment
+                key = self._text_key(phrase)
+                if key and key not in seen_direction and score >= 0.0:
+                    option_candidates.append(
+                        (
+                            score,
+                            alignment,
+                            phrase,
+                            [str(x) for x in list(unit.get("evidence_ids", [])) if str(x).strip()],
+                            source_text,
+                        )
+                    )
+                    seen_direction.add(key)
+            reason = self._preference_reason_phrase(
+                source_text
+            )
+            if reason:
+                score = self._preference_unit_score(filtered_pack=filtered_pack, unit=unit)
+                alignment = self._named_alignment_score(
+                    query_named_tokens=query_named_tokens,
+                    text=" ".join([reason, source_text]),
+                )
+                score += alignment
+                key = self._text_key(reason)
+                if key and key not in seen_reason and score >= 0.0:
+                    reason_candidates.append(
+                        (
+                            score,
+                            alignment,
+                            reason,
+                            [str(x) for x in list(unit.get("evidence_ids", [])) if str(x).strip()],
+                            source_text,
+                        )
+                    )
+                    seen_reason.add(key)
+
+        for item in list(selected_evidence):
+            if str(item.get("bucket", "")) == "conflict":
+                continue
+            source_text = self._normalize_space(str(item.get("text", "")))
+            phrase = self._preference_reason_phrase(source_text)
+            if not phrase:
+                continue
+            score = self._preference_evidence_score(filtered_pack=filtered_pack, item=item)
+            alignment = self._named_alignment_score(
+                query_named_tokens=query_named_tokens,
+                text=" ".join([phrase, source_text]),
+            )
+            score += alignment
+            evidence_ids = [str(item.get("evidence_id", "")).strip()] if str(item.get("evidence_id", "")).strip() else []
+            key = self._text_key(phrase)
+            if key and key not in seen_reason and score >= 0.0:
+                reason_candidates.append((score, alignment, phrase, evidence_ids, source_text))
+                seen_reason.add(key)
+
+        option_candidates.sort(key=lambda x: (x[0], len(x[2].split())), reverse=True)
+        reason_candidates.sort(key=lambda x: (x[0], len(x[2].split())), reverse=True)
+
+        direction_parts: List[str] = []
+        direction_evidence_ids: List[str] = []
+        direction_spans: List[str] = []
+        positive_named_alignment = False
+        for _score, alignment, phrase, evidence_ids, span in option_candidates:
+            if alignment > 0.0:
+                positive_named_alignment = True
+            if not phrase or self._text_key(phrase) in {self._text_key(x) for x in direction_parts}:
+                continue
+            direction_parts.append(phrase)
+            direction_spans.append(span or phrase)
+            for evidence_id in evidence_ids:
+                if evidence_id and evidence_id not in direction_evidence_ids:
+                    direction_evidence_ids.append(evidence_id)
+            if len(direction_parts) >= 3:
+                break
+
+        reason_parts: List[str] = []
+        reason_evidence_ids: List[str] = []
+        reason_spans: List[str] = []
+        seen_reason_parts = {self._text_key(x) for x in direction_parts}
+        for _score, alignment, phrase, evidence_ids, span in reason_candidates:
+            if alignment > 0.0:
+                positive_named_alignment = True
+            key = self._text_key(phrase)
+            if not phrase or key in seen_reason_parts:
+                continue
+            reason_parts.append(phrase)
+            reason_spans.append(span or phrase)
+            for evidence_id in evidence_ids:
+                if evidence_id and evidence_id not in reason_evidence_ids:
+                    reason_evidence_ids.append(evidence_id)
+            seen_reason_parts.add(key)
+            if len(reason_parts) >= 2:
+                break
+
+        if not direction_parts and not reason_parts:
+            return []
+        if query_named_tokens and not positive_named_alignment:
+            return []
+
+        subject = self._preference_subject(filtered_pack)
+        synthesized: List[Dict[str, Any]] = []
+        if direction_parts:
+            value = "; ".join(direction_parts)
+            if reason_parts:
+                value += ". Grounding: " + "; ".join(reason_parts)
+            synthesized.append(
+                {
+                    "claim_type": "state_snapshot",
+                    "subject": subject,
+                    "predicate": "preferred_direction",
+                    "value": value,
+                    "time_anchor": "",
+                    "state_key": "preference",
+                    "status": "current",
+                    "modality": "reported",
+                    "compare_role": "",
+                    "numeric_value": "",
+                    "unit": "",
+                    "confidence": 0.0,
+                    "evidence_ids": direction_evidence_ids + [
+                        x for x in reason_evidence_ids if x not in direction_evidence_ids
+                    ],
+                    "verbatim_span": " | ".join(direction_spans + reason_spans[:1]),
+                }
+            )
+        if reason_parts:
+            synthesized.append(
+                {
+                    "claim_type": "fact_statement",
+                    "subject": subject,
+                    "predicate": "supported_reason",
+                    "value": "; ".join(reason_parts),
+                    "time_anchor": "",
+                    "state_key": "preference",
+                    "status": "current",
+                    "modality": "reported",
+                    "compare_role": "",
+                    "numeric_value": "",
+                    "unit": "",
+                    "confidence": 0.0,
+                    "evidence_ids": reason_evidence_ids,
+                    "verbatim_span": " | ".join(reason_spans),
+                }
+            )
+        return synthesized
+
     def extract_claims(self, filtered_pack: Dict[str, Any]) -> Dict[str, Any]:
         selected: List[Dict[str, Any]] = []
         for bucket_name in ("core_evidence", "supporting_evidence", "conflict_evidence"):
@@ -708,7 +1350,8 @@ class EvidenceGraphExtractor:
             }
 
         valid_ids = [str(x.get("evidence_id", "")).strip() for x in selected if str(x.get("evidence_id", "")).strip()]
-        allow_compare_role = str(filtered_pack.get("answer_type", "")).strip().lower() == "temporal_comparison"
+        effective_answer_type = self._effective_answer_type(filtered_pack)
+        allow_compare_role = effective_answer_type == "temporal_comparison"
         batches = self._build_batches(selected=selected, filtered_pack=filtered_pack)
 
         raw_batches: List[Dict[str, Any]] = []
@@ -869,6 +1512,49 @@ class EvidenceGraphExtractor:
                         claims.append(count_claim)
                 if synthesized_batch:
                     raw_batches[-1]["claim_count"] = len(synthesized_batch)
+
+        support_units = self._filter_preference_support_units(
+            filtered_pack=filtered_pack,
+            support_units=support_units,
+        )
+        claims = self._filter_preference_claims(
+            filtered_pack=filtered_pack,
+            claims=claims,
+        )
+        seen_keys = {
+            (
+                self._text_key(claim["subject"]),
+                self._text_key(claim["predicate"]),
+                self._text_key(claim["value"]),
+                self._text_key(claim["time_anchor"]),
+                self._text_key(claim["state_key"]),
+            )
+            for claim in claims
+        }
+        for raw_claim in self._synthesize_preference_summary_claims(
+            filtered_pack=filtered_pack,
+            selected_evidence=selected,
+            support_units=support_units,
+        ):
+            claim_counter += 1
+            claim = dict(raw_claim)
+            claim["claim_id"] = f"cl_{claim_counter:03d}"
+            key = (
+                self._text_key(claim["subject"]),
+                self._text_key(claim["predicate"]),
+                self._text_key(claim["value"]),
+                self._text_key(claim["time_anchor"]),
+                self._text_key(claim["state_key"]),
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            claims.append(claim)
+
+        claims = self._filter_preference_claims(
+            filtered_pack=filtered_pack,
+            claims=claims,
+        )
 
         return {
             "enabled": True,
