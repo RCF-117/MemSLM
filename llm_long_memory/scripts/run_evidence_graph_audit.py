@@ -130,6 +130,7 @@ def main() -> None:
                 "claim_result": {
                     "enabled": bool(bundle.get("claim_result", {}).get("enabled", False)),
                     "model": _as_text(bundle.get("claim_result", {}).get("model", "")),
+                    "support_units": list(bundle.get("claim_result", {}).get("support_units", [])),
                     "claims": list(bundle.get("claim_result", {}).get("claims", [])),
                     "stats": dict(bundle.get("claim_result", {}).get("stats", {})),
                 },

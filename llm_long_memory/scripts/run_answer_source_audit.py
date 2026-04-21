@@ -508,6 +508,7 @@ def main() -> None:
                     "evidence_graph_claim_result": {
                         "enabled": bool(claim_result.get("enabled", False)),
                         "model": _as_text(claim_result.get("model", "")),
+                        "support_units": list(claim_result.get("support_units", [])),
                         "claims": list(claim_result.get("claims", [])),
                         "stats": dict(claim_result.get("stats", {}) or {}),
                         "raw_batches": list(claim_result.get("raw_batches", [])),

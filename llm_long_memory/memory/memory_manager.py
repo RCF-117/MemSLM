@@ -1093,11 +1093,13 @@ class MemoryManager:
         extraction: Dict[str, object] = {
             "enabled": False,
             "model": getattr(self.evidence_graph_extractor, "model", ""),
+            "support_units": [],
             "claims": [],
             "raw_batches": [],
             "stats": {
                 "selected_evidence": 0,
                 "batches": 0,
+                "support_units": 0,
                 "claims": 0,
             },
         }

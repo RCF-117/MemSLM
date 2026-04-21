@@ -179,6 +179,39 @@ class EvidenceFilter:
         pieces = re.split(r"(?<=[.!?。！？])\s+|\n+", str(text or ""))
         return [" ".join(x.split()) for x in pieces if " ".join(x.split())]
 
+    def _split_structured_units(self, text: str) -> List[str]:
+        raw = str(text or "")
+        normalized_lines = [self._normalize_space(x) for x in raw.splitlines() if self._normalize_space(x)]
+        pieces: List[str] = []
+
+        if len(normalized_lines) >= 2:
+            pieces.extend(normalized_lines)
+        elif re.search(r"(?:^|\n)\s*(?:[-*]|\d+[.)])\s+", raw):
+            for part in re.split(r"(?:^|\n)\s*(?=(?:[-*]|\d+[.)])\s+)", raw):
+                normalized = self._normalize_space(part)
+                if normalized:
+                    pieces.append(normalized)
+        elif raw.count(";") >= 2:
+            for part in raw.split(";"):
+                normalized = self._normalize_space(part)
+                if normalized:
+                    pieces.append(normalized)
+        elif raw.count("|") >= 4:
+            for part in raw.splitlines():
+                normalized = self._normalize_space(part)
+                if normalized:
+                    pieces.append(normalized)
+
+        deduped: List[str] = []
+        seen: Set[str] = set()
+        for piece in pieces:
+            key = self._text_key(piece)
+            if not key or key in seen or len(piece) < self.min_sentence_chars:
+                continue
+            seen.add(key)
+            deduped.append(piece)
+        return deduped
+
     @staticmethod
     def _looks_structured(text: str) -> bool:
         normalized = str(text or "")
@@ -646,7 +679,10 @@ class EvidenceFilter:
                 continue
 
             sentences = [text]
-            if channel == "plan_combined_evidence" or len(text) > self.split_long_chars or "\n" in text:
+            structured_units = self._split_structured_units(str(raw_item.get("text", "")))
+            if structured_units:
+                sentences = structured_units
+            elif channel == "plan_combined_evidence" or len(text) > self.split_long_chars or "\n" in text:
                 sentences = self._split_sentences(text) or [text]
             backup_group = f"{channel}:{int(raw_item.get('chunk_id', 0) or 0)}:{raw_rank}"
             add_window_backup = len(sentences) > 1 and (

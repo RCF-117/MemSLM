@@ -397,6 +397,7 @@ retrieval:
     force_json_output: true
     think: false
     extractor_batch_size: 8
+    extractor_max_support_units_per_batch: 12
     extractor_max_claims_per_batch: 12
     extractor_max_batches: 3
     filter_max_core: 8

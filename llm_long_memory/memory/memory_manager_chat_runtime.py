@@ -630,7 +630,9 @@ class MemoryManagerChatRuntime:
         max_evidence: int = 4,
     ) -> List[Dict[str, str]]:
         chunks: List[Dict[str, str]] = []
-        claims = list(dict(bundle.get("claim_result", {}) or {}).get("claims", []))
+        claim_result = dict(bundle.get("claim_result", {}) or {})
+        claims = list(claim_result.get("claims", []))
+        support_units = list(claim_result.get("support_units", []))
         seen: set[str] = set()
         for claim in claims[: max(1, int(max_claims))]:
             text = self._normalize_space(self._claim_to_text(dict(claim)))
@@ -641,6 +643,19 @@ class MemoryManagerChatRuntime:
                 continue
             seen.add(key)
             chunks.append({"text": text, "section": "graph_claim"})
+
+        if not chunks:
+            for unit in support_units[: max(1, int(max_claims))]:
+                text = self._normalize_space(
+                    str(unit.get("verbatim_span", "")) or str(unit.get("text", ""))
+                )
+                if not text:
+                    continue
+                key = text.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                chunks.append({"text": text, "section": "graph_support_unit"})
 
         if not chunks:
             filtered = dict(bundle.get("filtered_pack", {}) or {})
