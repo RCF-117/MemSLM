@@ -15,7 +15,7 @@ from llm_long_memory.experiments.report_audit_utils import (
     iter_audit_summary_lines,
     load_latest_source_audit_summary,
 )
-from llm_long_memory.experiments.llm_judge import LLMJudge
+from llm_long_memory.experiments.local_llm_judge import LocalLLMJudge
 from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
 
@@ -122,7 +122,7 @@ def export_report(
 
         enriched_rows: List[Dict[str, Any]] = [_row_to_dict(row) for row in result_rows]
         if judge_enabled and enriched_rows:
-            judge = LLMJudge(model_name=judge_model or str(config["llm"]["default_model"]))
+            judge = LocalLLMJudge(model_name=judge_model or str(config["llm"]["default_model"]))
             judge_cache: Dict[tuple[str, str, str], Dict[str, Any]] = {}
             for row in enriched_rows:
                 question = str(row.get("question", "")).strip()

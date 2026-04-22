@@ -1,47 +1,47 @@
-"""Answer decision pipeline for retrieval-grounded responses."""
+"""Active answer-grounding pipeline for evidence-grounded MemSLM answering."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from llm_long_memory.memory.answering_candidate_extractor import AnswerCandidateExtractor
-from llm_long_memory.memory.answering_response import AnswerResponseHandler
+from llm_long_memory.memory.evidence_candidate_extractor import EvidenceCandidateExtractor
+from llm_long_memory.memory.answer_response_guard import AnswerResponseGuard
 from llm_long_memory.utils.logger import logger
 
 
-class AnsweringPipeline:
-    """Encapsulate evidence extraction, candidate scoring, and answer fallback."""
+class AnswerGroundingPipeline:
+    """Encapsulate evidence extraction, candidate scoring, and response guarding."""
 
-    def __init__(self, answering_cfg: Dict[str, Any]) -> None:
-        self.answering_cfg = dict(answering_cfg)
-        self.answer_context_only = bool(self.answering_cfg["context_only"])
+    def __init__(self, grounding_cfg: Dict[str, Any]) -> None:
+        self.grounding_cfg = dict(grounding_cfg)
+        self.answer_context_only = bool(self.grounding_cfg["context_only"])
         self.reasoning_fallback_enabled = bool(
-            self.answering_cfg.get("reasoning_fallback_enabled", True)
+            self.grounding_cfg.get("reasoning_fallback_enabled", True)
         )
-        self.log_decision_details = bool(self.answering_cfg["log_decision_details"])
+        self.log_decision_details = bool(self.grounding_cfg["log_decision_details"])
         self.llm_fallback_to_top_candidate = bool(
-            self.answering_cfg["llm_fallback_to_top_candidate"]
+            self.grounding_cfg["llm_fallback_to_top_candidate"]
         )
-        self.fallback_min_score = float(self.answering_cfg["fallback_min_score"])
+        self.fallback_min_score = float(self.grounding_cfg["fallback_min_score"])
         self.response_evidence_min_token_overlap = float(
-            self.answering_cfg["response_evidence_min_token_overlap"]
+            self.grounding_cfg["response_evidence_min_token_overlap"]
         )
         self.response_evidence_min_shared_tokens = int(
-            self.answering_cfg["response_evidence_min_shared_tokens"]
+            self.grounding_cfg["response_evidence_min_shared_tokens"]
         )
         self.not_found_top_evidence_score_threshold = float(
-            self.answering_cfg["not_found_top_evidence_score_threshold"]
+            self.grounding_cfg["not_found_top_evidence_score_threshold"]
         )
-        self.second_pass_llm_enabled = bool(self.answering_cfg["second_pass_llm_enabled"])
+        self.second_pass_llm_enabled = bool(self.grounding_cfg["second_pass_llm_enabled"])
         self.second_pass_use_evidence_candidate = bool(
-            self.answering_cfg["second_pass_use_evidence_candidate"]
+            self.grounding_cfg["second_pass_use_evidence_candidate"]
         )
-        self.candidate_extractor = AnswerCandidateExtractor(self.answering_cfg)
+        self.candidate_extractor = EvidenceCandidateExtractor(self.grounding_cfg)
         self.not_found_force_evidence_candidate_when_available = bool(
-            self.answering_cfg.get("not_found_force_evidence_candidate_when_available", False)
+            self.grounding_cfg.get("not_found_force_evidence_candidate_when_available", False)
         )
         post_cfg = dict(
-            self.answering_cfg.get(
+            self.grounding_cfg.get(
                 "postprocess",
                 {
                     "enabled": False,
@@ -57,7 +57,7 @@ class AnsweringPipeline:
         self.postprocess_issue_with_pattern_enabled = bool(
             post_cfg["issue_with_pattern_enabled"]
         )
-        self.response_handler = AnswerResponseHandler(
+        self.response_guard = AnswerResponseGuard(
             answer_context_only=self.answer_context_only,
             llm_fallback_to_top_candidate=self.llm_fallback_to_top_candidate,
             fallback_min_score=self.fallback_min_score,
@@ -76,15 +76,15 @@ class AnsweringPipeline:
 
     @staticmethod
     def _tokenize(text: str) -> List[str]:
-        return AnswerCandidateExtractor.tokenize(text)
+        return EvidenceCandidateExtractor.tokenize(text)
 
     @staticmethod
     def _normalize_space(text: str) -> str:
-        return AnswerCandidateExtractor.normalize_space(text)
+        return EvidenceCandidateExtractor.normalize_space(text)
 
     @staticmethod
     def _split_sentences(text: str) -> List[str]:
-        return AnswerCandidateExtractor.split_sentences(text)
+        return EvidenceCandidateExtractor.split_sentences(text)
 
     def _sentence_overlap_score(self, query: str, sentence: str, chunk_score: float) -> float:
         return self.candidate_extractor.sentence_overlap_score(query, sentence, chunk_score)
@@ -157,35 +157,17 @@ class AnsweringPipeline:
             f"query='{query[:120]}', top_evidence={top_evidence}, top_candidates={top_candidates}"
         )
 
-    def build_answer_prompt(
-        self,
-        input_text: str,
-        graph_context: str,
-        query_plan: str = "",
-        graph_tool_hints: str = "",
-        rag_evidence: str = "",
-        fallback_answer: str = "",
-    ) -> str:
-        return self.response_handler.build_answer_prompt(
-            input_text=input_text,
-            graph_context=graph_context,
-            query_plan=query_plan,
-            graph_tool_hints=graph_tool_hints,
-            rag_evidence=rag_evidence,
-            fallback_answer=fallback_answer,
-        )
-
     def response_in_evidence(self, response: str, evidence_sentences: List[Dict[str, object]]) -> bool:
-        return self.response_handler.response_in_evidence(response, evidence_sentences)
+        return self.response_guard.response_in_evidence(response, evidence_sentences)
 
     def response_supported_by_evidence(
         self, response: str, evidence_sentences: List[Dict[str, object]]
     ) -> bool:
-        return self.response_handler.response_supported_by_evidence(
+        return self.response_guard.response_supported_by_evidence(
             response, evidence_sentences
         )
 
-    def evaluate_response_fallback(
+    def evaluate_response_guard(
         self,
         response: str,
         evidence_sentences: List[Dict[str, object]],
@@ -193,7 +175,7 @@ class AnsweringPipeline:
         evidence_candidate: Optional[Dict[str, str]] = None,
         fallback_answer: Optional[str] = None,
     ) -> Dict[str, str]:
-        return self.response_handler.evaluate_response_fallback(
+        return self.response_guard.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
@@ -201,7 +183,7 @@ class AnsweringPipeline:
             fallback_answer=fallback_answer,
         )
 
-    def apply_response_fallback(
+    def apply_response_guard(
         self,
         response: str,
         evidence_sentences: List[Dict[str, object]],
@@ -209,8 +191,8 @@ class AnsweringPipeline:
         evidence_candidate: Optional[Dict[str, str]] = None,
         fallback_answer: Optional[str] = None,
     ) -> str:
-        """Backward-compatible response fallback returning only final answer text."""
-        result = self.evaluate_response_fallback(
+        """Return only the final guarded answer text."""
+        result = self.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
@@ -219,23 +201,23 @@ class AnsweringPipeline:
         )
         return str(result.get("response", ""))
 
-    def build_second_pass_prompt(
+    def build_second_pass_retry_prompt(
         self,
         prompt_text: str,
         evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
-        return self.response_handler.build_second_pass_prompt(
+        return self.response_guard.build_second_pass_retry_prompt(
             prompt_text=prompt_text,
             evidence_candidate=evidence_candidate,
         )
 
-    def postprocess_final_answer(
+    def normalize_final_answer(
         self,
         answer: str,
         query: str,
         evidence_candidate: Optional[Dict[str, str]] = None,
     ) -> str:
-        return self.response_handler.postprocess_final_answer(
+        return self.response_guard.normalize_final_answer(
             answer=answer,
             query=query,
             evidence_candidate=evidence_candidate,

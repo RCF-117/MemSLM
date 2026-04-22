@@ -1,70 +1,59 @@
 # Experiments
 
-This directory contains the thesis-oriented experiment entry points for MemSLM.
+This directory contains the experiment-facing entrypoints for MemSLM.
 
-The scripts are intentionally split by responsibility so the research workflow stays auditable:
+The active experiment workflow is centered on:
+- reproducible eval runs
+- report export from SQLite
+- stage-wise auditing for retrieval / filter / claims / graph / toolkit
 
-## 1. Dataset Subset and Split Builders
+## Main Entry Points
+
+### Dataset construction
 
 - `build_eval_subset.py`
-  - builds a compact balanced subset from a larger benchmark file
-  - useful for quick A/B checks and small diagnostic runs
-
+  - build compact diagnostic subsets
 - `build_eval_split.py`
-  - builds a stratified `debug` / `test` split
-  - optionally writes a manifest for traceability
-  - useful when you want a frozen final test set after iterating on debug
+  - build frozen debug/test splits
 
-## 2. Thesis Evaluation Runner
+### Evaluation
 
 - `run_model_only_eval.py`
-  - runs the bare-model baseline directly on the raw dataset
-  - bypasses retrieval, graph, and long-memory code paths entirely
-
+  - bare-model baseline
 - `run_naive_rag_eval.py`
-  - runs a classic retrieve-then-generate baseline
-  - uses a simple passage retrieval stage without the richer MemSLM stack
-
+  - classic retrieve-then-generate baseline
 - `run_ablation_eval.py`
-  - runs the frozen Mid-RAG baseline with long memory disabled
-  - acts as the ablation/reference protocol for MemSLM
-
+  - frozen ablation / baseline protocol
 - `run_thesis_eval.py`
-  - one-shot workflow for subset construction, evaluation, and report export
-  - supports model override, judge override, and checkpoint resume
-
+  - main MemSLM eval runner
 - `run_thesis_compare.py`
-  - builds one consolidated wide comparison report from already stored runs
-  - resolves `model-only`, `naive rag`, `memslm`, and `ablation` from the mode registry or the latest legacy comparison artifact
-  - keeps MemSLM as the focal column, with the other three modes serving as reference protocols
+  - consolidated comparison report
 
-## 3. Report and Graph Export
+### Reporting
 
 - `export_eval_report.py`
-  - exports SQLite evaluation results into JSON / Markdown / CSV
-  - optionally uses a separate LLM judge for final answer accuracy
+  - export eval DB rows into report artifacts
+- `local_llm_judge.py`
+  - optional judge helper used by report export
+
+### Shared helpers
+
+- `direct_eval_runner.py`
+  - shared direct-baseline runner for `model-only` and `naive rag`
+- `report_audit_utils.py`
+  - shared source-audit summary loader for reports
+
+## Recommended Workflow
+
+1. build or select a debug split
+2. run source audit to inspect stage-wise evidence quality
+3. refresh `memslm`
+4. refresh fixed baselines only when needed
+5. export the per-run report
+6. export the consolidated comparison report
+
+## Graph Utility
 
 - `export_graph.py`
-  - exports the long-memory graph into inspectable formats
-  - useful for Gephi, browser preview, or paper figures
-
-## 4. Judge Helper
-
-- `llm_judge.py`
-  - local judge wrapper used by the report exporter
-  - kept separate from generation so the scoring phase remains isolated
-
-## Practical Use
-
-Recommended order:
-1. build a debug/test split
-2. tune on `debug`
-3. freeze `test`
-4. run `model-only` / `naive rag` once when needed
-5. run `ablation` once when needed
-6. run thesis evaluation for `memslm`
-7. build the consolidated comparison report
-8. export report
-9. export graph artifacts
-
-That separation keeps experimentation clean and makes the repository easier to maintain over time.
+  - active light-graph export from audit artifacts
+  - writes one combined HTML / JSON overview canvas for multi-question screenshots

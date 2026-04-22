@@ -1,43 +1,135 @@
 # MemSLM Architecture
 
-This repository uses a layered memory-RAG design with configurable runtime behavior.
+This document describes the **active** MemSLM runtime.
 
-## Runtime Flow
+## Active Online Path
 
-1. User input enters `ShortMemory` (recent-turn FIFO window).
-2. Overflow/history is persisted into `MidMemory` (SQLite topic/chunk store).
-3. Retrieval is hybrid (dense + lexical + topic prior), with chunk-level rerank.
-4. Optional long-memory graph context is injected before final generation.
-5. `AnsweringPipeline` performs evidence extraction, deterministic helpers (temporal/count), and final response control.
-6. Evaluation stores run metadata and per-question results into SQLite.
+```mermaid
+flowchart LR
+    A["User Query / Eval Question"] --> B["Query Plan"]
+    B --> C["Mid-Memory Retrieval"]
+    C --> D["Evidence Filter"]
+    D --> E["Support Units + Claims"]
+    E --> F["Light Graph"]
+    F --> G["Toolkit (Graph-only)"]
+    D --> H["Final Composer"]
+    E --> H
+    F --> H
+    G --> H
+    H --> I["8B Final Answer"]
+```
 
-## Modules
+## Stage Responsibilities
 
-- `llm_long_memory/main.py`: CLI entrypoint.
-- `llm_long_memory/cli/runtime.py`: interactive/eval command routing.
-- `llm_long_memory/memory/memory_manager.py`: orchestration root.
-- `llm_long_memory/memory/memory_manager_chat_runtime.py`: chat-path runtime logic.
-- `llm_long_memory/memory/mid_memory.py`: topic/chunk persistence + retrieval APIs.
-- `llm_long_memory/memory/long_memory.py`: long-memory graph retrieval/ingest facade.
-- `llm_long_memory/memory/answering_pipeline.py`: answer decision and fallback policies.
-- `llm_long_memory/evaluation/eval_runner.py`: dataset benchmark loop.
-- `llm_long_memory/evaluation/metrics_runtime.py`: match and retrieval-quality metrics.
+### Query Plan
+- infer `intent`
+- infer `answer_type`
+- produce `focus_phrases`
+- produce compact `sub_queries`
 
-## Data Stores
+This stage must operate from the query itself.  
+It must not use dataset `question_type` at runtime.
 
-- Mid memory DB: `llm_long_memory/data/processed/mid_memory.db`
-- Long memory DB: `llm_long_memory/data/processed/long_memory.db`
-- Logs: `llm_long_memory/logs/system.log`
+### Mid-Memory Retrieval
+- persistent SQLite-backed retrieval
+- hybrid recall over chunk and sentence units
+- retrieval is optimized for recall, not final cleanliness
 
-## Key Principles
+### Evidence Filter
+- conservative denoising
+- preserve answer-bearing evidence whenever possible
+- retain:
+  - `core_evidence`
+  - `supporting_evidence`
+  - `conflict_evidence`
+  - limited backup windows
 
-- Config-first behavior: runtime knobs live in `llm_long_memory/config/config.yaml`.
-- Separation of concerns: orchestration, retrieval, decision, and persistence are split.
-- Evaluation reproducibility: run-level metadata and per-instance outputs are persisted.
-- Safe fallback path: deterministic modules provide evidence-grounded guardrails.
+### Support Units and Claims
+- `support_units` preserve grounded evidence fragments
+- `claims` express structured facts/states/events
+- the stage is designed to avoid turning evidence into an over-compressed summary
 
-## Current Baseline Scope
+### Light Graph
+- deterministic organization over claim outputs
+- useful for:
+  - updates
+  - temporal relations
+  - subject grouping
+- not assumed to increase answer coverage by itself
 
-- Mid-memory hybrid retrieval is the verified baseline path.
-- Long-memory graph is integrated but can be switched off in config for isolated RAG tests.
-- Final LLM answering can be bypassed in custom retrieval-only tests.
+### Toolkit
+- consumes **only** light-graph output
+- intended for explicit reasoning tasks such as:
+  - count
+  - temporal comparison
+  - update resolution
+- should remain narrow, inspectable, and grounded
+
+### Final Composer
+- builds the final answer prompt from:
+  - filtered evidence
+  - graph claims
+  - light-graph summary
+  - toolkit analysis
+- should not reintroduce raw noisy retrieval as the main answer source
+
+## Active Module Map
+
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager.py)
+  top-level orchestrator
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager_chat_runtime.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager_chat_runtime.py)
+  chat path and final prompt composition
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_candidate_extractor.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_candidate_extractor.py)
+  sentence-level evidence ranking and extractive candidate helpers
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_grounding_pipeline.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_grounding_pipeline.py)
+  answer-grounding orchestration over evidence extraction and guard logic
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_response_guard.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_response_guard.py)
+  final prompt building, answer guard checks, and answer normalization
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_filter.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_filter.py)
+  filtering and conservative preservation
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_graph_extractor.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_graph_extractor.py)
+  support units + claims
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_light_graph.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_light_graph.py)
+  deterministic graph construction
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/temporal_query_utils.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/temporal_query_utils.py)
+  shared choice/temporal parsing helpers for retrieval and graph reasoning
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/graph_reasoning_toolkit.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/graph_reasoning_toolkit.py)
+  graph-only toolkit reasoning
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py)
+  toolkit orchestration
+
+## Graph Visualization
+
+The light graph is also exportable as a visualization artifact:
+- combined HTML/JSON overview canvas across multiple questions
+
+Exporter:
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/export_graph.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/export_graph.py)
+
+## Evaluation Semantics
+
+The repository tracks quality at multiple layers:
+- `rag`
+- `filter`
+- `claims`
+- `light_graph`
+- `toolkit`
+- `final_answer`
+
+For analysis and plotting, metrics should be read in two views:
+- overall
+- by question-type group
+
+Latency should also be tracked in two views:
+- overall average latency
+- per-type average latency
+
+## Architectural Intent
+
+This repository is intentionally not a one-shot black-box agent.
+
+The intended research value comes from:
+- making each stage explicit
+- making stage failure inspectable
+- preserving reproducibility under local 8B constraints
+- keeping one active runtime code path clean and inspectable

@@ -98,41 +98,6 @@ class FakeMidMemory:
         self.closed = True
 
 
-class FakeLongMemory:
-    def __init__(self, config=None) -> None:
-        self.enqueued = []
-        self.cleared = False
-        self.closed = False
-
-    def enqueue_message(self, message):
-        self.enqueued.append(dict(message))
-        return True
-
-    def build_context_snippets(self, query):
-        return []
-
-    def query(self, query_text):
-        return []
-
-    def debug_stats(self):
-        return {
-            "nodes": 0,
-            "edges": 0,
-            "queued_updates": 0,
-            "applied_updates": 0,
-            "ingest_event_total": 0,
-            "ingest_event_accepted": 0,
-            "ingest_event_rejected": 0,
-            "candidate_events": 0,
-        }
-
-    def clear_all(self):
-        self.cleared = True
-
-    def close(self):
-        self.closed = True
-
-
 class TestMemoryManager(unittest.TestCase):
     def _config(self):
         cfg = load_config(str(CONFIG_PATH))
@@ -143,8 +108,7 @@ class TestMemoryManager(unittest.TestCase):
         llm = llm or FakeLLM("mock-llm-response")
         with patch("llm_long_memory.memory.memory_manager.ShortMemory", FakeShortMemory):
             with patch("llm_long_memory.memory.memory_manager.MidMemory", FakeMidMemory):
-                with patch("llm_long_memory.memory.memory_manager.LongMemory", FakeLongMemory):
-                    manager = MemoryManager(llm=llm, config=cfg)
+                manager = MemoryManager(llm=llm, config=cfg)
         return manager, llm
 
     def test_retrieve_context_groups_by_topic(self):
@@ -188,7 +152,7 @@ class TestMemoryManager(unittest.TestCase):
         llm = FakeLLM("unrelated answer not in evidence")
         manager, _ = self._build_manager(cfg=cfg, llm=llm)
         out = manager.chat("where did she move?")
-        self.assertNotEqual(out, "Not found in retrieved context.")
+        self.assertEqual(out, "Not found in retrieved context.")
         self.assertGreaterEqual(llm.calls, 1)
 
     def test_chat_uses_prompt_fallback_for_not_found(self):
@@ -228,12 +192,13 @@ class TestMemoryManager(unittest.TestCase):
         out = manager.chat("What was the first issue with my car?")
         self.assertEqual(out, "GPS system not functioning correctly")
         self.assertIsNotNone(llm.last_messages)
-        self.assertIn("GPS system not functioning correctly", llm.last_messages[0]["content"])
+        self.assertNotIn("[Query Plan]", llm.last_messages[0]["content"])
+        self.assertIn("[Answer Rules]", llm.last_messages[0]["content"])
         self.assertNotEqual(out, "Not found in retrieved context.")
 
     def test_counting_fallback_is_not_forced_without_evidence_support(self):
         manager, llm = self._build_manager(llm=FakeLLM("unrelated answer"))
-        manager.answering.reasoning_fallback_enabled = True
+        manager.answer_grounding.reasoning_fallback_enabled = True
         out = manager.chat("How many items did I buy?")
         self.assertEqual(out, "Not found in retrieved context.")
         self.assertGreaterEqual(llm.calls, 1)

@@ -1,4 +1,4 @@
-"""Memory manager that orchestrates short memory, mid memory, and LLM calls."""
+"""Memory manager that orchestrates the active MemSLM retrieval pipeline."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
-from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
+from llm_long_memory.memory.answer_grounding_pipeline import AnswerGroundingPipeline
 from llm_long_memory.memory.evidence_filter import EvidenceFilter
+from llm_long_memory.memory.final_answer_composer import FinalAnswerComposer
 from llm_long_memory.memory.evidence_graph_extractor import EvidenceGraphExtractor
 from llm_long_memory.memory.evidence_light_graph import EvidenceLightGraph
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
-from llm_long_memory.memory.long_memory import LongMemory
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
 from llm_long_memory.memory.specialist_layer import SpecialistLayer
 from llm_long_memory.memory.memory_manager_utils import (
@@ -37,7 +37,12 @@ Message = Dict[str, Any]
 
 
 class _NoOpLongMemory:
-    """Disabled long-memory stub to avoid runtime overhead and code-path noise."""
+    """Removed long-memory compatibility stub.
+
+    The active system no longer reads or writes the legacy long-memory graph.
+    We keep this no-op object only so older debug and reset call sites remain
+    safe while the rest of the codebase converges on the new graph pipeline.
+    """
 
     cleared = False
     closed = False
@@ -98,7 +103,12 @@ class _NoOpLongMemory:
 
 
 class MemoryManager:
-    """Central controller for retrieval-augmented chat with persistent mid memory."""
+    """Central controller for the active MemSLM pipeline.
+
+    Main online path:
+    RAG retrieval -> evidence filter -> fixed-schema claims -> light graph ->
+    graph-only toolkit -> final answer composer -> 8B answer generation.
+    """
 
     def __init__(self, llm: LLM, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize manager with config-driven memory sizes and modules."""
@@ -108,22 +118,22 @@ class MemoryManager:
         self.short_memory = ShortMemory(max_turns=short_size, config=self.config)
         self.mid_memory = MidMemory(config=self.config)
         long_mem_cfg = dict(self.config["memory"]["long_memory"])
-        self.long_memory_enabled = bool(long_mem_cfg.get("enabled", False))
-        self.long_memory = (
-            LongMemory(config=self.config)
-            if self.long_memory_enabled
-            else _NoOpLongMemory()
-        )
-        answering_cfg = dict(self.config["retrieval"]["answering"])
-        self.answering = AnsweringPipeline(answering_cfg)
+        requested_long_memory = bool(long_mem_cfg.get("enabled", False))
+        self.long_memory_enabled = False
+        self.long_memory = _NoOpLongMemory()
+        if requested_long_memory:
+            logger.warning(
+                "MemoryManager: legacy long-memory is no longer part of the active "
+                "runtime; config.memory.long_memory.enabled is ignored."
+            )
+        answer_grounding_cfg = dict(self.config["retrieval"]["answering"])
+        self.answer_grounding = AnswerGroundingPipeline(answer_grounding_cfg)
+        self.final_answer_composer = FinalAnswerComposer(answer_grounding_cfg)
         self.specialist_layer = SpecialistLayer(
             self,
-            dict(answering_cfg.get("specialist_layer", {})),
+            dict(answer_grounding_cfg.get("specialist_layer", {})),
         )
-        self.graph_refiner_enabled = bool(answering_cfg.get("graph_refiner_enabled", False))
-        self.graph_context_from_store_enabled = bool(
-            answering_cfg.get("graph_context_from_store_enabled", False)
-        )
+        self.graph_refiner_enabled = bool(answer_grounding_cfg.get("graph_refiner_enabled", False))
         self.graph_toolkit = None
         self.retrieval_execution_mode = str(
             self.config["retrieval"].get("execution_mode", "memslm")
@@ -134,18 +144,10 @@ class MemoryManager:
         self.classic_rag_enabled = bool(
             self.config["retrieval"].get("classic_rag_enabled", False)
         ) or self.retrieval_execution_mode == "naive_rag"
-        offline_graph_cfg = dict(self.config["memory"]["long_memory"].get("offline_graph", {}))
-        self.offline_graph_build_enabled = bool(offline_graph_cfg.get("enabled", False))
-        self.offline_graph_build_top_chunks = int(offline_graph_cfg.get("build_top_chunks", 6))
-        self.offline_graph_build_chunk_max_chars = int(
-            offline_graph_cfg.get("build_chunk_max_chars", 260)
-        )
-        if (
-            self.graph_refiner_enabled
-            and self.long_memory_enabled
-            and self.offline_graph_build_enabled
-            and self.graph_context_from_store_enabled
-        ):
+        specialist_cfg = dict(answer_grounding_cfg.get("specialist_layer", {}))
+        specialist_enabled = bool(specialist_cfg.get("enabled", False))
+        graph_toolkit_enabled = bool(specialist_cfg.get("graph_toolkit_enabled", True))
+        if specialist_enabled and graph_toolkit_enabled:
             self.graph_toolkit = GraphReasoningToolkit(self)
 
         temporal_anchor_cfg = dict(self.config["retrieval"].get("temporal_anchor_retrieval", {}))
@@ -228,29 +230,6 @@ class MemoryManager:
         self.evidence_graph_extractor = EvidenceGraphExtractor(self, self.evidence_graph_cfg)
         self.evidence_light_graph = EvidenceLightGraph(self.evidence_graph_cfg)
 
-        graph_retry_cfg = dict(self.config["retrieval"].get("graph_build_retry", {}))
-        self.graph_build_retry_enabled = bool(graph_retry_cfg.get("enabled", False))
-        self.graph_build_retry_expanded_top_n = int(
-            graph_retry_cfg.get("expanded_top_n", 48)
-        )
-        self.graph_build_retry_ingest_top_chunks = int(
-            graph_retry_cfg.get("ingest_top_chunks", 10)
-        )
-        self.graph_build_retry_use_temporal_anchors = bool(
-            graph_retry_cfg.get("use_temporal_anchors", True)
-        )
-        self.graph_build_retry_anchor_query_limit = int(
-            graph_retry_cfg.get("anchor_query_limit", 4)
-        )
-        self.graph_build_retry_anchor_top_n_per_query = int(
-            graph_retry_cfg.get("anchor_top_n_per_query", 8)
-        )
-        graph_build_role_cfg = dict(self.config["retrieval"].get("graph_build_role_weights", {}))
-        self.graph_build_role_weights = {
-            str(k).strip().lower(): float(v)
-            for k, v in graph_build_role_cfg.items()
-            if str(k).strip()
-        }
         self.chat_runtime = MemoryManagerChatRuntime(self)
         self.last_prompt_eval_chunks: List[Dict[str, str]] = []
         self.last_query_plan: Dict[str, object] = {}
@@ -260,24 +239,6 @@ class MemoryManager:
     @staticmethod
     def _dedup_chunks_keep_best(chunks: List[Dict[str, object]]) -> List[Dict[str, object]]:
         return dedup_chunks_keep_best(chunks)
-
-    def _graph_build_role_weight(self, role: str) -> float:
-        normalized = str(role).strip().lower()
-        if normalized in self.graph_build_role_weights:
-            return float(self.graph_build_role_weights[normalized])
-        return 1.0
-
-    def _rank_chunks_for_graph_build(
-        self,
-        chunks: List[Dict[str, object]],
-    ) -> List[Dict[str, object]]:
-        ranked = [dict(x) for x in chunks]
-        ranked.sort(
-            key=lambda x: float(x.get("score", 0.0))
-            * self._graph_build_role_weight(str(x.get("role", "user"))),
-            reverse=True,
-        )
-        return ranked
 
     def _is_temporal_query(self, query: str) -> bool:
         return is_temporal_query(query, self.temporal_anchor_cue_keywords)
@@ -1068,7 +1029,7 @@ class MemoryManager:
             use_filter = True
         evidence_sentences = list(evidence_sentences or [])
         if not evidence_sentences:
-            evidence_sentences = self.answering.collect_evidence_sentences(query, chunks)
+            evidence_sentences = self.answer_grounding.collect_evidence_sentences(query, chunks)
         pack_payload = dict(evidence_pack or {})
         if not pack_payload:
             pack_payload = self.chat_runtime._build_evidence_pack(
@@ -1193,7 +1154,7 @@ class MemoryManager:
             best_evidence,
             best_candidate,
         ) = self._prepare_answer_inputs(query, precomputed_context)
-        prompt_fallback_answer = self.chat_runtime.resolve_prompt_fallback(
+        prompt_backup_answer = self.chat_runtime.resolve_prompt_backup_answer(
             fallback_answer=fallback_answer,
             evidence_candidate=evidence_candidate,
             candidates=candidates,
@@ -1208,16 +1169,16 @@ class MemoryManager:
             chunks=chunks,
             candidates=candidates,
             best_evidence=best_evidence,
-            fallback_answer=prompt_fallback_answer,
+            fallback_answer=prompt_backup_answer,
             evidence_candidate=evidence_candidate,
         )
-        ai_response, fallback_path, not_found_reason = self._generate_with_fallback(
+        ai_response, fallback_path, not_found_reason = self._generate_final_answer(
             input_text=input_text,
             query=query,
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
-            fallback_answer=prompt_fallback_answer,
+            fallback_answer=prompt_backup_answer,
             evidence_candidate=evidence_candidate,
         )
         logger.info(
@@ -1227,7 +1188,7 @@ class MemoryManager:
             f"best_evidence='{best_evidence}', "
             f"best_candidate='{best_candidate}', "
             f"fallback_answer='{fallback_answer}', "
-            f"prompt_fallback_answer='{prompt_fallback_answer}', "
+            f"prompt_backup_answer='{prompt_backup_answer}', "
             f"evidence_candidate='{(evidence_candidate or {}).get('answer', '')}'."
         )
         logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
@@ -1239,6 +1200,8 @@ class MemoryManager:
         query: str,
         precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]],
     ) -> Tuple[
+        str,
+        List[Dict[str, object]],
         List[Dict[str, object]],
         List[Dict[str, object]],
         List[Dict[str, object]],
@@ -1299,55 +1262,16 @@ class MemoryManager:
         chunks: List[Dict[str, object]],
         query: Optional[str] = None,
     ) -> int:
-        """Offline stage: build long-memory graph from retrieved chunks via 4B extractor."""
-        if not self.offline_graph_build_enabled:
-            return 0
-        accepted = int(
-            self.long_memory.ingest_from_chunks(
-                chunks=self._rank_chunks_for_graph_build(list(chunks)),
-                top_chunks=self.offline_graph_build_top_chunks,
-                max_chars_per_chunk=self.offline_graph_build_chunk_max_chars,
-            )
-        )
-        if accepted > 0:
-            return accepted
-        if (not self.graph_build_retry_enabled) or (not query):
-            return accepted
-        if not hasattr(self.mid_memory, "search_chunks_global_with_limit"):
-            return accepted
+        """Deprecated compatibility hook.
 
-        expanded = self.mid_memory.search_chunks_global_with_limit(
-            str(query),
-            top_n=self.graph_build_retry_expanded_top_n,
-        )
-        combined = self._dedup_chunks_keep_best(list(chunks) + list(expanded))
+        The active pipeline builds only question-scoped evidence graphs, so this
+        method intentionally does nothing and returns 0.
+        """
+        _ = chunks
+        _ = query
+        return 0
 
-        if self.graph_build_retry_use_temporal_anchors:
-            anchor_queries = self._build_temporal_anchor_queries(str(query))
-            for aq in anchor_queries[: max(0, self.graph_build_retry_anchor_query_limit)]:
-                combined.extend(
-                    self.mid_memory.search_chunks_global_with_limit(
-                        aq,
-                        top_n=self.graph_build_retry_anchor_top_n_per_query,
-                    )
-                )
-            combined = self._dedup_chunks_keep_best(combined)
-
-        retry_accepted = int(
-            self.long_memory.ingest_from_chunks(
-                chunks=self._rank_chunks_for_graph_build(combined),
-                top_chunks=self.graph_build_retry_ingest_top_chunks,
-                max_chars_per_chunk=self.offline_graph_build_chunk_max_chars,
-            )
-        )
-        logger.info(
-            "MemoryManager.offline_graph_retry: "
-            f"base_chunks={len(chunks)}, expanded_chunks={len(combined)}, "
-            f"accepted_before={accepted}, accepted_after={retry_accepted}."
-        )
-        return retry_accepted
-
-    def _generate_with_fallback(
+    def _generate_final_answer(
         self,
         *,
         input_text: str,
@@ -1358,7 +1282,7 @@ class MemoryManager:
         fallback_answer: str,
         evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
-        return self.chat_runtime.generate_with_fallback(
+        return self.chat_runtime.generate_final_answer(
             input_text=input_text,
             query=query,
             prompt_text=prompt_text,

@@ -475,3 +475,90 @@ class EvidenceLightGraph:
                 ),
             },
         }
+
+    def build_visualization_bundle(
+        self,
+        light_graph: Dict[str, Any],
+        *,
+        max_nodes: int = 36,
+        max_edges: int = 64,
+    ) -> Dict[str, Any]:
+        """Convert a light graph into visualization-friendly payloads."""
+
+        graph = dict(light_graph or {})
+        nodes = [dict(item) for item in list(graph.get("nodes", []))[: max(1, int(max_nodes))]]
+        node_by_id = {str(item.get("id", "")): item for item in nodes if str(item.get("id", "")).strip()}
+        visible_node_ids = set(node_by_id.keys())
+        edges: List[Dict[str, Any]] = []
+        for edge in list(graph.get("edges", [])):
+            src = str(edge.get("source", "")).strip()
+            dst = str(edge.get("target", "")).strip()
+            if not src or not dst or src not in visible_node_ids or dst not in visible_node_ids:
+                continue
+            edges.append(dict(edge))
+            if len(edges) >= max(1, int(max_edges)):
+                break
+
+        vis_nodes: List[Dict[str, Any]] = []
+        for item in nodes:
+            node_type = str(item.get("type", "")).strip().lower()
+            color = "#94a3b8"
+            shape = "dot"
+            if node_type == "query":
+                color = "#f59e0b"
+                shape = "star"
+            elif node_type == "entity":
+                color = "#38bdf8"
+                shape = "dot"
+            elif node_type == "state":
+                color = "#22c55e"
+                shape = "box"
+            elif node_type == "event":
+                color = "#ef4444"
+                shape = "diamond"
+            elif node_type == "fact":
+                color = "#a78bfa"
+                shape = "ellipse"
+            vis_nodes.append(
+                {
+                    "id": str(item.get("id", "")),
+                    "label": self._normalize_space(str(item.get("label", "")))[:120],
+                    "type": node_type,
+                    "shape": shape,
+                    "color": color,
+                    "title": self._normalize_space(str(item.get("label", ""))),
+                }
+            )
+
+        vis_edges: List[Dict[str, Any]] = []
+        mermaid_lines = ["graph TD"]
+        for edge in edges:
+            src = str(edge.get("source", ""))
+            dst = str(edge.get("target", ""))
+            edge_type = self._normalize_space(str(edge.get("type", ""))) or "edge"
+            weight = float(edge.get("weight", 0.0) or 0.0)
+            label = edge_type if weight <= 0 else f"{edge_type} ({weight:.2f})"
+            vis_edges.append(
+                {
+                    "id": str(edge.get("id", "")),
+                    "from": src,
+                    "to": dst,
+                    "label": edge_type,
+                    "title": label,
+                    "weight": weight,
+                }
+            )
+            src_label = self._normalize_space(str(node_by_id.get(src, {}).get("label", src)))[:48]
+            dst_label = self._normalize_space(str(node_by_id.get(dst, {}).get("label", dst)))[:48]
+            mermaid_lines.append(
+                f'    "{src_label}" -->|"{edge_type}"| "{dst_label}"'
+            )
+
+        return {
+            "query": str(graph.get("query", "")),
+            "answer_type": str(graph.get("answer_type", "")),
+            "stats": dict(graph.get("stats", {}) or {}),
+            "vis_nodes": vis_nodes,
+            "vis_edges": vis_edges,
+            "mermaid": "\n".join(mermaid_lines),
+        }

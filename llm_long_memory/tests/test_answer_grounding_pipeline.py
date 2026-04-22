@@ -1,4 +1,4 @@
-"""Tests for answering decision pipeline."""
+"""Tests for the answer-grounding pipeline."""
 
 from __future__ import annotations
 
@@ -6,17 +6,17 @@ import unittest
 from pathlib import Path
 
 from llm_long_memory.utils.helpers import load_config
-from llm_long_memory.memory.answering_pipeline import AnsweringPipeline
+from llm_long_memory.memory.answer_grounding_pipeline import AnswerGroundingPipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 
-class TestAnsweringPipeline(unittest.TestCase):
+class TestAnswerGroundingPipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cfg = load_config(str(CONFIG_PATH))
-        cls.pipeline = AnsweringPipeline(cfg["retrieval"]["answering"])
+        cls.pipeline = AnswerGroundingPipeline(cfg["retrieval"]["answering"])
 
     def test_collect_evidence_sentences_sorted(self) -> None:
         chunks = [
@@ -38,8 +38,8 @@ class TestAnsweringPipeline(unittest.TestCase):
             self.assertIn("text", candidates[0])
             self.assertIn("score", candidates[0])
 
-    def test_apply_response_fallback_to_not_found(self) -> None:
-        result = self.pipeline.apply_response_fallback(
+    def test_apply_response_guard_to_not_found(self) -> None:
+        result = self.pipeline.apply_response_guard(
             response="Completely unrelated answer",
             evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.8}],
             candidates=[],
@@ -49,19 +49,16 @@ class TestAnsweringPipeline(unittest.TestCase):
         else:
             self.assertEqual(result, "Completely unrelated answer")
 
-    def test_build_answer_prompt_is_compact(self) -> None:
-        prompt = self.pipeline.build_answer_prompt(
-            input_text="where did she move?",
-            graph_context="[Long Memory Graph]\n- location: Boston",
-            graph_tool_hints="intent=temporal_compare\nanchors=Boston | 2023",
-            fallback_answer="Boston",
+    def test_build_second_pass_retry_prompt_uses_structured_language(self) -> None:
+        prompt = self.pipeline.build_second_pass_retry_prompt(
+            prompt_text="[Filtered Evidence]\n- She moved to Boston in 2023.",
+            evidence_candidate={"answer": "Boston"},
         )
-        self.assertIn("[Graph Evidence]", prompt)
-        self.assertIn("[Graph Tool Hints]", prompt)
-        self.assertIn("[Fallback Answer]", prompt)
-        self.assertIn("[Answer Rules]", prompt)
-        self.assertNotIn("[Retrieved Context]", prompt)
-        self.assertNotIn("[Evidence Sentences]", prompt)
+        self.assertIn("[Original Prompt]", prompt)
+        self.assertIn("Toolkit Analysis", prompt)
+        self.assertIn("Light Graph", prompt)
+        self.assertIn("Filtered Evidence", prompt)
+        self.assertIn("Preferred evidence candidate: Boston", prompt)
 
 if __name__ == "__main__":
     unittest.main()

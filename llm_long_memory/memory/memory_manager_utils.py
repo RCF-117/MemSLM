@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Set
 
-from llm_long_memory.memory.answering_temporal import extract_choice_options, parse_choice_query
+from llm_long_memory.memory.temporal_query_utils import extract_choice_candidates, parse_choice_targets
 
 
 def dedup_chunks_keep_best(chunks: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -52,12 +52,12 @@ def build_temporal_anchor_queries(
         not is_temporal_query(query, temporal_anchor_cue_keywords)
     ):
         return []
-    parsed = parse_choice_query(
+    parsed = parse_choice_targets(
         query,
         max_options=max(2, temporal_anchor_max_options),
         default_target_k=temporal_anchor_max_options,
     )
-    options = parsed if parsed is not None else extract_choice_options(
+    options = parsed if parsed is not None else extract_choice_candidates(
         query, max_options=max(2, temporal_anchor_max_options)
     )
     out: List[str] = []
@@ -651,9 +651,9 @@ def build_query_plan(query: str, max_sub_queries: int = 4) -> Dict[str, object]:
         answer_type = "preference"
         intent = "preference"
 
-    compare_options = parse_choice_query(raw, max_options=3, default_target_k=2)
+    compare_options = parse_choice_targets(raw, max_options=3, default_target_k=2)
     if not compare_options:
-        compare_options = extract_choice_options(raw, max_options=3)
+        compare_options = extract_choice_candidates(raw, max_options=3)
     compare_options = _dedup_texts([str(x) for x in compare_options], 3)
     if len(compare_options) >= 2 and answer_type == "temporal":
         answer_type = "temporal_comparison"

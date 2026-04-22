@@ -1,275 +1,108 @@
 # MemSLM
 
-MemSLM is a local, modular memory-RAG research system for long-conversation evaluation.
+MemSLM is a local, modular research harness for long-conversation memory and retrieval.
 
-It is built for thesis work, but the code is organized with a stronger engineering discipline:
-- clear module boundaries
-- config-driven behavior
-- reproducible evaluation
-- separate generation and judge phases
-- checkpointable experiments
-
-The goal is not to be a production chatbot. The goal is to provide a stable, inspectable research platform for studying short memory, mid memory, and long-memory graph construction under local compute constraints.
+The repository is designed for thesis-grade experimentation, but the codebase is organized with an engineering-first standard:
+- explicit module boundaries
+- reproducible SQLite-backed evaluation
+- auditable stage-wise metrics
+- one active runtime path without shadow legacy branches
 
 ## Motivation
 
-Long-conversation systems fail for reasons that are easy to blur together:
-- the model does not see the right context
-- the retrieval layer returns the wrong evidence
-- the memory representation is too coarse
-- the final answer step over-trusts noisy evidence
+Long-conversation QA systems fail in multiple places at once:
+- retrieval does not bring back the right evidence
+- noisy evidence overwhelms answerable evidence
+- structure extraction removes useful information while trying to clean context
+- answer generation over-trusts weak cues
 
-This repository exists to separate those failure modes and make them measurable on a local machine.
+MemSLM exists to separate those failure modes and make them inspectable on a local machine with an 8B-class model.
 
-The design is intentionally conservative:
-- keep short-memory handling simple so immediate context remains faithful
-- keep mid-memory as the main retrieval workhorse so the baseline stays fast and reproducible
-- keep long-memory as a structured research module so we can inspect whether graph-style memory actually adds value
-- keep generation and judge separate so answer quality, retrieval quality, and latency can be reported independently
+The project is not trying to hide complexity behind one monolithic agent.  
+It is trying to answer a more useful research question:
 
-In other words, the project is trying to answer a practical research question:
-if we keep the system local and lightweight, how far can modular memory, retrieval, and graph construction go before we need heavier model reasoning?
+> If retrieval, filtering, structural extraction, graph organization, and tool use are made explicit, how far can a lightweight local system go before larger-model reasoning becomes necessary?
 
-## Core Design
+## Active Runtime Architecture
 
-The repository follows one guiding idea:
-
-> Keep retrieval and memory construction modular, keep generation separate, and keep evaluation reproducible.
-
-In practice this means:
-- short-term memory stores recent dialogue context
-- mid-term memory stores persistent conversation chunks in SQLite and performs retrieval
-- long-memory stores an event-centric graph prototype for offline structural memory
-- answering uses retrieved evidence plus a compact prompt to a local Ollama model
-- evaluation writes every instance to SQLite so runs can be resumed and audited
-- judge runs as a separate post-processing stage
-
-## System Architecture
+The active online path is now:
 
 ```mermaid
 flowchart LR
-    A["Dataset / User Input"] --> B["Short Memory"]
+    A["Dialogue / Dataset History"] --> B["Short Memory"]
     B --> C["Mid Memory Ingest (SQLite)"]
-    C --> D["Mid Retrieval: global chunk (dense + lexical + keyword)"]
-    D --> E["Answering Pipeline"]
-    E --> F["8B Generation"]
-    D --> G["Offline Long-Memory Graph Build (optional)"]
-    G --> H["Graph Store (SQLite)"]
-    H --> E
-    F --> I["Eval Result Logging"]
-    I --> J["SQLite Eval Tables"]
-    J --> K["Judge Stage (optional, separate)"]
+    C --> D["Hybrid RAG Retrieval"]
+    D --> E["Evidence Filter"]
+    E --> F["Support Units + Claims"]
+    F --> G["Light Graph"]
+    G --> H["Toolkit (Graph-only Reasoning)"]
+    E --> I["Final Composer"]
+    F --> I
+    G --> I
+    H --> I
+    I --> J["8B Final Answer"]
+    J --> K["SQLite Eval + Reports"]
 ```
 
-### What each stage does
+This matters for two reasons:
+- the final model no longer consumes raw noisy retrieval directly
+- each intermediate stage can be audited independently
 
-- **Short memory**
-  - holds the latest turns
-  - preserves immediate conversational continuity
-  - flushes old turns into mid memory when full
+## Design Principles
 
-- **Mid memory**
-  - stores conversation chunks persistently in SQLite
-  - uses chunk-first hybrid retrieval (dense + lexical + keyword)
-  - serves as the main recall layer for the baseline and thesis experiments
+### 1. Retrieval remains the recall backbone
 
-- **Long memory**
-  - builds a structured event graph from retrieved evidence
-  - is evaluated offline so that graph quality can be inspected without conflating it with final answer generation
-  - remains a research prototype rather than a final production module
-  - can be disabled to run pure mid-memory experiments
+RAG is responsible for finding answer-bearing evidence.  
+It is allowed to be noisy, but it should maximize recall.
 
-- **Answering pipeline**
-  - assembles compact evidence bundles
-  - optionally uses counting / temporal / fallback helpers
-  - always returns through the final model path unless explicitly turned off in an experiment
+### 2. Filtering is conservative
 
-- **Evaluation**
-  - writes one row per question into SQLite
-  - supports interruption and resumption by `run_id`
-  - can export a final report with judge-based accuracy
+The filter should reduce noise without destroying rare but decisive evidence.  
+It is intentionally biased toward preserving answerability.
 
-## Repository Layout
+### 3. Claims are structure, not summary
 
-- `llm_long_memory/main.py`: interactive CLI entrypoint
-- `llm_long_memory/config/config.yaml`: runtime configuration
-- `llm_long_memory/llm/`: local Ollama client
-- `llm_long_memory/memory/`: short memory, mid memory, long memory, answering pipeline, orchestration
-- `llm_long_memory/evaluation/`: dataset loading, runtime evaluation, metrics, persistence, report export
-- `llm_long_memory/baselines/`: frozen baseline protocol and runner
-- `llm_long_memory/experiments/`: thesis-oriented subset building, split generation, standalone baselines, judge export, report export, graph export
-- `llm_long_memory/tests/`: unit tests
+Claims should preserve grounded evidence in a structured form.  
+They should not aggressively compress away information just to look cleaner.
 
-### Experiment entry points
+### 4. The light graph is an organizer, not a magic oracle
 
-- `build_eval_subset.py`: build a compact balanced subset
-- `build_eval_split.py`: build a debug/test split with a fixed manifest
-- `run_model_only_eval.py`: run a direct-to-LLM bare-model baseline and persist results
-- `run_naive_rag_eval.py`: run a classic retrieve-then-generate baseline and persist results
-- `run_ablation_eval.py`: run the frozen baseline ablation and persist results
-- `run_thesis_eval.py`: run a thesis-oriented experiment with optional judge
-- `run_thesis_compare.py`: build the consolidated thesis comparison report from existing mode runs, centered on MemSLM
-- `export_eval_report.py`: export SQLite eval runs into JSON / Markdown / CSV
-- `export_graph.py`: export the long-memory graph for visualization
-- `llm_judge.py`: local judge helper used by the report exporter
+The graph is meant to organize claims and expose update / temporal / subject relations.  
+It is not assumed to improve answer coverage by itself.
 
-For a more detailed breakdown of these scripts, see:
-- [`llm_long_memory/experiments/README.md`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/README.md)
+### 5. Toolkit only reasons over graph output
 
-## Data Sources
+The toolkit is no longer treated as a generic text-side heuristic layer.  
+Its intended role is narrow and explicit:
+- consume light-graph output
+- perform count / temporal / update-style reasoning
+- return grounded, inspectable tool results
 
-The loader is designed to support:
-- **LongMemEval**
-- **LoCoMo**
+### 6. Runtime routing cannot see dataset labels
 
-These datasets are normalized into a shared internal shape so the same evaluation and retrieval code can be reused across benchmark families.
+At test time the system should not rely on dataset `question_type`.  
+Routing must come from query-derived signals only:
+- query plan
+- answer type inferred from the query
+- focus phrases
+- sub-queries
+- structured graph evidence
 
-Recommended locations:
-- LongMemEval raw files: `llm_long_memory/data/raw/LongMemEval/`
-- LoCoMo raw files: `llm_long_memory/data/raw/LoCoMo/`
+## Stage-Wise Evaluation
 
-## Reproducibility Rules
+MemSLM tracks answer-bearing information across the active chain:
+- `rag`
+- `filter`
+- `claims`
+- `light_graph`
+- `toolkit`
+- `final_answer`
 
-The repo is structured around two kinds of runs:
+For audit runs, the repository records stage quality both:
+- overall
+- by `question_type` group for visualization and analysis
 
-1. **Generation run**
-   - one question at a time
-   - results written to SQLite immediately
-   - can be resumed with `run_id`
-
-2. **Judge run**
-   - separate post-processing stage
-   - batch-evaluates completed predictions
-   - does not affect generation latency
-
-This separation is intentional. It keeps generation stable and keeps the final score audit-friendly.
-
-## Thesis Workflow
-
-### 1) Build a debug/test split
-
-If you want a stable development split and a frozen final split:
-
-```bash
-python -m llm_long_memory.experiments.build_eval_split \
-  --source llm_long_memory/data/raw/LongMemEval/longmemeval_oracle.json \
-  --debug-output llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_debug.json \
-  --test-output llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_test.json \
-  --debug-ratio 0.3 \
-  --seed 42
-```
-
-Optional:
-- `--keep-types`
-- `--drop-types`
-- `--manifest-output`
-
-These interfaces are kept for controlled experiments, but they are not enabled by default.
-
-### 2) Run a thesis evaluation
-
-Example 1:
-
-```bash
-python -m llm_long_memory.experiments.run_thesis_eval \
-  --config llm_long_memory/config/config.yaml \
-  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_debug.json \
-  --model qwen3:8b \
-  --judge-model deepseek-r1:8b \
-  --judge \
-  --report-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
-```
-
-Example 2:
-
-```bash
-python -m llm_long_memory.experiments.run_thesis_eval \
-  --config llm_long_memory/config/config.yaml \
-  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_oracle_debug.json \
-  --model deepseek-r1:8b \
-  --judge-model qwen3:8b \
-  --judge \
-  --report-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
-```
-
-Useful options:
-- `--resume-run-id`: resume a crashed run
-- `--subset-output`: persist sampled subset
-- `--keep-types` / `--drop-types`: optional type filtering
-- `--max-total`, `--per-type`, `--seed`: subset control
-
-Standalone baseline runners:
-
-```bash
-python -m llm_long_memory.experiments.run_model_only_eval \
-  --config llm_long_memory/config/config.yaml \
-  --split ragdebug10
-```
-
-```bash
-python -m llm_long_memory.experiments.run_naive_rag_eval \
-  --config llm_long_memory/config/config.yaml \
-  --split ragdebug10
-```
-
-```bash
-python -m llm_long_memory.experiments.run_ablation_eval \
-  --config llm_long_memory/baselines/baseline_midrag_v1.yaml \
-  --split ragdebug10
-```
-
-These baseline scripts write their raw results into the shared eval SQLite database.
-You can then run the comparison report builder once after refreshing `memslm`.
-
-### 3) Export a report
-
-```bash
-python -m llm_long_memory.experiments.export_eval_report \
-  --db-path llm_long_memory/data/processed/thesis_eval.db \
-  --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
-```
-
-You can optionally merge offline graph evaluation JSON with:
-
-```bash
-python -m llm_long_memory.experiments.export_eval_report \
-  --db-path llm_long_memory/data/processed/thesis_eval.db \
-  --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis \
-  --graph-json llm_long_memory/data/processed/graph_eval_*.json
-```
-
-### 4) Export the long-memory graph
-
-```bash
-python -m llm_long_memory.experiments.export_graph \
-  --db-path llm_long_memory/data/processed/long_memory.db \
-  --output-dir llm_long_memory/data/graphs
-```
-
-This produces graph artifacts suitable for inspection in Gephi, browser preview, or later paper figures.
-
-### 5) Run the consolidated comparison report
-
-```bash
-python -m llm_long_memory.experiments.run_thesis_compare \
-  --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
-  --model-name qwen3:8b \
-  --judge-model deepseek-r1:8b
-```
-
-This report is built from already stored mode runs and writes one consolidated wide table with these fixed protocol columns:
-- `model-only`
-- `naive rag`
-- `memslm`
-- `ablation`
-
-MemSLM is the primary column in the report narrative; the other three modes are reference protocols for comparison.
-
-## Metrics
-
-The thesis report keeps the following metrics as the primary public contract:
-
+For formal evaluation, the repository records:
 - `final_answer_acc`
 - `type_answer_acc`
 - `retrieval_answer_span_hit_rate`
@@ -280,58 +113,146 @@ The thesis report keeps the following metrics as the primary public contract:
 - `avg_latency_sec`
 - `type_latency_sec`
 
-Interpretation:
-- `final_answer_acc` is the main end-to-end answer quality metric
-- `type_answer_acc` is the judge-based grouped accuracy by `question_type`
-- retrieval and graph hit rates are diagnostic coverage metrics
-- latency metrics measure end-to-end wall-clock answer time per question; judge time is excluded from generation latency and reported separately
+The current interpretation of `graph_ingest_accept_rate` is tied to the active evidence-graph stack rather than the removed old event-store ingest path.
 
-## Current Experimental Policy
+## Codebase Layout
 
-- Keep the main generation path stable while you tune retrieval and graph quality
-- Use the debug split for iteration
-- Freeze the test split for final reporting
-- Keep judge separate from generation
-- Prefer small, balanced experiments over full-benchmark reruns when you need fast feedback
+### Active runtime modules
 
-## Branch Policy
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager.py)
+  Main orchestration root.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager_chat_runtime.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager_chat_runtime.py)
+  Online answer-path runtime.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/mid_memory.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/mid_memory.py)
+  Mid-memory ingest and retrieval.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_filter.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_filter.py)
+  Conservative evidence filtering.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_candidate_extractor.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_candidate_extractor.py)
+  Sentence-level evidence ranking and extractive candidate helpers.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_grounding_pipeline.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_grounding_pipeline.py)
+  Answer-grounding orchestration between evidence extraction and response guard.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_response_guard.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_response_guard.py)
+  Final prompt building, guard checks, and answer normalization.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_graph_extractor.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_graph_extractor.py)
+  8B fixed-schema support-unit / claim extraction.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_light_graph.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_light_graph.py)
+  Deterministic light-graph construction.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/temporal_query_utils.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/temporal_query_utils.py)
+  Shared temporal and choice-query parsing helpers.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/graph_reasoning_toolkit.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/graph_reasoning_toolkit.py)
+  Graph-only reasoning helpers.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py)
+  Toolkit orchestration layer.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/scripts/run_answer_source_audit.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/scripts/run_answer_source_audit.py)
+  Main audit entrypoint for stage-wise inspection.
 
-- `main`: active development branch
-- `baseline/midrag_v1`: frozen mid-memory baseline for controlled comparison
+## Repository Layout
 
-## Data and Git Hygiene
+- `llm_long_memory/config/`
+  runtime and evaluation config
+- `llm_long_memory/memory/`
+  active memory / evidence / graph runtime code
+- `llm_long_memory/evaluation/`
+  dataset-loop evaluation, metrics, persistence
+- `llm_long_memory/experiments/`
+  experiment runners and report exporters
+- `llm_long_memory/baselines/`
+  frozen baseline protocols
+- `llm_long_memory/tests/`
+  unit and integration-style tests
 
-Large or runtime files are intentionally ignored:
-- `llm_long_memory/data/raw/*.json`
-- `llm_long_memory/data/raw/**/*.json`
-- `llm_long_memory/data/processed/*.db*`
-- `llm_long_memory/logs/`
+## Main Experiment Entry Points
 
-Tracked placeholders keep the directory tree stable:
-- `llm_long_memory/data/raw/.gitkeep`
-- `llm_long_memory/data/raw/LongMemEval/.gitkeep`
-- `llm_long_memory/data/raw/LoCoMo/.gitkeep`
-- `llm_long_memory/data/processed/.gitkeep`
-- `llm_long_memory/data/graphs/.gitkeep`
+- `python -m llm_long_memory.experiments.run_model_only_eval`
+  Bare-model baseline.
+- `python -m llm_long_memory.experiments.run_naive_rag_eval`
+  Textbook retrieve-then-generate baseline.
+- `python -m llm_long_memory.experiments.run_ablation_eval`
+  Frozen baseline / ablation protocol.
+- `python -m llm_long_memory.experiments.run_thesis_eval`
+  Main MemSLM evaluation entrypoint.
+- `python -m llm_long_memory.experiments.run_thesis_compare`
+  Consolidated comparison report from stored runs.
+- `python -m llm_long_memory.scripts.run_answer_source_audit`
+  Stage-wise source audit without final answer generation.
 
-## Status
+Shared experiment helpers:
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/direct_eval_runner.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/direct_eval_runner.py)
+  Shared direct-baseline runner for `model-only` and `naive rag`.
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/local_llm_judge.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/local_llm_judge.py)
+  Local semantic judge helper used by reports and compare flows.
 
-This is a research prototype with strong engineering hygiene for a thesis project.
+## Practical Workflow
 
-It is not a production service, but it is now structured enough to support:
-- reproducible ablations
-- judge-based reporting
-- checkpointable evaluation
-- graph export and qualitative inspection
-- baseline-versus-variant comparison
+### 1. Run source audit
 
-## Practical Advice
+```bash
+python -m llm_long_memory.scripts.run_answer_source_audit \
+  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json \
+  --enable-evidence-filter \
+  --enable-evidence-claims \
+  --enable-evidence-light-graph
+```
 
-If you are about to run a new experiment:
-1. Generate or select the debug split
-2. Tune on debug only
-3. Freeze the test split
-4. Run the final judge once
-5. Export the report and graph artifacts
+Use this when you want to inspect:
+- whether RAG found enough evidence
+- whether filtering preserved answer-bearing evidence
+- whether claims / graph are losing information
 
-That workflow keeps the repository both research-friendly and maintainable.
+### 2. Run MemSLM evaluation
+
+```bash
+python -m llm_long_memory.experiments.run_thesis_eval \
+  --config llm_long_memory/config/config.yaml \
+  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json \
+  --model qwen3:8b \
+  --judge-model deepseek-r1:8b \
+  --judge
+```
+
+### 3. Export report
+
+```bash
+python -m llm_long_memory.experiments.export_eval_report \
+  --db-path llm_long_memory/data/processed/thesis_eval.db \
+  --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis
+```
+
+### 4. Build consolidated comparison report
+
+```bash
+python -m llm_long_memory.experiments.run_thesis_compare \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10 \
+  --model-name qwen3:8b \
+  --judge-model deepseek-r1:8b
+```
+
+## Light Graph Export
+
+The active light-graph path can be exported into one combined JSON / HTML overview:
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/export_graph.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/export_graph.py)
+
+The exporter tiles multiple question graphs into one shared canvas for screenshots and qualitative inspection.
+
+Example:
+
+```bash
+python -m llm_long_memory.experiments.export_graph \
+  --audit-json llm_long_memory/data/processed/thesis_reports_debug_analysis/your_audit.json \
+  --output-dir llm_long_memory/data/graphs_thesis_debug_analysis
+```
+
+## Current Positioning
+
+MemSLM should be read as:
+- a serious local-memory research platform
+- a stage-auditable retrieval-and-structure system
+- a codebase that keeps one active chain clean and inspectable
+
+It should not be read as:
+- a finished production assistant
+- a single black-box agent
+- a proof that graphs always outperform filtered retrieval
+
+That distinction is deliberate. The goal is faithful research, not artificial neatness.

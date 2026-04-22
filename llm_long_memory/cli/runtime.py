@@ -151,23 +151,21 @@ def _print_commands() -> None:
 
 
 def _print_debug(manager: MemoryManager) -> None:
-    """Print mid/long memory debug stats."""
+    """Print active runtime stats and the latest evidence-graph snapshot."""
     stats = manager.mid_memory.debug_stats()
-    long_stats = manager.long_memory.debug_stats()
+    graph_stats = dict(
+        dict(getattr(manager, "last_evidence_graph_bundle", {}) or {}).get("light_graph", {})
+        .get("stats", {})
+        or {}
+    )
     print(f"topics: {stats['topics']}")
     print(f"total_chunks: {stats['chunks']}")
     print(f"active_topics: {stats['active_topics']}")
     print(f"inactive_topics: {stats['inactive_topics']}")
-    print(f"long_nodes: {long_stats['nodes']}")
-    print(f"long_edges: {long_stats['edges']}")
-    print(f"long_events: {long_stats['events']}")
-    print(f"long_details: {long_stats['details']}")
-    print(f"long_active_events: {long_stats['active_events']}")
-    print(f"long_superseded_events: {long_stats['superseded_events']}")
-    print(f"long_queue: {long_stats['queued_updates']}")
-    print(f"long_ingest_total: {long_stats['ingest_event_total']}")
-    print(f"long_ingest_accepted: {long_stats['ingest_event_accepted']}")
-    print(f"long_ingest_rejected: {long_stats['ingest_event_rejected']}")
+    print(f"last_light_graph_nodes: {int(graph_stats.get('node_count', 0) or 0)}")
+    print(f"last_light_graph_edges: {int(graph_stats.get('edge_count', 0) or 0)}")
+    print(f"last_light_graph_entities: {int(graph_stats.get('entity_count', 0) or 0)}")
+    print(f"last_light_graph_claims: {int(graph_stats.get('claim_count', 0) or 0)}")
 
 
 def _handle_dataset_command(

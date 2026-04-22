@@ -1,4 +1,4 @@
-"""JSON extraction and relaxed parsing helpers for long-memory model outputs."""
+"""Generic JSON extraction and relaxed parsing helpers for model outputs."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 
 def extract_first_json_block(text: str) -> str:
-    """Extract first JSON object/array block from arbitrary model output."""
+    """Extract the first JSON object/array block from arbitrary model output."""
     stripped = str(text).strip()
     if not stripped:
         return "{}"

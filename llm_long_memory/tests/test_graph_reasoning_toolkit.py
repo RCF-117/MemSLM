@@ -1,287 +1,210 @@
-"""Tests for graph reasoning hint builder."""
+"""Tests for the graph-only reasoning toolkit."""
 
 from __future__ import annotations
 
 import types
 import unittest
-from pathlib import Path
 
-from llm_long_memory.memory.answering_candidate_extractor import AnswerCandidateExtractor
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
-from llm_long_memory.memory.long_memory_query_engine import LongMemoryQueryEngine
-from llm_long_memory.utils.helpers import load_config
+from llm_long_memory.memory.query_intent import extract_query_intent
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
+
+def _claim_node(
+    node_id: str,
+    *,
+    claim_type: str,
+    subject: str,
+    predicate: str,
+    value: str,
+    time_anchor: str = "",
+    confidence: float = 0.8,
+    support_weight: float = 0.7,
+) -> dict:
+    return {
+        "id": node_id,
+        "type": {"fact_statement": "fact", "state_snapshot": "state", "event_record": "event"}[claim_type],
+        "label": f"{subject} | {predicate} | {value}",
+        "meta": {
+            "claim_id": node_id,
+            "claim_type": claim_type,
+            "subject": subject,
+            "predicate": predicate,
+            "value": value,
+            "time_anchor": time_anchor,
+            "confidence": confidence,
+            "support_weight": support_weight,
+        },
+    }
+
+
+def _supports_query(node_id: str, weight: float = 0.8) -> dict:
+    return {"source": node_id, "target": "query", "type": "supports_query", "weight": weight}
 
 
 class TestGraphReasoningToolkit(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cfg = load_config(str(CONFIG_PATH))
-        answering = types.SimpleNamespace()
-        cls.manager = types.SimpleNamespace(
-            config=cfg,
-            answering=answering,
-            graph_refiner_enabled=True,
-            long_memory_enabled=True,
-            offline_graph_build_enabled=True,
-            graph_context_from_store_enabled=True,
-        )
+        cls.manager = types.SimpleNamespace()
         cls.toolkit = GraphReasoningToolkit(cls.manager)
-        cls.candidate_extractor = AnswerCandidateExtractor(dict(cfg["retrieval"]["answering"]))
-        cls.query_engine = LongMemoryQueryEngine(types.SimpleNamespace())
 
-    def test_build_tool_hints_count(self) -> None:
-        hints = self.toolkit.build_tool_hints(
-            query="How many items did I buy?",
-            graph_context="[Long Memory Graph]\n- I bought 4 items yesterday.",
-            evidence_sentences=[
-                {"text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday.", "score": 1.0}
+    def test_build_light_graph_tool_payload_count(self) -> None:
+        graph = {
+            "answer_type": "count",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Q1", "meta": {}},
+                _claim_node("c1", claim_type="fact_statement", subject="bike collection", predicate="count", value="3"),
+                _claim_node("c2", claim_type="fact_statement", subject="bike collection", predicate="item", value="road bike"),
+                _claim_node("c3", claim_type="fact_statement", subject="bike collection", predicate="item", value="mountain bike"),
+                _claim_node("c4", claim_type="fact_statement", subject="bike collection", predicate="item", value="commuter bike"),
             ],
-            candidates=[{"text": "jacket", "score": 1.0}],
-            chunks=[{"text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday."}],
-        )
-        self.assertIn("intent=count", hints)
-        self.assertIn("count_enumerated_items=", hints)
-        self.assertIn("count_support_spans=", hints)
-
-    def test_build_tool_answer_count(self) -> None:
-        answer = self.toolkit.build_tool_answer(
+            "edges": [
+                _supports_query("c1", 0.9),
+                _supports_query("c2", 0.8),
+                _supports_query("c3", 0.8),
+                _supports_query("c4", 0.8),
+            ],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
             query="How many bikes do I own?",
-            graph_context="[Long Memory Graph]\n- I've got three of them: a road bike, a mountain bike, and a commuter bike.",
-            evidence_sentences=[
-                {
-                    "text": "I've got three of them: a road bike, a mountain bike, and a commuter bike.",
-                    "score": 1.0,
-                }
+            light_graph=graph,
+        )
+        self.assertEqual(payload["intent"], "count")
+        self.assertEqual(payload["answer_candidate"], "3")
+        self.assertTrue(any("count_graph_items=" in line for line in payload["summary_lines"]))
+
+    def test_build_light_graph_tool_payload_temporal_count(self) -> None:
+        graph = {
+            "answer_type": "temporal_count",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Q2", "meta": {}},
+                _claim_node(
+                    "c1",
+                    claim_type="event_record",
+                    subject="exchange program",
+                    predicate="accepted",
+                    value="accepted",
+                    time_anchor="March 20",
+                ),
+                _claim_node(
+                    "c2",
+                    claim_type="event_record",
+                    subject="exchange program",
+                    predicate="orientation",
+                    value="started",
+                    time_anchor="March 27",
+                ),
             ],
-            candidates=[],
-            chunks=[{"text": "I've got three of them: a road bike, a mountain bike, and a commuter bike."}],
+            "edges": [_supports_query("c1"), _supports_query("c2")],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="How many weeks passed between acceptance and orientation?",
+            light_graph=graph,
         )
-        self.assertEqual(answer, "")
+        self.assertEqual(payload["intent"], "temporal_count")
+        self.assertEqual(payload["answer_candidate"], "1 week")
 
-    def test_build_tool_answer_count_ignores_unrelated_numeric_noise(self) -> None:
-        answer = self.toolkit.build_tool_answer(
-            query="How many bikes do I own?",
-            graph_context="[Long Memory Graph]\n- By the way, speaking of my bikes, I've got three of them - a road bike, a mountain bike, and a commuter bike - and I've been using them for different types of rides.",
-            evidence_sentences=[
-                {
-                    "text": "By the way, speaking of my bikes, I've got three of them - a road bike, a mountain bike, and a commuter bike - and I've been using them for different types of rides.",
-                    "score": 1.0,
-                }
+    def test_build_light_graph_tool_payload_temporal_compare(self) -> None:
+        graph = {
+            "answer_type": "temporal_comparison",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Q3", "meta": {}},
+                _claim_node(
+                    "a",
+                    claim_type="event_record",
+                    subject="Mark and Sarah",
+                    predicate="met",
+                    value="a month ago",
+                    time_anchor="2026-03-01",
+                ),
+                _claim_node(
+                    "b",
+                    claim_type="event_record",
+                    subject="Tom",
+                    predicate="met",
+                    value="a few months ago",
+                    time_anchor="2026-01-01",
+                ),
             ],
-            candidates=[{"text": "The project has 4 sections.", "score": 0.9}],
-            chunks=[
-                {
-                    "text": "By the way, speaking of my bikes, I've got three of them - a road bike, a mountain bike, and a commuter bike - and I've been using them for different types of rides."
-                }
+            "edges": [
+                _supports_query("a", 0.8),
+                _supports_query("b", 0.8),
+                {"source": "b", "target": "a", "type": "before", "weight": 0.9},
             ],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="Who did I meet first, Mark and Sarah or Tom?",
+            light_graph=graph,
         )
-        self.assertEqual(answer, "")
+        self.assertEqual(payload["intent"], "temporal_compare")
+        self.assertEqual(payload["answer_candidate"], "Tom")
 
-    def test_build_tool_answer_count_keeps_object_list_completeness_without_exact_focus_overlap(self) -> None:
-        pack = self.toolkit._build_count_evidence_pack(
-            query="How many things did I buy?",
-            evidence_sentences=[
-                {
-                    "text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday.",
-                    "score": 1.0,
-                }
+    def test_build_light_graph_tool_payload_update(self) -> None:
+        graph = {
+            "answer_type": "update",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Q4", "meta": {}},
+                _claim_node(
+                    "old",
+                    claim_type="state_snapshot",
+                    subject="Ethereal Dreams painting",
+                    predicate="location",
+                    value="living room sofa",
+                    time_anchor="before",
+                ),
+                _claim_node(
+                    "new",
+                    claim_type="state_snapshot",
+                    subject="Ethereal Dreams painting",
+                    predicate="location",
+                    value="bedroom",
+                    time_anchor="latest",
+                ),
             ],
-            candidates=[],
-            chunks=[{"text": "I bought a jacket, a shirt, a scarf, and a pair of boots yesterday."}],
-        )
-        self.assertTrue(pack)
-        self.assertIn("enumerated_items", pack)
-        self.assertEqual(len(list(pack.get("enumerated_items", []))), 4)
-
-    def test_build_tool_answer_count_generalizes_to_other_object_types(self) -> None:
-        pack = self.toolkit._build_count_evidence_pack(
-            query="How many kitchen items do I have?",
-            evidence_sentences=[
-                {
-                    "text": "I have a bowl, a spoon, a plate, and a mug.",
-                    "score": 1.0,
-                }
+            "edges": [
+                _supports_query("old", 0.6),
+                _supports_query("new", 0.9),
+                {"source": "old", "target": "new", "type": "updates", "weight": 0.9, "state_key": "location"},
             ],
-            candidates=[],
-            chunks=[{"text": "I have a bowl, a spoon, a plate, and a mug."}],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="Where is the Ethereal Dreams painting now?",
+            light_graph=graph,
         )
-        self.assertTrue(pack)
-        self.assertEqual(len(list(pack.get("enumerated_items", []))), 4)
+        self.assertEqual(payload["intent"], "update")
+        self.assertEqual(payload["answer_candidate"], "bedroom")
 
-    def test_count_result_counts_list_items_without_query_word_overlap(self) -> None:
-        result = self.toolkit._build_count_evidence_pack(
-            query="How many books do I own?",
-            evidence_sentences=[{"text": "I have a cookbook, a novel, and a notebook.", "score": 1.0}],
-            candidates=[],
-            chunks=[{"text": "I have a cookbook, a novel, and a notebook.", "score": 1.0, "session_date": ""}],
-        )
-        self.assertTrue(result)
-        self.assertEqual(len(list(result.get("enumerated_items", []))), 3)
-
-    def test_counting_entities_drop_discourse_fillers(self) -> None:
-        entities = self.toolkit._extract_list_entities(
-            "By the way, speaking of my bikes, I've got three of them - a road bike, a mountain bike, and a commuter bike."
-        )
-        self.assertNotIn("by the way", entities)
-        self.assertNotIn("speaking of my bikes", entities)
-        self.assertIn("a mountain bike", entities)
-        self.assertIn("a commuter bike", entities)
-
-    def test_counting_entities_drop_aggregate_count_statements(self) -> None:
-        entities = self.toolkit._extract_list_entities(
-            "I have three bikes: a road bike, a mountain bike, and a commuter bike."
-        )
-        self.assertIn("a road bike", entities)
-        self.assertIn("a mountain bike", entities)
-        self.assertIn("a commuter bike", entities)
-
-    def test_counting_entities_drop_generic_summary_clauses(self) -> None:
-        entities = self.toolkit._extract_list_entities(
-            "We own two books, a notebook, and a pen."
-        )
-        self.assertIn("a notebook", entities)
-        self.assertIn("a pen", entities)
-
-    def test_build_tool_hints_temporal_count(self) -> None:
-        hints = self.toolkit.build_tool_hints(
-            query="How many weeks have I been accepted into the exchange program?",
-            graph_context="[Long Memory Graph]\n- I was accepted on March 20.\n- I started orientation on March 27.",
-            evidence_sentences=[
-                {"text": "I was accepted on March 20.", "score": 1.0},
-                {"text": "I started orientation on March 27.", "score": 0.8},
+    def test_build_light_graph_tool_payload_preference(self) -> None:
+        graph = {
+            "answer_type": "preference",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Q5", "meta": {}},
+                _claim_node(
+                    "c1",
+                    claim_type="fact_statement",
+                    subject="workflow advice",
+                    predicate="preferred_direction",
+                    value="short checklists and time blocking",
+                ),
+                _claim_node(
+                    "c2",
+                    claim_type="fact_statement",
+                    subject="workflow advice",
+                    predicate="supported_reason",
+                    value="stays organized with compact, repeatable routines",
+                ),
             ],
-            candidates=[],
-            chunks=[{"text": "I was accepted on March 20."}, {"text": "I started orientation on March 27."}],
+            "edges": [_supports_query("c1", 0.9), _supports_query("c2", 0.7)],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="What advice fits my workflow preference?",
+            light_graph=graph,
         )
-        self.assertIn("intent=temporal_count", hints)
-        self.assertIn("duration_hint=", hints)
-        self.assertIn("temporal_points=", hints)
+        self.assertEqual(payload["intent"], "preference")
+        self.assertIn("Preference:", payload["answer_candidate"])
+        self.assertTrue(any("preference_direction=" in line for line in payload["summary_lines"]))
 
-    def test_build_tool_answer_temporal_count(self) -> None:
-        answer = self.toolkit.build_tool_answer(
-            query="How many weeks have I been accepted into the exchange program?",
-            graph_context="[Long Memory Graph]\n- I was accepted on March 20.\n- I started orientation on March 27.",
-            evidence_sentences=[
-                {"text": "I was accepted on March 20.", "score": 1.0},
-                {"text": "I started orientation on March 27.", "score": 0.8},
-            ],
-            candidates=[],
-            chunks=[{"text": "I was accepted on March 20."}, {"text": "I started orientation on March 27."}],
-        )
-        self.assertEqual(answer, "1 week")
-
-    def test_extract_temporal_dates_supports_bare_month_day(self) -> None:
-        dates = self.toolkit._extract_temporal_dates(
-            [
-                "I was accepted on March 20.",
-                "I started orientation on 3/27.",
-            ]
-        )
-        self.assertIn("2000-03-20", dates)
-        self.assertIn("2000-03-27", dates)
-
-    def test_build_tool_hints_preference(self) -> None:
-        hints = self.toolkit.build_tool_hints(
-            query="What advice do you have for improving my workflow?",
-            graph_context="[Long Memory Graph]\n- I prefer short checklists and time blocking to stay organized.",
-            evidence_sentences=[
-                {"text": "I prefer short checklists and time blocking to stay organized.", "score": 1.0}
-            ],
-            candidates=[{"text": "short checklists", "score": 1.0}],
-            chunks=[{"text": "I prefer short checklists and time blocking to stay organized."}],
-        )
-        self.assertIn("intent=preference", hints)
-        self.assertIn("preference_summary=", hints)
-        self.assertIn("preference_hint=", hints)
-        self.assertIn("Reason:", hints)
-
-    def test_classify_intent_does_not_over_trigger_temporal_compare(self) -> None:
-        intent = self.toolkit._classify_intent(
-            "What was the first issue I had with my new car after its first service?"
-        )
-        self.assertEqual(intent, "generic")
-
-    def test_build_tool_hints_temporal_compare_requires_real_comparison(self) -> None:
-        hints = self.toolkit.build_tool_hints(
-            query="What was the first issue I had with my new car after its first service?",
-            graph_context="[Long Memory Graph]\n- The first issue was the GPS system not functioning correctly.",
-            evidence_sentences=[
-                {"text": "The first issue was the GPS system not functioning correctly.", "score": 1.0}
-            ],
-            candidates=[],
-            chunks=[{"text": "The first issue was the GPS system not functioning correctly."}],
-        )
-        self.assertNotIn("intent=temporal_compare", hints)
-        self.assertNotIn("options=", hints)
-
-    def test_extract_evidence_candidate_generic_copula_span(self) -> None:
-        candidate = self.candidate_extractor.extract_evidence_candidate(
-            "What was the first issue I had with my new car after its first service?",
-            [{"text": "The first issue was the GPS system not functioning correctly.", "score": 1.0}],
-            [],
-        )
-        self.assertIsNotNone(candidate)
-        self.assertIn("GPS system not functioning correctly", str(candidate.get("answer", "")))
-
-    def test_build_tool_answer_preference(self) -> None:
-        answer = self.toolkit.build_tool_answer(
-            query="What advice do you have for improving my workflow?",
-            graph_context="[Long Memory Graph]\n- I prefer short checklists and time blocking to stay organized.",
-            evidence_sentences=[
-                {"text": "I prefer short checklists and time blocking to stay organized.", "score": 1.0}
-            ],
-            candidates=[{"text": "short checklists", "score": 1.0}],
-            chunks=[{"text": "I prefer short checklists and time blocking to stay organized."}],
-        )
-        self.assertIn("Preference:", answer)
-        self.assertIn("Reason:", answer)
-
-    def test_build_tool_answer_temporal_compare_generalizes(self) -> None:
-        answer = self.toolkit.build_tool_answer(
-            query="Who did I meet first, Alice and Bob or Charlie?",
-            graph_context="[Long Memory Graph]\n- I met Alice and Bob on Monday.\n- I met Charlie on Wednesday.",
-            evidence_sentences=[
-                {"text": "I met Alice and Bob on Monday.", "score": 1.0},
-                {"text": "I met Charlie on Wednesday.", "score": 0.9},
-            ],
-            candidates=[],
-            chunks=[
-                {"text": "I met Alice and Bob on Monday."},
-                {"text": "I met Charlie on Wednesday."},
-            ],
-        )
-        self.assertIn("Alice and Bob", answer)
-
-    def test_build_tool_answer_temporal_count_generalizes(self) -> None:
-        answer = self.toolkit.build_tool_answer(
-            query="How many days passed between April 3 and April 17?",
-            graph_context="[Long Memory Graph]\n- I started the project on April 3.\n- I finished on April 17.",
-            evidence_sentences=[
-                {"text": "I started the project on April 3.", "score": 1.0},
-                {"text": "I finished on April 17.", "score": 0.9},
-            ],
-            candidates=[],
-            chunks=[
-                {"text": "I started the project on April 3."},
-                {"text": "I finished on April 17."},
-            ],
-        )
-        self.assertEqual(answer, "14 days")
-
-    def test_query_engine_does_not_use_sample_specific_preference_cues(self) -> None:
-        intent = self.query_engine._extract_query_intent(
-            "Can you recommend some resources to improve my workflow?"
-        )
-        self.assertTrue(intent["asks_preference"])
-        self.assertFalse(intent["asks_compare"])
-
-    def test_query_engine_does_not_over_trigger_compare_on_first_issue(self) -> None:
-        intent = self.query_engine._extract_query_intent(
-            "What was the first issue I had with my new car?"
-        )
+    def test_query_intent_still_does_not_overtrigger_compare(self) -> None:
+        intent = extract_query_intent("What was the first issue I had with my new car?")
         self.assertFalse(intent["asks_compare"])
 
 

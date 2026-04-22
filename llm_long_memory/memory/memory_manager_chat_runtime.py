@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -713,52 +712,54 @@ class MemoryManagerChatRuntime:
             best_candidate = ""
             self._last_specialist_payload = {}
         else:
-            evidence_sentences = self.m.answering.collect_evidence_sentences(query, chunks)
+            raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(query, chunks)
             self._last_evidence_pack = self._build_evidence_pack(
                 query=query,
-                evidence_sentences=evidence_sentences,
+                evidence_sentences=raw_evidence_sentences,
                 chunks=chunks,
             )
-            if bool(getattr(self.m, "evidence_graph_enabled", False)):
+            graph_bundle: Dict[str, object] = {}
+            try:
+                graph_bundle = self.m.build_evidence_graph_bundle(
+                    query,
+                    precomputed_context=(context_text, topics, chunks),
+                    evidence_sentences=raw_evidence_sentences,
+                    evidence_pack=self._last_evidence_pack,
+                    enable_filter=True,
+                    enable_claims=True,
+                    enable_light_graph=True,
+                )
+            except (RuntimeError, ValueError, TypeError):
                 try:
-                    self.m.build_evidence_graph_bundle(
+                    graph_bundle = self.m.build_evidence_graph_bundle(
                         query,
                         precomputed_context=(context_text, topics, chunks),
-                        evidence_sentences=evidence_sentences,
+                        evidence_sentences=raw_evidence_sentences,
                         evidence_pack=self._last_evidence_pack,
+                        enable_filter=True,
+                        enable_claims=False,
+                        enable_light_graph=False,
                     )
                 except (RuntimeError, ValueError, TypeError):
                     self.m.last_evidence_graph_bundle = {}
-            candidates = self.m.answering.extract_candidates(query, evidence_sentences)
-            self.m.answering.log_decision_snapshot(query, evidence_sentences, candidates)
-            fallback_answer = ""
-            evidence_candidate = self.m.answering.extract_evidence_candidate(
-                query, evidence_sentences, candidates
+                    graph_bundle = {}
+            evidence_sentences = self.m.final_answer_composer.bundle_to_evidence_sentences(
+                graph_bundle,
+                raw_fallback=raw_evidence_sentences,
             )
-            if bool(getattr(self.m.answering, "reasoning_fallback_enabled", True)):
-                # Base fallback comes from candidate extractor path only.
-                fallback_answer = (
-                    str((evidence_candidate or {}).get("answer", "")).strip()
-                    if evidence_candidate is not None
-                    else ""
-                )
+            if not evidence_sentences:
+                evidence_sentences = list(raw_evidence_sentences[:8])
+            candidates = []
+            fallback_answer = ""
+            evidence_candidate = None
             best_evidence = (
                 str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
             )
-            best_candidate = str(candidates[0].get("text", "")) if candidates else ""
-            graph_context = self.build_graph_context(query=query, chunks=chunks)
+            best_candidate = ""
             self._last_specialist_payload = self.m.specialist_layer.run(
                 query=query,
-                graph_context=graph_context,
-                evidence_sentences=evidence_sentences,
-                candidates=candidates,
-                chunks=chunks,
+                graph_bundle=graph_bundle,
             )
-            specialist_fallback = str(
-                self._last_specialist_payload.get("fallback_answer", "")
-            ).strip()
-            if specialist_fallback:
-                fallback_answer = specialist_fallback
         return (
             context_text,
             topics,
@@ -771,7 +772,7 @@ class MemoryManagerChatRuntime:
             best_candidate,
         )
 
-    def resolve_prompt_fallback(
+    def resolve_prompt_backup_answer(
         self,
         fallback_answer: str,
         evidence_candidate: Optional[Dict[str, str]],
@@ -779,6 +780,8 @@ class MemoryManagerChatRuntime:
         best_evidence: str,
         query_plan: Optional[Dict[str, object]] = None,
     ) -> str:
+        if str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower() == "memslm":
+            return ""
         plan = dict(query_plan or {})
         answer_type = str(plan.get("answer_type", "")).strip().lower()
         if answer_type == "temporal_comparison":
@@ -820,10 +823,12 @@ class MemoryManagerChatRuntime:
         evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
         execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
-        graph_context = self.build_graph_context(query=input_text, chunks=chunks)
         retrieved_context_text = str(retrieved_context_text or "").strip()
-        evidence_pack_text = self._format_evidence_pack(self._last_evidence_pack)
-        query_plan = dict(getattr(self.m, "last_query_plan", {}) or {})
+        bundle = dict(getattr(self.m, "last_evidence_graph_bundle", {}) or {})
+        filtered_pack = dict(bundle.get("filtered_pack", {}) or {})
+        claim_result = dict(bundle.get("claim_result", {}) or {})
+        light_graph = dict(bundle.get("light_graph", {}) or {})
+        toolkit_payload = dict(self._last_specialist_payload or {})
 
         if execution_mode == "model_only":
             prompt_sections: List[Dict[str, str]] = [
@@ -832,14 +837,7 @@ class MemoryManagerChatRuntime:
                     "text": "Return only the final answer.",
                 }
             ]
-            compact_prompt = self.m.answering.build_answer_prompt(
-                input_text=input_text,
-                graph_context="",
-                query_plan="",
-                graph_tool_hints="",
-                rag_evidence="",
-                fallback_answer="",
-            )
+            compact_prompt = "[Answer Rules]\nReturn only the final answer.\n\nUser: " + input_text
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
@@ -867,123 +865,17 @@ class MemoryManagerChatRuntime:
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
-        graph_tool_hints = self.build_graph_tool_hints(
-            query=input_text,
-            graph_context=graph_context,
-            evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            chunks=chunks,
-        )
-
-        fallback_text = self.resolve_prompt_fallback(
-            fallback_answer=fallback_answer,
-            evidence_candidate=evidence_candidate,
-            candidates=candidates,
-            best_evidence=best_evidence,
-            query_plan=query_plan,
-        )
-        prompt_sections: List[Dict[str, str]] = []
-        query_plan_text = ""
-        if query_plan:
-            query_plan_text = json.dumps(
-                {
-                    "intent": query_plan.get("intent", ""),
-                    "answer_type": query_plan.get("answer_type", ""),
-                    "focus_phrases": list(query_plan.get("focus_phrases", []))[:6],
-                    "sub_queries": list(query_plan.get("sub_queries", []))[:6],
-                },
-                ensure_ascii=False,
-            )
-            prompt_sections.append(
-                {
-                    "section": "query_plan",
-                    "text": query_plan_text,
-                }
-            )
-        if graph_context.strip():
-            prompt_sections.append({"section": "graph_evidence", "text": graph_context.strip()})
-        if graph_tool_hints.strip():
-            prompt_sections.append({"section": "graph_tool_hints", "text": graph_tool_hints.strip()})
-        rag_evidence_text = evidence_pack_text or best_evidence.strip()
-        if rag_evidence_text:
-            prompt_sections.append({"section": "rag_evidence", "text": rag_evidence_text})
-        if fallback_text:
-            prompt_sections.append({"section": "fallback_answer", "text": fallback_text})
-        prompt_sections.append(
-            {
-                "section": "answer_rules",
-                "text": (
-                    "Use Graph Evidence first.\n"
-                    "If Graph Evidence is weak or empty, use the Fallback Answer as the compact backup clue.\n"
-                    "Do not repeat long evidence blocks.\n"
-                    "Do not say Not found unless both Graph Evidence and the fallback cues are insufficient.\n"
-                    "Keep key qualifiers (for example: each way, round trip, per day).\n"
-                    "Return only the final answer."
-                    if self.m.answering.answer_context_only
-                    else "Return only the final answer."
-                ),
-            }
-        )
-        compact_prompt = self.m.answering.build_answer_prompt(
+        compact_prompt, prompt_sections = self.m.final_answer_composer.build_prompt(
             input_text=input_text,
-            graph_context=graph_context,
-            query_plan=query_plan_text,
-            graph_tool_hints=graph_tool_hints,
-            rag_evidence=rag_evidence_text,
-            fallback_answer=fallback_text,
+            filtered_pack=filtered_pack,
+            claim_result=claim_result,
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
         )
         self.m._set_prompt_eval_chunks(prompt_sections)
         return compact_prompt
 
-    def build_graph_tool_hints(
-        self,
-        *,
-        query: str,
-        graph_context: str,
-        evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        chunks: List[Dict[str, object]],
-    ) -> str:
-        # Kept method name for backward compatibility with prompt-builder call sites.
-        # In the current architecture, specialist hints come from the unified specialist layer.
-        hints = str(self._last_specialist_payload.get("hints", "")).strip()
-        if hints:
-            return hints
-        payload = self.m.specialist_layer.run(
-            query=query,
-            graph_context=graph_context,
-            evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            chunks=chunks,
-        )
-        self._last_specialist_payload = payload
-        return str(payload.get("hints", "")).strip()
-
-    def build_graph_context(self, query: str, chunks: List[Dict[str, object]]) -> str:
-        if not self.m.graph_refiner_enabled:
-            return ""
-        if not bool(getattr(self.m, "evidence_graph_enabled", False)):
-            return ""
-        bundle = dict(getattr(self.m, "last_evidence_graph_bundle", {}) or {})
-        if str(bundle.get("query", "")).strip() != str(query or "").strip():
-            try:
-                bundle = self.m.build_evidence_graph_bundle(
-                    query,
-                    precomputed_context=("", [], chunks),
-                    evidence_pack=self._last_evidence_pack,
-                )
-            except (RuntimeError, ValueError, TypeError):
-                bundle = {}
-        graph_chunks = self.graph_bundle_to_chunks(bundle)
-        if not graph_chunks:
-            return ""
-        return "[Evidence Graph]\n" + "\n".join(
-            f"- {str(item.get('text', '')).strip()}"
-            for item in graph_chunks[:6]
-            if str(item.get("text", "")).strip()
-        )
-
-    def generate_with_fallback(
+    def generate_final_answer(
         self,
         *,
         input_text: str,
@@ -1003,11 +895,11 @@ class MemoryManagerChatRuntime:
         response = self.m.llm.chat(prompt_messages)
         execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
         if execution_mode in {"model_only", "naive_rag"}:
-            ai_response = self.m.answering.postprocess_final_answer(
+            ai_response = self.m.answer_grounding.normalize_final_answer(
                 response, query, evidence_candidate=None
             )
             return ai_response, f"{execution_mode}_direct", ""
-        fallback_result = self.m.answering.evaluate_response_fallback(
+        fallback_result = self.m.answer_grounding.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
             candidates=candidates,
@@ -1022,7 +914,7 @@ class MemoryManagerChatRuntime:
         should_retry_second_pass = (
             fallback_path.startswith("retry_due_to_")
             or (
-                self.m.answering.second_pass_llm_enabled
+                self.m.answer_grounding.second_pass_llm_enabled
                 and evidence_sentences
                 and normalized_ai_response == "not found in retrieved context."
                 and fallback_path in {"fallback_to_not_found", "llm_not_found_accepted"}
@@ -1035,12 +927,12 @@ class MemoryManagerChatRuntime:
                 "MemoryManager.chat: invoking second-pass LLM "
                 f"(model={model_name})."
             )
-            second_prompt = self.m.answering.build_second_pass_prompt(
+            second_prompt = self.m.answer_grounding.build_second_pass_retry_prompt(
                 prompt_text=prompt_text,
                 evidence_candidate=evidence_candidate,
             )
             second_response = self.m.llm.chat([{"role": "user", "content": second_prompt}])
-            second_result = self.m.answering.evaluate_response_fallback(
+            second_result = self.m.answer_grounding.evaluate_response_guard(
                 response=second_response,
                 evidence_sentences=evidence_sentences,
                 candidates=candidates,
@@ -1055,7 +947,7 @@ class MemoryManagerChatRuntime:
             fallback_path = "second_pass:" + second_path
             not_found_reason = str(second_result.get("not_found_reason", not_found_reason))
 
-        ai_response = self.m.answering.postprocess_final_answer(
+        ai_response = self.m.answer_grounding.normalize_final_answer(
             ai_response, query, evidence_candidate=evidence_candidate
         )
         return ai_response, fallback_path, not_found_reason

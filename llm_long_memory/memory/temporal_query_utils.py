@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import List
 
 
-def extract_quoted_options(query: str) -> List[str]:
+def extract_quoted_choice_candidates(query: str) -> List[str]:
     """Extract quoted options like 'A' or \"B\" from query."""
     return [
         x.strip()
@@ -17,7 +17,7 @@ def extract_quoted_options(query: str) -> List[str]:
     ]
 
 
-def extract_or_options(query: str) -> List[str]:
+def extract_binary_choice_candidates(query: str) -> List[str]:
     """Extract A/B options using the last 'or' in query."""
     text = " ".join(str(query).split()).strip(" .?!")
     lower = text.lower()
@@ -43,7 +43,7 @@ def extract_or_options(query: str) -> List[str]:
     return [left, right]
 
 
-def extract_list_options(query: str, max_options: int) -> List[str]:
+def extract_listed_choice_candidates(query: str, max_options: int) -> List[str]:
     """Extract option list from comma/or separated query segments."""
     text = " ".join(str(query).split()).strip(" .?!")
     if not text:
@@ -75,9 +75,9 @@ def extract_list_options(query: str, max_options: int) -> List[str]:
     return options
 
 
-def extract_choice_options(query: str, max_options: int) -> List[str]:
+def extract_choice_candidates(query: str, max_options: int) -> List[str]:
     """Extract options for 2-way / N-way choices from query text."""
-    quoted = extract_quoted_options(query)
+    quoted = extract_quoted_choice_candidates(query)
     if len(quoted) >= 2:
         normalized: List[str] = []
         for option in quoted:
@@ -88,17 +88,17 @@ def extract_choice_options(query: str, max_options: int) -> List[str]:
                 break
         return normalized
 
-    pair = extract_or_options(query)
+    pair = extract_binary_choice_candidates(query)
     if len(pair) >= 2:
         return pair[: int(max_options)]
 
-    listed = extract_list_options(query, max_options=max_options)
+    listed = extract_listed_choice_candidates(query, max_options=max_options)
     if len(listed) >= 2:
         return listed
     return []
 
 
-def infer_selection_target_k(query: str, option_count: int, default_target_k: int) -> int:
+def infer_choice_target_k(query: str, option_count: int, default_target_k: int) -> int:
     """Infer how many options should be selected in N-way choice questions."""
     if option_count <= 0:
         return 0
@@ -113,17 +113,17 @@ def infer_selection_target_k(query: str, option_count: int, default_target_k: in
     return max(1, min(option_count, int(default_target_k)))
 
 
-def parse_choice_query(
+def parse_choice_targets(
     query: str,
     *,
     max_options: int,
     default_target_k: int,
 ) -> List[str] | None:
     """Parse query into option list + selection target for choice-style questions."""
-    options = extract_choice_options(query, max_options=max_options)
+    options = extract_choice_candidates(query, max_options=max_options)
     if len(options) < 2:
         return None
-    target_k = infer_selection_target_k(
+    target_k = infer_choice_target_k(
         query,
         option_count=len(options),
         default_target_k=default_target_k,

@@ -8,7 +8,7 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
-from llm_long_memory.memory.long_memory_json_utils import (
+from llm_long_memory.memory.model_output_json_utils import (
     extract_first_json_block,
     safe_json_loads_relaxed,
 )

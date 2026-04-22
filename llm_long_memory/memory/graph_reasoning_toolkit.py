@@ -1,7 +1,4 @@
-"""Generic graph-tool hint builder for MemSLM answering.
-
-This module intentionally avoids dataset-specific heuristics.
-"""
+"""Graph-only toolkit for question-scoped light-graph reasoning."""
 
 from __future__ import annotations
 
@@ -9,89 +6,43 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from llm_long_memory.memory.answering_temporal import parse_choice_query
+from llm_long_memory.memory.query_intent import extract_query_intent
+from llm_long_memory.memory.temporal_query_utils import parse_choice_targets
 
 
 class GraphReasoningToolkit:
-    """Build compact tool hints/answers for generic task intents."""
+    """Produce compact graph-grounded reasoning payloads.
+
+    This toolkit intentionally consumes only the question-scoped light graph.
+    It does not read raw retrieval text, graph_context strings, or candidate
+    lists from the old answering chain.
+    """
 
     def __init__(self, manager: Any) -> None:
         self.m = manager
-        self.count_cues = {"how many", "number of", "count", "total", "how much"}
-        self.temporal_cues = {
-            "before",
-            "after",
-            "earlier",
-            "later",
-            "first",
-            "last",
-            "when",
-            "between",
-            "compare",
-            "which came",
-        }
-        self.preference_cues = {
-            "prefer",
-            "preference",
-            "recommend",
-            "suggest",
-            "resource",
-            "resources",
-            "advice",
-            "tips",
-            "what should i",
-            "how should i",
-            "ways to",
-        }
-        self.update_cues = {
-            "currently",
-            "now",
-            "latest",
-            "updated",
-            "update",
-            "switch",
-            "switched",
-            "change",
-            "changed",
-            "moved",
-            "where is",
-            "where are",
-        }
-        # Optional config only used for generic list-count filtering.
-        cfg = {}
-        try:
-            cfg = dict(manager.config["retrieval"]["answering"].get("counting", {}))
-        except Exception:
-            cfg = {}
-        self.list_count_focus_stopwords = {
-            str(x).strip().lower()
-            for x in list(
-                cfg.get(
-                    "list_count_focus_stopwords",
-                    [
-                        "how",
-                        "many",
-                        "number",
-                        "count",
-                        "did",
-                        "do",
-                        "does",
-                        "i",
-                        "we",
-                        "you",
-                        "in",
-                        "the",
-                        "a",
-                        "an",
-                        "of",
-                        "to",
-                        "for",
-                        "with",
-                        "and",
-                    ],
-                )
-            )
-            if str(x).strip()
+        self._count_stopwords = {
+            "how",
+            "many",
+            "number",
+            "count",
+            "total",
+            "of",
+            "the",
+            "a",
+            "an",
+            "did",
+            "do",
+            "does",
+            "i",
+            "we",
+            "you",
+            "my",
+            "our",
+            "your",
+            "in",
+            "on",
+            "for",
+            "with",
         }
 
     @staticmethod
@@ -104,239 +55,57 @@ class GraphReasoningToolkit:
 
     @staticmethod
     def _singular(token: str) -> str:
-        t = str(token or "").strip().lower()
-        if len(t) <= 3:
-            return t
-        if t.endswith("ies") and len(t) > 4:
-            return t[:-3] + "y"
-        if t.endswith("es") and len(t) > 4 and t[-3] in {"s", "x", "z"}:
-            return t[:-2]
-        if t.endswith("s") and len(t) > 3:
-            return t[:-1]
-        return t
+        raw = str(token or "").strip().lower()
+        if len(raw) <= 3:
+            return raw
+        if raw.endswith("ies") and len(raw) > 4:
+            return raw[:-3] + "y"
+        if raw.endswith("es") and len(raw) > 4 and raw[-3] in {"s", "x", "z"}:
+            return raw[:-2]
+        if raw.endswith("s") and len(raw) > 3:
+            return raw[:-1]
+        return raw
 
-    @staticmethod
-    def _parse_graph_context(graph_context: str) -> List[str]:
-        text = str(graph_context or "").strip()
-        if not text:
-            return []
-        lines: List[str] = []
-        for raw in re.split(r"\n+", text):
-            line = re.sub(r"^\s*[-*•]+\s*", "", str(raw)).strip()
-            line = re.sub(r"^\s*\[\d+\]\s*", "", line).strip()
-            if line:
-                lines.append(line)
-        return lines
-
-    @staticmethod
-    def _parse_evidence_lines(items: Sequence[Dict[str, object]], limit: int = 4) -> List[str]:
-        ranked = sorted(items, key=lambda x: float(x.get("score", 0.0)), reverse=True)
-        lines: List[str] = []
-        for item in ranked[: max(0, limit)]:
-            text = " ".join(str(item.get("text", "")).split()).strip()
-            if text:
-                lines.append(text[:220])
-        return lines
-
-    @staticmethod
-    def _parse_session_date(session_date: str) -> Optional[datetime]:
-        raw = str(session_date or "").strip()
-        if not raw:
-            return None
-        for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%Y/%m", "%Y-%m"):
-            try:
-                return datetime.strptime(raw, fmt)
-            except ValueError:
-                continue
-        return None
-
-    def _extract_dates(self, text: str, session_date: str = "") -> List[datetime]:
-        out: List[datetime] = []
-        txt = str(text or "")
-        for m in re.finditer(r"\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b", txt):
-            y, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            try:
-                out.append(datetime(y, mm, dd))
-            except ValueError:
-                pass
-        months = {
-            "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
-            "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-            "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
-            "nov": 11, "november": 11, "dec": 12, "december": 12,
-        }
-        for m in re.finditer(
-            r"\b("
-            r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
-            r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
-            r")\s+(\d{1,2})(?:st|nd|rd|th)?(?:,\s*(\d{4}))?\b",
-            txt,
-            flags=re.IGNORECASE,
-        ):
-            mon = months.get(m.group(1).lower(), 1)
-            day = int(m.group(2))
-            year = int(m.group(3)) if m.group(3) else 2000
-            try:
-                out.append(datetime(year, mon, day))
-            except ValueError:
-                pass
-        for m in re.finditer(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", txt):
-            mm = int(m.group(1))
-            dd = int(m.group(2))
-            y = m.group(3)
-            year = int(y) if y else 2000
-            if year < 100:
-                year += 2000
-            try:
-                out.append(datetime(year, mm, dd))
-            except ValueError:
-                pass
-        weekday_map = {
-            "monday": 1,
-            "tuesday": 2,
-            "wednesday": 3,
-            "thursday": 4,
-            "friday": 5,
-            "saturday": 6,
-            "sunday": 7,
-        }
-        for wd, idx in weekday_map.items():
-            if re.search(rf"\b{wd}\b", txt, flags=re.IGNORECASE):
-                out.append(datetime(2000, 1, idx))
-        if not out:
-            d = self._parse_session_date(session_date)
-            if d is not None:
-                out.append(d)
-        return out
-
-    def _extract_temporal_dates(self, lines: Sequence[str]) -> List[str]:
-        dates: List[str] = []
-        seen: set[str] = set()
-        for line in lines:
-            for dt in self._extract_dates(line, ""):
-                k = dt.strftime("%Y-%m-%d")
-                if k not in seen:
-                    seen.add(k)
-                    dates.append(k)
-        return dates
-
-    def _extract_query_anchors(self, query: str) -> List[str]:
-        options = parse_choice_query(query, max_options=4, default_target_k=2)
-        if options:
-            anchors: List[str] = []
-            for x in options:
-                n = self._normalize(x)
-                if not n:
-                    continue
-                m = re.search(re.escape(n), query, flags=re.IGNORECASE)
-                anchors.append(self._normalize(m.group(0)) if m else n)
-            return anchors
-        q = self._normalize(query)
-        m = re.search(r"\bbetween\s+(.+?)\s+and\s+(.+?)(?:[?.!]|$)", q, flags=re.IGNORECASE)
-        if m:
-            return [self._normalize(m.group(1)), self._normalize(m.group(2))]
-        return []
-
-    def _anchor_match_score(self, anchor: str, text: str) -> float:
-        a = set(self._tokenize(anchor))
-        t = set(self._tokenize(text))
-        if not a or not t:
-            return 0.0
-        return len(a.intersection(t)) / float(len(a))
-
-    def _classify_intent(self, query: str) -> str:
-        q = self._normalize(query).lower()
-        if not q:
-            return "generic"
-        if re.search(r"\bhow many\s+(?:days?|weeks?|months?|years?)\b", q) or "how long" in q:
+    def _classify_intent(self, query: str, light_graph: Dict[str, object]) -> str:
+        answer_type = str(dict(light_graph or {}).get("answer_type", "")).strip().lower()
+        if answer_type == "temporal_count":
             return "temporal_count"
-        if any(cue in q for cue in self.count_cues):
+        if answer_type == "count":
             return "count"
-        anchors = self._extract_query_anchors(query)
-        if anchors and len(anchors) >= 2 and any(cue in q for cue in self.temporal_cues):
+        if answer_type == "temporal_comparison":
             return "temporal_compare"
-        if any(cue in q for cue in self.update_cues):
+        if answer_type == "update":
             return "update"
-        if any(cue in q for cue in self.preference_cues):
+        if answer_type == "preference":
+            return "preference"
+        flags = extract_query_intent(query)
+        if flags.get("asks_how_many") and (flags.get("asks_when") or "how long" in str(query or "").lower()):
+            return "temporal_count"
+        if flags.get("asks_how_many"):
+            return "count"
+        if flags.get("asks_compare") and len(parse_choice_targets(query, max_options=4, default_target_k=2)) >= 2:
+            return "temporal_compare"
+        if flags.get("asks_current") or flags.get("asks_where"):
+            return "update"
+        if flags.get("asks_preference"):
             return "preference"
         return "generic"
 
     def _query_object_heads(self, query: str) -> List[str]:
-        q = self._normalize(query).lower()
-        captured: List[str] = []
-        pats = [
-            r"\bhow many\s+(.+?)(?:\bdo\b|\bdid\b|\bhave\b|\bhas\b|\bhad\b|[?.!]|$)",
-            r"\bnumber of\s+(.+?)(?:\bdo\b|\bdid\b|\bhave\b|\bhas\b|\bhad\b|[?.!]|$)",
-            r"\bcount of\s+(.+?)(?:\bdo\b|\bdid\b|\bhave\b|\bhas\b|\bhad\b|[?.!]|$)",
-        ]
-        for p in pats:
-            m = re.search(p, q, flags=re.IGNORECASE)
-            if m:
-                captured.append(self._normalize(m.group(1)))
-        out: List[str] = []
-        seen: set[str] = set()
-        for phrase in captured:
-            toks = [t for t in self._tokenize(phrase) if t not in self.list_count_focus_stopwords]
-            if not toks:
+        heads: List[str] = []
+        for token in self._tokenize(query):
+            if token in self._count_stopwords:
                 continue
-            head = self._singular(toks[-1])
-            if head and head not in seen:
-                seen.add(head)
-                out.append(head)
-        return out
-
-    def _extract_list_entities(self, text: str) -> List[str]:
-        raw = self._normalize(text)
-        if not raw:
-            return []
-        raw = re.sub(r"^\((?:user|assistant|system)\)\s*", "", raw, flags=re.IGNORECASE)
-        # Drop aggregate leading clauses: "I have three bikes: ..."
-        raw = re.sub(
-            r"^\s*(?:i|we|you|they|he|she)\s+(?:have|own|got|bought|tried|use|used)\s+"
-            r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|many|several|few)\b"
-            r"(?:\s+\w+){0,4}[:,-]\s*",
-            "",
-            raw,
-            flags=re.IGNORECASE,
-        )
-        parts = re.split(r"(?:,|;|\band\b|\bor\b|\bplus\b|\+)", raw, flags=re.IGNORECASE)
-        out: List[str] = []
-        seen: set[str] = set()
-        for p in parts:
-            c = self._normalize(str(p).strip(" -:;,.!?\"'"))
-            if not c:
+            norm = self._singular(token)
+            if len(norm) <= 2:
                 continue
-            if ":" in c and not re.match(r"^(?:a|an|the|my|our)\b", c, flags=re.IGNORECASE):
-                c = self._normalize(c.split(":")[-1]).strip(" -:;,.!?\"'")
-            if " - " in c and not re.match(r"^(?:a|an|the|my|our)\b", c, flags=re.IGNORECASE):
-                c = self._normalize(c.split(" - ")[-1]).strip(" -:;,.!?\"'")
-            if not c:
-                continue
-            low = c.lower()
-            if low in {"by the way", "speaking of my", "speaking of my bikes"}:
-                continue
-            if low.startswith("by the way"):
-                continue
-            if re.search(r"\b(?:using|different|types?|ride|riding|been)\b", low) and not re.match(
-                r"^(?:a|an|the|my|our)\b", low
-            ):
-                continue
-            if re.match(r"^\d+\b", low):
-                continue
-            if low not in seen:
-                seen.add(low)
-                out.append(c)
-        return out
-
-    @staticmethod
-    def _line_has_list_shape(text: str) -> bool:
-        low = " ".join(str(text or "").split()).lower()
-        return ("," in low) or (" and " in low) or (" or " in low) or (" plus " in low) or ("+" in low)
+            heads.append(norm)
+        # Keep order, remove duplicates.
+        return list(dict.fromkeys(heads))
 
     @staticmethod
     def _extract_spelled_number(text: str) -> int:
-        low = str(text or "").lower()
-        mapping = {
+        words = {
             "zero": 0,
             "one": 1,
             "two": 2,
@@ -351,346 +120,399 @@ class GraphReasoningToolkit:
             "eleven": 11,
             "twelve": 12,
         }
-        for word, num in mapping.items():
-            if re.search(rf"\b{word}\b", low):
-                return num
-        if re.search(r"\ba pair of\b", low):
-            return 2
-        if re.search(r"\ba couple of\b", low):
-            return 2
+        for token in re.findall(r"[a-z]+", str(text or "").lower()):
+            if token in words:
+                return words[token]
         return -1
 
-    def _build_count_evidence_pack(
-        self,
-        *,
-        query: str,
-        evidence_sentences: Sequence[Dict[str, object]],
-        candidates: Sequence[Dict[str, object]],
-        chunks: Sequence[Dict[str, object]],
-    ) -> Dict[str, object]:
-        _ = candidates
+    @staticmethod
+    def _claim_text(item: Dict[str, object]) -> str:
+        subject = str(item.get("subject", "")).strip()
+        predicate = str(item.get("predicate", "")).strip()
+        value = str(item.get("value", "")).strip()
+        if subject and predicate and value:
+            return f"{subject} | {predicate} | {value}"
+        return " | ".join(x for x in [subject, predicate, value] if x).strip()
+
+    @staticmethod
+    def _parse_date(text: str) -> List[datetime]:
+        out: List[datetime] = []
+        raw = str(text or "")
+        for match in re.finditer(r"\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b", raw):
+            try:
+                out.append(datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))))
+            except ValueError:
+                pass
+        for match in re.finditer(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", raw):
+            month = int(match.group(1))
+            day = int(match.group(2))
+            year = int(match.group(3)) if match.group(3) else 2000
+            if year < 100:
+                year += 2000
+            try:
+                out.append(datetime(year, month, day))
+            except ValueError:
+                pass
+        months = {
+            "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+            "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+            "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+            "nov": 11, "november": 11, "dec": 12, "december": 12,
+        }
+        for match in re.finditer(
+            r"\b("
+            r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+            r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+            r")\s+(\d{1,2})(?:st|nd|rd|th)?(?:,\s*(\d{4}))?\b",
+            raw,
+            flags=re.IGNORECASE,
+        ):
+            month = months.get(match.group(1).lower(), 1)
+            day = int(match.group(2))
+            year = int(match.group(3)) if match.group(3) else 2000
+            try:
+                out.append(datetime(year, month, day))
+            except ValueError:
+                pass
+        return out
+
+    @staticmethod
+    def _format_duration(delta_days: int, query: str) -> str:
+        lowered = str(query or "").lower()
+        if "year" in lowered and delta_days >= 365:
+            years = max(1, round(delta_days / 365))
+            return f"{years} year" if years == 1 else f"{years} years"
+        if "month" in lowered and delta_days >= 28:
+            months = max(1, round(delta_days / 30))
+            return f"{months} month" if months == 1 else f"{months} months"
+        if delta_days % 7 == 0 and delta_days >= 7:
+            weeks = max(1, delta_days // 7)
+            return f"{weeks} week" if weeks == 1 else f"{weeks} weeks"
+        return f"{delta_days} day" if delta_days == 1 else f"{delta_days} days"
+
+    def _graph_claim_items(self, light_graph: Dict[str, object]) -> List[Dict[str, object]]:
+        graph = dict(light_graph or {})
+        nodes = list(graph.get("nodes", []))
+        edges = list(graph.get("edges", []))
+        support_weights: Dict[str, float] = {}
+        for edge in edges:
+            if str(edge.get("type", "")).strip() != "supports_query":
+                continue
+            src = str(edge.get("source", "")).strip()
+            if not src:
+                continue
+            try:
+                weight = float(edge.get("weight", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                weight = 0.0
+            support_weights[src] = max(weight, support_weights.get(src, 0.0))
+        items: List[Dict[str, object]] = []
+        for node in nodes:
+            node_type = str(node.get("type", "")).strip().lower()
+            if node_type not in {"fact", "state", "event"}:
+                continue
+            node_id = str(node.get("id", "")).strip()
+            meta = dict(node.get("meta", {}) or {})
+            item = dict(meta)
+            item["node_id"] = node_id
+            item["node_type"] = node_type
+            item["support_weight"] = float(support_weights.get(node_id, 0.0))
+            try:
+                item["confidence"] = float(item.get("confidence", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                item["confidence"] = 0.0
+            items.append(item)
+        items.sort(
+            key=lambda x: (
+                float(x.get("support_weight", 0.0)),
+                float(x.get("confidence", 0.0)),
+                len(str(x.get("value", ""))),
+            ),
+            reverse=True,
+        )
+        return items
+
+    def _graph_edges(self, light_graph: Dict[str, object], edge_type: str) -> List[Dict[str, object]]:
+        return [
+            dict(edge)
+            for edge in list(dict(light_graph or {}).get("edges", []))
+            if str(edge.get("type", "")).strip() == edge_type
+        ]
+
+    def _graph_count_payload(self, query: str, claims: Sequence[Dict[str, object]]) -> Dict[str, object]:
         query_heads = self._query_object_heads(query)
-        qlow = query.lower()
-        if re.search(r"\bhow many\s+(?:days?|weeks?|months?|years?)\b", qlow) or "how long" in qlow:
-            return {}
         if not query_heads:
             return {}
-        lines = self._parse_evidence_lines(evidence_sentences, limit=8) + self._parse_evidence_lines(
-            chunks, limit=8
-        )
-        matched_lines: List[str] = []
-        seen_line: set[str] = set()
-        for line in lines:
-            line_tokens = {self._singular(t) for t in self._tokenize(line)}
-            if not line_tokens:
+        explicit_numbers: List[str] = []
+        enumerated_values: List[str] = []
+        matched_ids: List[str] = []
+        seen_values: set[str] = set()
+        for claim in claims:
+            text = self._claim_text(dict(claim))
+            tokens = {self._singular(tok) for tok in self._tokenize(text)}
+            if not tokens:
                 continue
-            is_match = any(
-                (h in line_tokens) or any((h in tok) or (tok in h) for tok in line_tokens)
-                for h in query_heads
-            )
-            if not is_match:
+            if not any(head in tokens or any(head in token or token in head for token in tokens) for head in query_heads):
                 continue
-            normalized_line = self._normalize(line)
-            if not normalized_line:
-                continue
-            if normalized_line in seen_line:
-                continue
-            seen_line.add(normalized_line)
-            matched_lines.append(normalized_line)
-
-        explicit_candidates: List[str] = []
-        seen_explicit: set[str] = set()
-        enumerated_items: List[str] = []
-        seen_items: set[str] = set()
-        for line in matched_lines:
-            low = line.lower()
-            if re.search(r"\b\d{1,2}[:/]\d{1,2}(?:[:/]\d{2,4})?\b", low):
-                continue
-            if re.search(r"\b\d+\s+(?:years?|months?|weeks?|days?)\b", low):
-                continue
-            spelled = self._extract_spelled_number(line)
+            claim_id = str(claim.get("claim_id", "")).strip()
+            if claim_id:
+                matched_ids.append(claim_id)
+            for match in re.finditer(r"\b(\d+)\b", text):
+                explicit_numbers.append(str(int(match.group(1))))
+            spelled = self._extract_spelled_number(text)
             if spelled >= 0:
-                n = str(spelled)
-                if n not in seen_explicit:
-                    seen_explicit.add(n)
-                    explicit_candidates.append(n)
-            for m in re.finditer(r"\b(\d+)\b", line):
-                n = str(int(m.group(1)))
-                if n not in seen_explicit:
-                    seen_explicit.add(n)
-                    explicit_candidates.append(n)
-            for ent in self._extract_list_entities(line):
-                k = ent.lower()
-                if k in seen_items:
-                    continue
-                seen_items.add(k)
-                enumerated_items.append(ent)
-
-        if not matched_lines:
-            return {}
+                explicit_numbers.append(str(spelled))
+            value = self._normalize(str(claim.get("value", ""))).strip(" ,.;:!?\"'")
+            if value and value.lower() not in seen_values and len(value.split()) <= 8:
+                seen_values.add(value.lower())
+                enumerated_values.append(value)
+        explicit_numbers = list(dict.fromkeys(explicit_numbers))
+        answer_candidate = ""
+        if len(explicit_numbers) == 1:
+            answer_candidate = explicit_numbers[0]
+        elif enumerated_values:
+            answer_candidate = str(len(enumerated_values))
+        summary_lines: List[str] = []
+        if query_heads:
+            summary_lines.append(f"count_object_type={query_heads[0]}")
+        if explicit_numbers:
+            summary_lines.append("count_explicit_candidates=" + " | ".join(explicit_numbers[:4]))
+        if enumerated_values:
+            summary_lines.append("count_graph_items=" + " | ".join(enumerated_values[:8]))
         return {
-            "object_type": query_heads[0],
-            "query_heads": query_heads,
-            "explicit_count_candidates": explicit_candidates[:4],
-            "enumerated_items": enumerated_items[:10],
-            "support_spans": matched_lines[:4],
+            "intent": "count",
+            "summary_lines": summary_lines,
+            "answer_candidate": answer_candidate,
+            "confidence": 0.78 if answer_candidate else 0.0,
+            "used_claim_ids": matched_ids[:8],
         }
 
-    def _temporal_count_result(self, query: str, lines: Sequence[str]) -> str:
+    def _graph_temporal_count_payload(self, query: str, claims: Sequence[Dict[str, object]]) -> Dict[str, object]:
         dates: List[datetime] = []
-        for line in lines:
-            dates.extend(self._extract_dates(line, ""))
+        used_claim_ids: List[str] = []
+        for claim in claims:
+            claim_dates = self._parse_date(str(claim.get("time_anchor", ""))) or self._parse_date(self._claim_text(dict(claim)))
+            if not claim_dates:
+                continue
+            dates.extend(claim_dates)
+            claim_id = str(claim.get("claim_id", "")).strip()
+            if claim_id:
+                used_claim_ids.append(claim_id)
         if len(dates) < 2:
-            return ""
-        dates = sorted({d.strftime("%Y-%m-%d"): d for d in dates}.values())
+            return {}
+        dates = sorted(dates)
         delta_days = abs((dates[-1] - dates[0]).days)
-        if delta_days <= 0:
-            return ""
-        q = query.lower()
-        if "week" in q:
-            v = max(1, round(delta_days / 7.0))
-            return f"{v} week{'s' if v != 1 else ''}"
-        if "month" in q:
-            v = max(1, round(delta_days / 30.0))
-            return f"{v} month{'s' if v != 1 else ''}"
-        if "year" in q:
-            v = max(1, round(delta_days / 365.0))
-            return f"{v} year{'s' if v != 1 else ''}"
-        return f"{delta_days} days"
+        answer = self._format_duration(delta_days, query)
+        return {
+            "intent": "temporal_count",
+            "summary_lines": [
+                f"duration_answer={answer}",
+                f"temporal_points={dates[0].strftime('%Y-%m-%d')} | {dates[-1].strftime('%Y-%m-%d')}",
+            ],
+            "answer_candidate": answer,
+            "confidence": 0.82,
+            "used_claim_ids": list(dict.fromkeys(used_claim_ids))[:6],
+        }
 
-    def _temporal_compare_result(
+    def _graph_temporal_compare_payload(
         self,
         *,
         query: str,
-        evidence_sentences: Sequence[Dict[str, object]],
-    ) -> str:
-        anchors = self._extract_query_anchors(query)
-        if len(anchors) < 2:
-            return ""
-        pools: Dict[str, List[Tuple[datetime, float]]] = {a: [] for a in anchors[:2]}
-        for item in evidence_sentences:
-            text = str(item.get("text", ""))
-            session_date = str(item.get("session_date", ""))
-            dates = self._extract_dates(text, session_date)
-            if not dates:
+        claims: Sequence[Dict[str, object]],
+        light_graph: Dict[str, object],
+    ) -> Dict[str, object]:
+        options = parse_choice_targets(query, max_options=4, default_target_k=2)
+        if len(options) < 2:
+            return {}
+        items_by_node = {str(item.get("node_id", "")): item for item in claims}
+        before_edges = self._graph_edges(light_graph, "before")
+        after_edges = self._graph_edges(light_graph, "after")
+
+        def _display_option(option: str) -> str:
+            for item in claims:
+                subject = self._normalize(str(item.get("subject", "")))
+                if subject and self._normalize(subject).lower() == self._normalize(option).lower():
+                    return subject
+            return option
+
+        def _matches(item: Dict[str, object], option: str) -> bool:
+            text = self._claim_text(item).lower()
+            option_tokens = set(self._tokenize(option))
+            text_tokens = set(self._tokenize(text))
+            if not option_tokens or not text_tokens:
+                return False
+            overlap = len(option_tokens.intersection(text_tokens)) / float(len(option_tokens))
+            return overlap >= 0.66
+
+        summary_lines: List[str] = []
+        for edge in before_edges + after_edges:
+            left = items_by_node.get(str(edge.get("source", "")), {})
+            right = items_by_node.get(str(edge.get("target", "")), {})
+            if not left or not right:
                 continue
-            for anchor in pools:
-                score = self._anchor_match_score(anchor, text)
-                if score <= 0.0:
+            if _matches(left, options[0]) and _matches(right, options[1]):
+                edge_type = str(edge.get("type", ""))
+                summary_lines.append(f"graph_edge={options[0]} {edge_type} {options[1]}")
+                if edge_type == "before":
+                    answer = options[0] if "later" not in query.lower() and "after" not in query.lower() else options[1]
+                else:
+                    answer = options[1] if "later" not in query.lower() and "after" not in query.lower() else options[0]
+                answer = _display_option(answer)
+                return {
+                    "intent": "temporal_compare",
+                    "summary_lines": summary_lines,
+                    "answer_candidate": answer,
+                    "confidence": 0.84,
+                    "used_claim_ids": [],
+                }
+
+        option_dates: Dict[str, List[datetime]] = {options[0]: [], options[1]: []}
+        used_claim_ids: List[str] = []
+        for claim in claims:
+            for option in options[:2]:
+                if not _matches(claim, option):
                     continue
-                for dt in dates:
-                    pools[anchor].append((dt, score))
-        left, right = anchors[0], anchors[1]
-        if not pools[left] or not pools[right]:
-            return ""
-        left_best = sorted(pools[left], key=lambda x: (x[0], -x[1]))[0][0]
-        right_best = sorted(pools[right], key=lambda x: (x[0], -x[1]))[0][0]
-        q = query.lower()
-        if "later" in q or "after" in q:
-            return left if left_best > right_best else right
-        return left if left_best <= right_best else right
+                dates = self._parse_date(str(claim.get("time_anchor", ""))) or self._parse_date(self._claim_text(dict(claim)))
+                option_dates[option].extend(dates)
+                claim_id = str(claim.get("claim_id", "")).strip()
+                if claim_id:
+                    used_claim_ids.append(claim_id)
+        if option_dates[options[0]] and option_dates[options[1]]:
+            left_best = sorted(option_dates[options[0]])[0]
+            right_best = sorted(option_dates[options[1]])[0]
+            answer = options[0] if left_best <= right_best else options[1]
+            if "later" in query.lower() or "after" in query.lower():
+                answer = options[0] if left_best > right_best else options[1]
+            answer = _display_option(answer)
+            return {
+                "intent": "temporal_compare",
+                "summary_lines": [
+                    f"temporal_points={options[0]}:{left_best.strftime('%Y-%m-%d')} | {options[1]}:{right_best.strftime('%Y-%m-%d')}"
+                ],
+                "answer_candidate": answer,
+                "confidence": 0.78,
+                "used_claim_ids": list(dict.fromkeys(used_claim_ids))[:6],
+            }
+        return {}
 
-    def _extract_state_value(self, query: str, text: str) -> str:
-        q = query.lower()
-        t = self._normalize(text)
-        if "more" in q and "less" in q:
-            low = t.lower()
-            if re.search(r"\bless\b", low):
-                return "less"
-            if re.search(r"\bmore\b", low):
-                return "more"
-        if any(x in q for x in {"where", "located", "hanging"}):
-            m = re.search(r"\b(in|at|on|above|under|near)\s+([a-zA-Z][^,.!?;]{1,60})", t, flags=re.IGNORECASE)
-            if m:
-                return self._normalize(f"{m.group(1)} {m.group(2)}").strip(" ,.;:!?\"'")
-        if "time" in q or "best" in q:
-            times = re.findall(r"\b\d{1,2}:\d{2}\b", t)
-            if times:
-                return sorted(times, key=lambda v: int(v.split(":")[0]) * 60 + int(v.split(":")[1]))[0]
-        cop = re.search(r"\b(?:is|are|was|were)\s+([^,.!?;]{2,80})", t, flags=re.IGNORECASE)
-        if cop:
-            return self._normalize(cop.group(1)).strip(" ,.;:!?\"'")
-        return ""
-
-    def _update_result(
+    def _graph_update_payload(
         self,
         *,
         query: str,
-        evidence_sentences: Sequence[Dict[str, object]],
-        candidates: Sequence[Dict[str, object]],
-    ) -> str:
-        key_tokens = [t for t in self._tokenize(query) if t not in {"what", "where", "is", "are", "was", "were", "my", "the", "a", "an", "did", "i"}]
-        scored: List[Tuple[datetime, float, str]] = []
-        for item in evidence_sentences:
-            text = str(item.get("text", ""))
-            val = self._extract_state_value(query, text)
-            if not val:
-                continue
-            tks = set(self._tokenize(text))
-            overlap = len(set(key_tokens).intersection(tks)) / float(max(1, len(set(key_tokens)))) if key_tokens else 0.0
-            dt = self._parse_session_date(str(item.get("session_date", ""))) or datetime.min
-            score = float(item.get("score", 0.0)) + overlap
-            scored.append((dt, score, val))
-        for c in candidates:
-            text = str(c.get("text", ""))
-            val = self._extract_state_value(query, text)
-            if val:
-                scored.append((datetime.min, float(c.get("score", 0.0)), val))
-        if not scored:
-            return ""
-        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        return scored[0][2]
-
-    def _query_focus_phrase(self, query: str) -> str:
-        q = self._normalize(query)
-        if not q:
-            return ""
-        patterns = [
-            r"\blearn more about\s+(.+?)(?:[?.!]|$)",
-            r"\bways to\s+(.+?)(?:[?.!]|$)",
-            r"\brecommend(?:\s+some)?\s+resources\s+for\s+(.+?)(?:[?.!]|$)",
-            r"\bwhat should i\s+(.+?)(?:[?.!]|$)",
-            r"\bhow should i\s+(.+?)(?:[?.!]|$)",
-        ]
-        low = q.lower()
-        for p in patterns:
-            m = re.search(p, low, flags=re.IGNORECASE)
-            if m:
-                return self._normalize(m.group(1)).strip(" ,.;:!?\"'")
-        return self._normalize(q).strip(" ,.;:!?\"'")
-
-    def _extract_resource_phrases(self, lines: Sequence[str]) -> List[str]:
-        phrases: List[str] = []
-        seen: set[str] = set()
-        for line in lines:
-            text = self._normalize(line)
-            if not text:
-                continue
-            for cand in re.findall(r"\b[A-Z][A-Za-z0-9.&'-]{2,}(?:\s+[A-Z][A-Za-z0-9.&'-]{2,})*\b", text):
-                c = self._normalize(cand).strip(" ,.;:!?\"'")
-                if not c:
-                    continue
-                key = c.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                phrases.append(c)
-        return phrases
-
-    def _preference_result(self, query: str, lines: Sequence[str]) -> str:
-        direction = self._query_focus_phrase(query)
-        resources = self._extract_resource_phrases(lines)
-        direction_tokens = set(self._tokenize(direction))
-        reason = ""
-        for line in lines:
-            lt = set(self._tokenize(line))
-            if not direction_tokens or direction_tokens.intersection(lt):
-                reason = self._normalize(line)
-                break
-        if not reason and lines:
-            reason = self._normalize(lines[0])
-        suggestion = ", ".join(resources[:2]) if resources else "context-aware targeted resources"
-        return f"Preference: {direction} | Reason: {reason} | Suggestion: {suggestion}"
-
-    def build_tool_hints(
-        self,
-        *,
-        query: str,
-        graph_context: str,
-        evidence_sentences: Sequence[Dict[str, object]],
-        candidates: Sequence[Dict[str, object]],
-        chunks: Sequence[Dict[str, object]],
-    ) -> str:
-        intent = self._classify_intent(query)
-        if intent == "generic":
-            return ""
-        graph_lines = self._parse_graph_context(graph_context)
-        evidence_lines = self._parse_evidence_lines(evidence_sentences, limit=4)
-        candidate_lines = self._parse_evidence_lines(candidates, limit=3)
-        all_lines = graph_lines + evidence_lines + candidate_lines
-        tool_lines: List[str] = [f"intent={intent}"]
-
-        if intent == "count":
-            pack = self._build_count_evidence_pack(
-                query=query,
-                evidence_sentences=evidence_sentences,
-                candidates=candidates,
-                chunks=chunks,
+        claims: Sequence[Dict[str, object]],
+        light_graph: Dict[str, object],
+    ) -> Dict[str, object]:
+        items_by_node = {str(item.get("node_id", "")): item for item in claims}
+        update_edges = self._graph_edges(light_graph, "updates")
+        if update_edges:
+            ranked = sorted(
+                update_edges,
+                key=lambda edge: float(items_by_node.get(str(edge.get("target", "")), {}).get("support_weight", 0.0)),
+                reverse=True,
             )
-            if pack.get("object_type"):
-                tool_lines.append(f"count_object_type={pack.get('object_type', '')}")
-            if pack.get("explicit_count_candidates"):
-                vals = [str(x) for x in list(pack.get("explicit_count_candidates", []))]
-                tool_lines.append("count_explicit_candidates=" + " | ".join(vals[:4]))
-                if len(vals) == 1:
-                    tool_lines.append(f"count_hint={vals[0]}")
-            if pack.get("enumerated_items"):
-                items = [str(x) for x in list(pack.get("enumerated_items", []))]
-                tool_lines.append("count_enumerated_items=" + " | ".join(items[:6]))
-                # Keep backward-compatible key for prompt templates.
-                tool_lines.append("count_items=" + " | ".join(items[:6]))
-            if pack.get("support_spans"):
-                spans = [str(x) for x in list(pack.get("support_spans", []))]
-                tool_lines.append("count_support_spans=" + " | ".join(spans[:3]))
-            return "\n".join(tool_lines[:7]).strip()
+            best_edge = ranked[0]
+            old_item = items_by_node.get(str(best_edge.get("source", "")), {})
+            new_item = items_by_node.get(str(best_edge.get("target", "")), {})
+            answer_candidate = self._normalize(str(new_item.get("value", "")))
+            if answer_candidate:
+                return {
+                    "intent": "update",
+                    "summary_lines": [
+                        f"state_update={self._claim_text(old_item)} -> {self._claim_text(new_item)}"
+                    ],
+                    "answer_candidate": answer_candidate,
+                    "confidence": 0.82,
+                    "used_claim_ids": [
+                        str(old_item.get("claim_id", "")),
+                        str(new_item.get("claim_id", "")),
+                    ],
+                }
+        ranked_claims = sorted(
+            claims,
+            key=lambda item: (
+                float(item.get("support_weight", 0.0)),
+                float(item.get("confidence", 0.0)),
+            ),
+            reverse=True,
+        )
+        if not ranked_claims:
+            return {}
+        best = ranked_claims[0]
+        answer_candidate = self._normalize(str(best.get("value", "")))
+        if not answer_candidate:
+            return {}
+        return {
+            "intent": "update",
+            "summary_lines": [f"state_answer={self._claim_text(best)}"],
+            "answer_candidate": answer_candidate,
+            "confidence": 0.70,
+            "used_claim_ids": [str(best.get("claim_id", ""))] if str(best.get("claim_id", "")) else [],
+        }
 
-        if intent == "temporal_count":
-            ans = self._temporal_count_result(query, all_lines)
-            if ans:
-                tool_lines.append(f"duration_answer={ans}")
-                tool_lines.append(f"duration_hint={ans}")
-            points = self._extract_temporal_dates(all_lines)
-            if points:
-                tool_lines.append("temporal_points=" + " | ".join(points[:4]))
-            return "\n".join(tool_lines[:5]).strip()
+    def _graph_preference_payload(self, claims: Sequence[Dict[str, object]]) -> Dict[str, object]:
+        direction = ""
+        reason = ""
+        support_items: List[str] = []
+        used: List[str] = []
+        for claim in claims:
+            predicate = self._normalize(str(claim.get("predicate", ""))).lower()
+            value = self._normalize(str(claim.get("value", "")))
+            if not value:
+                continue
+            if predicate == "preferred_direction" and not direction:
+                direction = value
+                used.append(str(claim.get("claim_id", "")))
+            elif predicate == "supported_reason" and not reason:
+                reason = value
+                used.append(str(claim.get("claim_id", "")))
+            elif len(support_items) < 2 and float(claim.get("support_weight", 0.0)) >= 0.30:
+                support_items.append(value)
+        if not direction and not reason and not support_items:
+            return {}
+        summary_lines: List[str] = []
+        if direction:
+            summary_lines.append("preference_direction=" + direction)
+        if reason:
+            summary_lines.append("preference_reason=" + reason)
+        if support_items:
+            summary_lines.append("preference_support=" + " | ".join(support_items[:2]))
+        answer_candidate = ""
+        if direction:
+            answer_candidate = f"Preference: {direction}" + (f" | Reason: {reason}" if reason else "")
+        return {
+            "intent": "preference",
+            "summary_lines": summary_lines,
+            "answer_candidate": answer_candidate,
+            "confidence": 0.76 if direction else 0.0,
+            "used_claim_ids": [claim_id for claim_id in used if claim_id],
+        }
 
-        if intent == "temporal_compare":
-            ans = self._temporal_compare_result(query=query, evidence_sentences=evidence_sentences)
-            if ans:
-                tool_lines.append(f"compare_answer={ans}")
-            return "\n".join(tool_lines[:5]).strip()
-
-        if intent == "update":
-            ans = self._update_result(query=query, evidence_sentences=evidence_sentences, candidates=candidates)
-            if ans:
-                tool_lines.append(f"state_answer={ans}")
-            return "\n".join(tool_lines[:5]).strip()
-
-        if intent == "preference":
-            pref = self._preference_result(query, all_lines)
-            if pref:
-                tool_lines.append(f"preference_answer={pref}")
-                tool_lines.append(f"preference_summary={pref}")
-                tool_lines.append("preference_hint=" + (all_lines[0] if all_lines else ""))
-            return "\n".join(tool_lines[:5]).strip()
-
-        return ""
-
-    def build_tool_answer(
+    def build_light_graph_tool_payload(
         self,
         *,
         query: str,
-        graph_context: str,
-        evidence_sentences: Sequence[Dict[str, object]],
-        candidates: Sequence[Dict[str, object]],
-        chunks: Sequence[Dict[str, object]],
-    ) -> str:
-        _ = graph_context
-        intent = self._classify_intent(query)
-        if intent == "generic":
-            return ""
-        evidence_lines = self._parse_evidence_lines(evidence_sentences, limit=4)
-        candidate_lines = self._parse_evidence_lines(candidates, limit=3)
-        all_lines = evidence_lines + candidate_lines
+        light_graph: Dict[str, object],
+    ) -> Dict[str, object]:
+        graph = dict(light_graph or {})
+        claims = self._graph_claim_items(graph)
+        if not claims:
+            return {}
+        intent = self._classify_intent(query, graph)
         if intent == "count":
-            # Count intent returns evidence pack via tool hints; avoid direct module-side verdict.
-            return ""
-        if intent == "temporal_count":
-            return self._temporal_count_result(query, all_lines)
-        if intent == "temporal_compare":
-            return self._temporal_compare_result(query=query, evidence_sentences=evidence_sentences)
-        if intent == "update":
-            return self._update_result(query=query, evidence_sentences=evidence_sentences, candidates=candidates)
-        if intent == "preference":
-            return self._preference_result(query, all_lines)
-        return ""
+            payload = self._graph_count_payload(query, claims)
+        elif intent == "temporal_count":
+            payload = self._graph_temporal_count_payload(query, claims)
+        elif intent == "temporal_compare":
+            payload = self._graph_temporal_compare_payload(query=query, claims=claims, light_graph=graph)
+        elif intent == "update":
+            payload = self._graph_update_payload(query=query, claims=claims, light_graph=graph)
+        elif intent == "preference":
+            payload = self._graph_preference_payload(claims)
+        else:
+            payload = {}
+        if not payload:
+            return {}
+        summary_lines = [self._normalize(str(line)) for line in list(payload.get("summary_lines", [])) if self._normalize(str(line))]
+        payload["summary_lines"] = summary_lines[:6]
+        payload["summary_text"] = "\n".join(summary_lines[:6]).strip()
+        return payload

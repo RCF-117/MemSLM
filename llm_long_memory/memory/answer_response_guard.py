@@ -6,8 +6,8 @@ import re
 from typing import Dict, List, Optional
 
 
-class AnswerResponseHandler:
-    """Handle prompt construction, evidence support checks, and fallback decisions."""
+class AnswerResponseGuard:
+    """Handle evidence support checks, guarded retries, and answer normalization."""
 
     def __init__(
         self,
@@ -51,64 +51,6 @@ class AnswerResponseHandler:
     @staticmethod
     def _normalize_space(text: str) -> str:
         return " ".join(str(text).split())
-
-    def build_answer_prompt(
-        self,
-        input_text: str,
-        graph_context: str,
-        query_plan: str = "",
-        graph_tool_hints: str = "",
-        rag_evidence: str = "",
-        fallback_answer: str = "",
-    ) -> str:
-        graph_text = str(graph_context or "").strip()
-        if not graph_text:
-            graph_text = "None"
-        graph_tool_text = str(graph_tool_hints or "").strip()
-        if not graph_tool_text:
-            graph_tool_text = "None"
-        rag_text = str(rag_evidence or "").strip()
-        if not rag_text:
-            rag_text = "None"
-        plan_text = str(query_plan or "").strip()
-        if not plan_text:
-            plan_text = "None"
-        fallback_text = self._normalize_space(fallback_answer).strip()
-        if not fallback_text:
-            fallback_text = "None"
-        rules = (
-            "Use Query Plan to align target object/entities/time/state first.\n"
-            "Use RAG Evidence next, especially Evidence Pack lines.\n"
-            "For comparison questions (A or B), compare option_a vs option_b using action/time cues and ignore unrelated profile/location details.\n"
-            "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
-            "For count questions, first align object type, then use count_explicit_candidates, count_enumerated_items, and count_support_spans.\n"
-            "Treat loose numeric fragments as weak clues unless object alignment is clear.\n"
-            "For temporal_count questions, prefer duration_answer, duration_hint, and temporal_points, and preserve the asked unit.\n"
-            "For preference questions, use preference_answer, preference_summary, and resource_hint to form a concise preference-aware answer.\n"
-            "Use Graph Evidence next for any missing detail.\n"
-            "If Graph Evidence is weak or empty, use the Fallback Answer as the compact backup clue.\n"
-            "Do not repeat long evidence blocks.\n"
-            "Do not say Not found unless both Graph Evidence and the fallback cues are insufficient.\n"
-            "Keep key qualifiers (for example: each way, round trip, per day).\n"
-            "Return only the final answer."
-            if self.answer_context_only
-            else "Return only the final answer."
-        )
-        return (
-            "[Graph Tool Hints]\n"
-            f"{graph_tool_text}\n\n"
-            "[Graph Evidence]\n"
-            f"{graph_text}\n\n"
-            "[Query Plan]\n"
-            f"{plan_text}\n\n"
-            "[RAG Evidence]\n"
-            f"{rag_text}\n\n"
-            "[Fallback Answer]\n"
-            f"{fallback_text}\n\n"
-            "[Answer Rules]\n"
-            f"{rules}\n\n"
-            f"User: {input_text}"
-        )
 
     def response_in_evidence(self, response: str, evidence_sentences: List[Dict[str, object]]) -> bool:
         ans = self._normalize_space(response).lower()
@@ -165,7 +107,7 @@ class AnswerResponseHandler:
             return True
         return False
 
-    def evaluate_response_fallback(
+    def evaluate_response_guard(
         self,
         response: str,
         evidence_sentences: List[Dict[str, object]],
@@ -259,7 +201,7 @@ class AnswerResponseHandler:
             "not_found_reason": "llm_response_not_supported_and_no_fallback",
         }
 
-    def build_second_pass_prompt(
+    def build_second_pass_retry_prompt(
         self,
         prompt_text: str,
         evidence_candidate: Optional[Dict[str, str]],
@@ -268,14 +210,13 @@ class AnswerResponseHandler:
             str(evidence_candidate.get("answer", "")) if evidence_candidate is not None else ""
         )
         guidance = (
-            "Re-check the same compact prompt.\n"
-            "If Graph Tool Hints are present, use them first for count / temporal / preference questions.\n"
-            "For count questions, prioritize count_explicit_candidates, count_enumerated_items, and count_support_spans with object alignment.\n"
-            "For temporal_count questions, prefer duration_answer, duration_hint, and temporal_points.\n"
-            "For preference questions, prefer preference_answer, preference_summary, and resource_hint.\n"
-            "Use Graph Evidence next if needed, then the Fallback Answer if needed.\n"
-            "Do not say Not found unless both are insufficient.\n"
-            "Prefer the shortest exact phrase from the fallback cues.\n"
+            "Re-check the same structured prompt.\n"
+            "Use Toolkit Analysis first when it contains a grounded answer candidate.\n"
+            "Then use Light Graph relations and Graph Claims.\n"
+            "Then use Filtered Evidence to fill missing detail.\n"
+            "Do not invent facts that are not grounded in those sections.\n"
+            "Do not say Not found unless all structured evidence is insufficient.\n"
+            "Prefer the shortest grounded phrase that fully answers the question.\n"
             "Return only the final answer."
         )
         if candidate_text:
@@ -288,7 +229,7 @@ class AnswerResponseHandler:
             "Question: Re-check the answer above."
         )
 
-    def postprocess_final_answer(
+    def normalize_final_answer(
         self,
         answer: str,
         query: str,

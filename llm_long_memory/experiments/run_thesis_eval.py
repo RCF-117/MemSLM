@@ -9,7 +9,6 @@ from typing import List
 from llm_long_memory.baselines.run_baseline import run_one_dataset
 from llm_long_memory.experiments.build_eval_subset import build_subset
 from llm_long_memory.experiments.export_eval_report import export_report
-from llm_long_memory.experiments.export_graph import export_graph
 from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
 
@@ -178,23 +177,6 @@ def main() -> None:
     report_db_path = str(config["evaluation"]["database_file"])
     graph_json_path = ""
     node_graph_json_path = ""
-    if bool(config["evaluation"].get("offline_graph_build_enabled", False)):
-        graph_db_path = resolve_project_path(
-            str(config["evaluation"].get(
-                "thesis_graph_db_file",
-                "data/processed/thesis_graph_runs/thesis_graph_runs.db",
-            ))
-        )
-        if graph_db_path.exists():
-            export_result = export_graph(
-                db_path=str(graph_db_path),
-                output_dir=graph_output_dir,
-                artifact_prefix=artifact_prefix,
-                active_only=False,
-            )
-            export_dir = resolve_project_path(str(export_result["output_dir"]))
-            graph_json_path = str(export_dir / f"{artifact_prefix}_event_graph.json")
-            node_graph_json_path = str(export_dir / f"{artifact_prefix}_node_graph.json")
     export_report(
         db_path=report_db_path,
         output_dir=report_dir,

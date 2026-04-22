@@ -1,8 +1,7 @@
-"""Audit answer-source quality without calling final answer generation LLM.
+"""Audit stage-by-stage source quality without calling final answer generation LLM.
 
-This script runs ingestion + retrieval (+ optional offline long-graph build) and
-exports six source channels per question so we can inspect what should be used
-as primary evidence vs fallback.
+The audit follows the active MemSLM pipeline:
+RAG -> filter -> claims -> light graph -> toolkit.
 """
 
 from __future__ import annotations
@@ -50,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--disable-long-memory",
         action="store_true",
-        help="Disable long memory/graph path for this audit run.",
+        help="Reserved no-op switch kept for CLI compatibility.",
     )
     parser.add_argument(
         "--disable-toolkit",
@@ -378,6 +377,140 @@ def _summarize_rows(rows: List[Dict[str, object]]) -> Dict[str, object]:
     }
 
 
+def _stage_best_metrics(texts: List[str], gold: str) -> Dict[str, float]:
+    gold_tokens = set(_audit_tokens(gold))
+    best_f1 = 0.0
+    best_rec = 0.0
+    for text in texts:
+        cand_tokens = set(_audit_tokens(text))
+        if not gold_tokens or not cand_tokens:
+            continue
+        overlap = len(gold_tokens.intersection(cand_tokens))
+        if overlap <= 0:
+            continue
+        precision = float(overlap) / float(len(cand_tokens))
+        recall = float(overlap) / float(len(gold_tokens))
+        f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+        best_f1 = max(best_f1, f1)
+        best_rec = max(best_rec, recall)
+    return {
+        "best_f1": best_f1,
+        "best_rec": best_rec,
+        "coverage_f1_pos": 1 if best_f1 > 0.0 else 0,
+        "coverage_rec50": 1 if best_rec >= 0.5 else 0,
+    }
+
+
+def _claim_to_text(claim: Dict[str, object]) -> str:
+    subject = _as_text(claim.get("subject", "")).strip()
+    predicate = _as_text(claim.get("predicate", "")).strip()
+    value = _as_text(claim.get("value", "")).strip()
+    return " | ".join([x for x in [subject, predicate, value] if x]).strip()
+
+
+def _stage_texts_from_row(row: Dict[str, object]) -> Dict[str, List[str]]:
+    out: Dict[str, List[str]] = {
+        "rag": [],
+        "filter": [],
+        "claims": [],
+        "light_graph": [],
+        "toolkit": [],
+    }
+    for item in list(row.get("source_1_rag_evidence_top", [])):
+        text = _as_text(item.get("text", "")).strip()
+        if text:
+            out["rag"].append(text)
+
+    filtered = dict(row.get("filtered_evidence_pack", {}) or {})
+    for key in ("core_evidence", "supporting_evidence", "conflict_evidence"):
+        for item in list(filtered.get(key, [])):
+            text = _as_text(item.get("text", "")).strip()
+            if text:
+                out["filter"].append(text)
+
+    claim_result = dict(row.get("evidence_graph_claim_result", {}) or {})
+    for unit in list(claim_result.get("support_units", [])):
+        text = _as_text(unit.get("verbatim_span", "")).strip() or _as_text(unit.get("text", "")).strip()
+        if text:
+            out["claims"].append(text)
+    for claim in list(claim_result.get("claims", [])):
+        text = _claim_to_text(dict(claim))
+        if text:
+            out["claims"].append(text)
+        value = _as_text(claim.get("value", "")).strip()
+        if value:
+            out["claims"].append(value)
+
+    graph = dict(row.get("evidence_light_graph", {}) or {})
+    for node in list(graph.get("nodes", [])):
+        if _as_text(node.get("type", "")).strip() not in {"fact", "state", "event"}:
+            continue
+        label = _as_text(node.get("label", "")).strip()
+        if label:
+            out["light_graph"].append(label)
+        meta = dict(node.get("meta", {}) or {})
+        value = _as_text(meta.get("value", "")).strip()
+        if value:
+            out["light_graph"].append(value)
+
+    toolkit = dict(row.get("toolkit_output", {}) or {})
+    tool_payload = dict(toolkit.get("tool_payload", {}) or {})
+    answer_candidate = _as_text(tool_payload.get("answer_candidate", "")).strip()
+    if answer_candidate:
+        out["toolkit"].append(answer_candidate)
+    for line in list(tool_payload.get("summary_lines", [])):
+        text = _as_text(line).strip()
+        if text:
+            out["toolkit"].append(text)
+    hints = _as_text(toolkit.get("hints", "")).strip()
+    if hints:
+        out["toolkit"].extend([x.strip() for x in hints.splitlines() if x.strip()])
+    return out
+
+
+def _row_stage_metrics(row: Dict[str, object]) -> Dict[str, Dict[str, float]]:
+    texts = _stage_texts_from_row(row)
+    gold = _as_text(row.get("gold", ""))
+    return {stage: _stage_best_metrics(items, gold) for stage, items in texts.items()}
+
+
+def _summarize_stage_metrics(rows: List[Dict[str, object]]) -> Dict[str, object]:
+    stage_names = ["rag", "filter", "claims", "light_graph", "toolkit"]
+    overall: Dict[str, Dict[str, float]] = {}
+    by_type: Dict[str, Dict[str, Dict[str, float]]] = {}
+
+    def _aggregate(bucket: List[Dict[str, object]]) -> Dict[str, Dict[str, float]]:
+        total = max(1, len(bucket))
+        out: Dict[str, Dict[str, float]] = {}
+        for stage in stage_names:
+            sum_f1 = 0.0
+            sum_rec = 0.0
+            cov_f1 = 0
+            cov_rec50 = 0
+            for row in bucket:
+                metrics = dict(dict(row.get("stage_metrics", {}) or {}).get(stage, {}) or {})
+                sum_f1 += float(metrics.get("best_f1", 0.0))
+                sum_rec += float(metrics.get("best_rec", 0.0))
+                cov_f1 += int(metrics.get("coverage_f1_pos", 0))
+                cov_rec50 += int(metrics.get("coverage_rec50", 0))
+            out[stage] = {
+                "avg_best_f1": sum_f1 / float(total),
+                "avg_best_rec": sum_rec / float(total),
+                "coverage_f1_pos": cov_f1,
+                "coverage_rec50": cov_rec50,
+            }
+        return out
+
+    overall = _aggregate(rows)
+    buckets: Dict[str, List[Dict[str, object]]] = {}
+    for row in rows:
+        qtype = _as_text(row.get("question_type", "")).strip() or "unknown"
+        buckets.setdefault(qtype, []).append(row)
+    for qtype, bucket in sorted(buckets.items()):
+        by_type[qtype] = _aggregate(bucket)
+    return {"overall": overall, "by_type": by_type}
+
+
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
@@ -389,11 +522,7 @@ def main() -> None:
         stage_claims = True
         stage_light_graph = True
     if args.disable_long_memory:
-        cfg["memory"]["long_memory"]["enabled"] = False
-        cfg["memory"]["long_memory"].setdefault("offline_graph", {})["enabled"] = False
         cfg["retrieval"]["answering"]["graph_refiner_enabled"] = False
-        cfg["retrieval"]["answering"]["graph_context_from_store_enabled"] = False
-        cfg["retrieval"].setdefault("long_memory_context", {})["enabled"] = False
     if args.disable_toolkit:
         sp = cfg["retrieval"]["answering"].setdefault("specialist_layer", {})
         sp["enabled"] = False
@@ -447,17 +576,12 @@ def main() -> None:
         sentence_units = sum(1 for c in chunks if str(c.get("unit_type", "")) == "sentence")
         chunk_units = sum(1 for c in chunks if str(c.get("unit_type", "")) != "sentence")
 
-        evidence_sentences = manager.answering.collect_evidence_sentences(question, chunks)
+        evidence_sentences = manager.answer_grounding.collect_evidence_sentences(question, chunks)
         evidence_pack = manager.chat_runtime._build_evidence_pack(
             query=question,
             evidence_sentences=evidence_sentences,
             chunks=chunks,
         )
-        candidates = manager.answering.extract_candidates(question, evidence_sentences)
-        evidence_candidate = manager.answering.extract_evidence_candidate(
-            question, evidence_sentences, candidates
-        )
-
         plan = dict(getattr(manager, "last_query_plan", {}) or {})
         plan_keywords = _keyword_items(plan, limit=6)
         combined_evidence = _keyword_combined_evidence(chunks, plan, limit=5)
@@ -500,6 +624,10 @@ def main() -> None:
                 enable_light_graph=stage_light_graph,
             )
             claim_result = dict(graph_bundle.get("claim_result", {}) or {})
+            toolkit_output = manager.specialist_layer.run(
+                query=question,
+                graph_bundle=graph_bundle,
+            )
             row.update(
                 {
                     "evidence_graph_stage_flags": dict(graph_bundle.get("stage_flags", {}) or {}),
@@ -514,10 +642,12 @@ def main() -> None:
                         "raw_batches": list(claim_result.get("raw_batches", [])),
                     },
                     "evidence_light_graph": dict(graph_bundle.get("light_graph", {}) or {}),
+                    "toolkit_output": dict(toolkit_output or {}),
                 }
             )
         row.update(_score_row_quality(row))
         row["audit_metrics"] = _row_audit_metrics(row)
+        row["stage_metrics"] = _row_stage_metrics(row)
         rows.append(row)
 
         claim_count = 0
@@ -543,6 +673,7 @@ def main() -> None:
     out_json = output_dir / f"{prefix}_{tag}__{stem}.json"
     out_json.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = _summarize_rows(rows)
+    stage_summary = _summarize_stage_metrics(rows)
     out_summary = output_dir / f"{prefix}_{tag}__{stem}__summary.json"
     out_summary.write_text(
         json.dumps(
@@ -551,6 +682,7 @@ def main() -> None:
                 "total": len(rows),
                 "source_json": out_json.name,
                 "metrics": summary,
+                "stage_metrics": stage_summary,
             },
             ensure_ascii=False,
             indent=2,
@@ -581,7 +713,35 @@ def main() -> None:
         f"- coverage_f1_pos: {int(summary['coverage_f1_pos'])}",
         f"- coverage_rec50: {int(summary['coverage_rec50'])}",
         "",
+        "## Stage Metrics (Overall)",
     ]
+    for stage, metrics in stage_summary["overall"].items():
+        lines.append(
+            f"- {stage}: avg_best_f1={float(metrics['avg_best_f1']):.4f}, "
+            f"avg_best_rec={float(metrics['avg_best_rec']):.4f}, "
+            f"coverage_f1_pos={int(metrics['coverage_f1_pos'])}, "
+            f"coverage_rec50={int(metrics['coverage_rec50'])}"
+        )
+    lines.extend(
+        [
+            "",
+            "## Stage Metrics (By Type)",
+        ]
+    )
+    for qtype, stage_map in stage_summary["by_type"].items():
+        lines.append(f"- {qtype}:")
+        for stage, metrics in stage_map.items():
+            lines.append(
+                f"  - {stage}: avg_best_f1={float(metrics['avg_best_f1']):.4f}, "
+                f"avg_best_rec={float(metrics['avg_best_rec']):.4f}, "
+                f"coverage_f1_pos={int(metrics['coverage_f1_pos'])}, "
+                f"coverage_rec50={int(metrics['coverage_rec50'])}"
+            )
+    lines.extend(
+        [
+            "",
+        ]
+    )
     for row in rows:
         lines.append(f"## {int(row['idx']):02d} | {row['question_id']} | {row['question_type']}")
         lines.append(f"- Q: {row['question']}")
@@ -593,6 +753,7 @@ def main() -> None:
         lines.append(f"- query_plan: {_as_text(row.get('query_plan', {}))}")
         lines.append(f"- quality: {row['quality_tier']} (score={row['quality_score']})")
         lines.append(f"- quality_reasons: {_as_text(row['quality_reasons'])}")
+        lines.append(f"- stage_metrics: {_as_text(row.get('stage_metrics', {}))}")
         if stage_filter or stage_claims or stage_light_graph:
             graph_stats = dict(dict(row.get("evidence_light_graph", {}) or {}).get("stats", {}) or {})
             filter_pack = dict(row.get("filtered_evidence_pack", {}) or {})
@@ -640,6 +801,11 @@ def main() -> None:
                         ensure_ascii=False,
                     )
                 )
+            toolkit = dict(row.get("toolkit_output", {}) or {})
+            tool_payload = dict(toolkit.get("tool_payload", {}) or {})
+            if toolkit or tool_payload:
+                lines.append("- toolkit_output:")
+                lines.append("  - " + json.dumps(tool_payload, ensure_ascii=False))
         lines.append("")
     out_md.write_text("\n".join(lines), encoding="utf-8")
 

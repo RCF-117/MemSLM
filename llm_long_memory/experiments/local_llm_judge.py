@@ -36,7 +36,7 @@ class JudgeResult:
     reason: str
 
 
-class LLMJudge:
+class LocalLLMJudge:
     """Use a local Ollama model to judge answer correctness semantically."""
 
     def __init__(

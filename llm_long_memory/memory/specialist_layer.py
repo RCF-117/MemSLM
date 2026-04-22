@@ -1,12 +1,12 @@
 """Unified specialist-layer orchestrator.
 
-This layer coordinates optional specialist helpers (counting / graph toolkit)
-and returns compact prompt hints plus an optional fallback answer clue.
+This layer coordinates optional specialist helpers and returns compact
+graph-grounded tool output for the final answer composer.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List
 
 
 class SpecialistLayer:
@@ -39,16 +39,14 @@ class SpecialistLayer:
         self,
         *,
         query: str,
-        graph_context: str,
-        evidence_sentences: Sequence[Dict[str, object]],
-        candidates: Sequence[Dict[str, object]],
-        chunks: Sequence[Dict[str, object]],
+        graph_bundle: Dict[str, object] | None = None,
     ) -> Dict[str, object]:
         """Run enabled specialist modules and return a compact payload."""
         payload: Dict[str, object] = {
             "hints": "",
             "fallback_answer": "",
             "sources": [],
+            "tool_payload": {},
         }
         if not self.enabled:
             return payload
@@ -56,35 +54,27 @@ class SpecialistLayer:
         hint_lines: List[str] = []
         fallback_answer = ""
         sources: List[str] = []
+        tool_payload: Dict[str, object] = {}
 
         if self.graph_toolkit_enabled:
             toolkit = getattr(self.m, "graph_toolkit", None)
             if toolkit is not None:
                 try:
-                    gh = str(
-                        toolkit.build_tool_hints(
+                    light_graph = dict(dict(graph_bundle or {}).get("light_graph", {}) or {})
+                    tool_payload = dict(
+                        toolkit.build_light_graph_tool_payload(
                             query=query,
-                            graph_context=graph_context,
-                            evidence_sentences=evidence_sentences,
-                            candidates=candidates,
-                            chunks=chunks,
+                            light_graph=light_graph,
                         )
-                        or ""
-                    ).strip()
-                    ga = str(
-                        toolkit.build_tool_answer(
-                            query=query,
-                            graph_context=graph_context,
-                            evidence_sentences=evidence_sentences,
-                            candidates=candidates,
-                            chunks=chunks,
-                        )
-                        or ""
-                    ).strip()
+                        or {}
+                    )
+                    gh = str(tool_payload.get("summary_text", "") or "").strip()
+                    ga = str(tool_payload.get("answer_candidate", "") or "").strip()
                     if gh:
                         hint_lines.extend([x for x in gh.splitlines() if x.strip()])
-                    if self.allow_fallback_override and ga:
-                        fallback_answer = ga
+                    # Final answering now consumes structured tool payload directly.
+                    # Keep fallback_answer empty so toolkit does not bypass the composer.
+                    _ = ga
                     if gh or ga:
                         sources.append("graph_toolkit")
                 except Exception:
@@ -94,4 +84,5 @@ class SpecialistLayer:
         payload["hints"] = self._trim_hints("\n".join(hint_lines))
         payload["fallback_answer"] = str(fallback_answer).strip()
         payload["sources"] = sources
+        payload["tool_payload"] = tool_payload
         return payload

@@ -8,7 +8,7 @@ from typing import Tuple
 
 from llm_long_memory.experiments.build_eval_subset import build_subset
 from llm_long_memory.experiments.run_thesis_eval import _parse_csv, _resolve_dataset_path
-from llm_long_memory.experiments.thesis_mode_runner import build_model_only_prompt, run_direct_mode_eval
+from llm_long_memory.experiments.direct_eval_runner import build_model_only_prompt, run_direct_mode_eval
 from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
 
 

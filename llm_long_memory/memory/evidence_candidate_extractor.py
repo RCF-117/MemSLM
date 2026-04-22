@@ -1,4 +1,4 @@
-"""Candidate and evidence extraction component for answer pipeline."""
+"""Evidence sentence ranking and extractive span helpers for the active pipeline."""
 
 from __future__ import annotations
 
@@ -6,23 +6,23 @@ import re
 from typing import Any, Dict, List, Optional
 
 
-class AnswerCandidateExtractor:
+class EvidenceCandidateExtractor:
     """Encapsulate evidence sentence ranking and candidate span extraction."""
 
-    def __init__(self, answering_cfg: Dict[str, Any]) -> None:
-        self.answering_cfg = dict(answering_cfg)
-        self.evidence_top_n_chunks = int(self.answering_cfg["evidence_top_n_chunks"])
-        self.evidence_top_n_sentences = int(self.answering_cfg["evidence_top_n_sentences"])
-        self.evidence_sentence_max_chars = int(self.answering_cfg["evidence_sentence_max_chars"])
-        self.candidate_top_n = int(self.answering_cfg["candidate_top_n"])
-        self.span_min_tokens = int(self.answering_cfg["span_min_tokens"])
-        self.span_max_tokens = int(self.answering_cfg["span_max_tokens"])
-        self.span_top_n_per_sentence = int(self.answering_cfg["span_top_n_per_sentence"])
-        evidence_candidate_cfg = dict(self.answering_cfg["evidence_candidate"])
+    def __init__(self, grounding_cfg: Dict[str, Any]) -> None:
+        self.grounding_cfg = dict(grounding_cfg)
+        self.evidence_top_n_chunks = int(self.grounding_cfg["evidence_top_n_chunks"])
+        self.evidence_top_n_sentences = int(self.grounding_cfg["evidence_top_n_sentences"])
+        self.evidence_sentence_max_chars = int(self.grounding_cfg["evidence_sentence_max_chars"])
+        self.candidate_top_n = int(self.grounding_cfg["candidate_top_n"])
+        self.span_min_tokens = int(self.grounding_cfg["span_min_tokens"])
+        self.span_max_tokens = int(self.grounding_cfg["span_max_tokens"])
+        self.span_top_n_per_sentence = int(self.grounding_cfg["span_top_n_per_sentence"])
+        evidence_candidate_cfg = dict(self.grounding_cfg["evidence_candidate"])
         self.evidence_candidate_enabled = bool(evidence_candidate_cfg["enabled"])
         self.evidence_candidate_min_score = float(evidence_candidate_cfg["min_score"])
         self.evidence_candidate_max_tokens = int(evidence_candidate_cfg["max_tokens"])
-        candidate_filter_cfg = dict(self.answering_cfg["candidate_filter"])
+        candidate_filter_cfg = dict(self.grounding_cfg["candidate_filter"])
         self.candidate_filter_enabled = bool(candidate_filter_cfg["enabled"])
         self.candidate_filter_min_token_count = int(candidate_filter_cfg["min_token_count"])
         self.candidate_filter_role_prefixes = {
@@ -35,7 +35,7 @@ class AnswerCandidateExtractor:
             str(x).strip().lower() for x in list(candidate_filter_cfg["reject_contains"])
         ]
 
-        intent_cfg = dict(self.answering_cfg["intent_extraction"])
+        intent_cfg = dict(self.grounding_cfg["intent_extraction"])
         self.intent_extraction_enabled = bool(intent_cfg["enabled"])
         self.intent_time_keywords = {str(x).strip().lower() for x in list(intent_cfg["time_keywords"])}
         self.intent_number_keywords = {
@@ -53,7 +53,7 @@ class AnswerCandidateExtractor:
         ]
         self.intent_capitalized_phrase_max_tokens = int(intent_cfg["capitalized_phrase_max_tokens"])
 
-        scoring_cfg = dict(self.answering_cfg["candidate_scoring"])
+        scoring_cfg = dict(self.grounding_cfg["candidate_scoring"])
         self.cand_min_score = float(scoring_cfg["min_score"])
         self.cand_reject_tokens = {
             str(x).strip().lower() for x in list(scoring_cfg["reject_tokens"])

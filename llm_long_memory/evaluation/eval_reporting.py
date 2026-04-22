@@ -23,10 +23,8 @@ class EvalCounters:
     graph_retrieval_total: int = 0
     graph_span_hits: int = 0
     graph_support_hits: int = 0
-    ingest_event_total: int = 0
-    ingest_event_accepted: int = 0
-    ingest_prev_total: int = 0
-    ingest_prev_accepted: int = 0
+    graph_ingest_selected: int = 0
+    graph_ingest_accepted: int = 0
 
 
 def finalize_eval_run(
@@ -64,6 +62,7 @@ def finalize_eval_run(
     avg_latency_sec = _avg("latency_sec")
 
     grouped_from_db: Dict[str, Dict[str, int]] = {}
+    grouped_latency: Dict[str, float] = {}
     if group_by_type and result_rows:
         buckets: Dict[str, List[Dict[str, object]]] = defaultdict(list)
         for row in result_rows:
@@ -74,14 +73,17 @@ def finalize_eval_run(
                 "total": len(bucket),
                 "matched": sum(1 for row in bucket if int(row.get("is_match") or 0) == 1),
             }
+            latency_vals = [
+                float(row.get("latency_sec"))
+                for row in bucket
+                if row.get("latency_sec") is not None
+            ]
+            grouped_latency[key] = (
+                (sum(latency_vals) / float(len(latency_vals))) if latency_vals else 0.0
+            )
 
-    long_stats = manager.long_memory.debug_stats()
-    ingest_total = int(counters.ingest_event_total)
-    ingest_accepted = int(counters.ingest_event_accepted)
-    if ingest_total <= 0:
-        ingest_total = int(long_stats.get("ingest_event_total", 0))
-    if ingest_accepted <= 0:
-        ingest_accepted = int(long_stats.get("ingest_event_accepted", 0))
+    ingest_total = int(counters.graph_ingest_selected)
+    ingest_accepted = int(counters.graph_ingest_accepted)
     graph_ingest_accept_rate = (
         float(ingest_accepted) / float(ingest_total)
         if ingest_total > 0
@@ -115,7 +117,10 @@ def finalize_eval_run(
             manager.mid_memory.eval_store.log_eval_group_result(
                 run_id, key, g_total, g_matched, g_acc, commit=False
             )
-            print(f"- {key}: total={g_total}, matched={g_matched}, accuracy={g_acc:.4f}")
+            print(
+                f"- {key}: total={g_total}, matched={g_matched}, "
+                f"accuracy={g_acc:.4f}, type_latency_sec={float(grouped_latency.get(key, 0.0)):.4f}"
+            )
 
     manager.mid_memory.eval_store.log_eval_run_finish(
         run_id,
