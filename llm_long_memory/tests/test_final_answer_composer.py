@@ -84,11 +84,10 @@ class TestFinalAnswerComposer(unittest.TestCase):
         section_names = [section["section"] for section in sections]
         self.assertEqual(
             section_names,
-            ["filtered_evidence", "light_graph", "toolkit_output", "answer_rules"],
+            ["toolkit_output", "light_graph", "filtered_evidence", "answer_rules"],
         )
-        self.assertIn("[Filtered Evidence]", prompt)
-        self.assertIn("[Light Graph]", prompt)
-        self.assertIn("[Toolkit Analysis]", prompt)
+        self.assertLess(prompt.index("[Toolkit Analysis]"), prompt.index("[Light Graph]"))
+        self.assertLess(prompt.index("[Light Graph]"), prompt.index("[Filtered Evidence]"))
         self.assertNotIn("[Query Plan]", prompt)
         self.assertNotIn("[Graph Claims]", prompt)
         self.assertIn("tool_verification=update_edge_verified", prompt)
@@ -187,7 +186,78 @@ class TestFinalAnswerComposer(unittest.TestCase):
         self.assertIn("Core evidence four.", expanded_prompt)
         self.assertIn("Core evidence five.", expanded_prompt)
         self.assertIn("Supporting evidence two.", expanded_prompt)
+        self.assertIn("Supporting evidence three.", expanded_prompt)
         self.assertNotIn("Supporting evidence one.", expanded_prompt)
+
+    def test_build_prompt_keeps_long_filtered_evidence_verbatim(self) -> None:
+        long_text = (
+            "I just exchanged a pair of boots from Zara on 2/5 and still need to pick up the new pair. "
+            "Here are several general tips about using reminders and organizing returns that are not central. "
+            "More generic advice about notes apps and organization follows for a long time."
+        )
+        prompt, _ = self.composer.build_prompt(
+            input_text="How many items of clothing do I need to pick up from the store?",
+            filtered_pack={
+                "query": "How many items of clothing do I need to pick up from the store?",
+                "answer_type": "count",
+                "focus_phrases": ["items of clothing", "pick up from the store"],
+                "target_object": "items of clothing",
+                "core_evidence": [{"text": long_text}],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={"nodes": [], "edges": []},
+            toolkit_payload={},
+            prompt_mode="compact",
+        )
+        self.assertIn("boots from Zara on 2/5", prompt)
+        self.assertIn("More generic advice about notes apps", prompt)
+
+    def test_build_prompt_projects_graph_claims_when_no_structural_edges(self) -> None:
+        prompt, sections = self.composer.build_prompt(
+            input_text="How many projects have I led or am currently leading?",
+            filtered_pack={
+                "core_evidence": [{"text": "I led a market research project."}],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={
+                "nodes": [
+                    {
+                        "id": "claim_a",
+                        "type": "fact",
+                        "meta": {
+                            "subject": "I",
+                            "predicate": "led",
+                            "value": "market research project",
+                            "time_anchor": "2023",
+                        },
+                    },
+                    {
+                        "id": "claim_b",
+                        "type": "fact",
+                        "meta": {
+                            "subject": "I",
+                            "predicate": "leading",
+                            "value": "analytics project",
+                            "time_anchor": "2024",
+                        },
+                    },
+                ],
+                "edges": [
+                    {"source": "claim_a", "target": "query_root", "type": "supports_query", "weight": 0.72},
+                    {"source": "claim_b", "target": "query_root", "type": "supports_query", "weight": 0.65},
+                ],
+            },
+            toolkit_payload={},
+            prompt_mode="compact",
+        )
+        section_names = [section["section"] for section in sections]
+        self.assertIn("light_graph", section_names)
+        self.assertIn("[Light Graph]", prompt)
+        self.assertIn("claim[fact]: I | led | market research project | time=2023", prompt)
 
 
 if __name__ == "__main__":

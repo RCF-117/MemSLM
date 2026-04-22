@@ -426,12 +426,12 @@ def _answer_type_anchor(family: str) -> Dict[str, int]:
 
 def _answer_type_family_color(family: str) -> str:
     palette = {
-        "count": "#86a97e",
-        "temporal": "#7f9fb7",
-        "update": "#c39a7d",
-        "factoid": "#7e8e9f",
-        "preference": "#b39ab9",
-        "other": "#9aa3ad",
+        "count": "#6f8f69",
+        "temporal": "#6f8fa6",
+        "update": "#b28268",
+        "factoid": "#6f7f90",
+        "preference": "#9a84a3",
+        "other": "#8792a0",
     }
     return str(palette.get(str(family or "").strip().lower(), palette["other"]))
 
@@ -613,10 +613,10 @@ def _build_combined_graph_payload(
                 "physics": False,
                 "borderWidth": 0,
                 "color": {
-                    "background": _hex_to_rgba(cluster_color, 0.035),
-                    "border": _hex_to_rgba(cluster_color, 0.08),
-                    "highlight": {"background": _hex_to_rgba(cluster_color, 0.045), "border": _hex_to_rgba(cluster_color, 0.10)},
-                    "hover": {"background": _hex_to_rgba(cluster_color, 0.045), "border": _hex_to_rgba(cluster_color, 0.10)},
+                    "background": _hex_to_rgba(cluster_color, 0.065),
+                    "border": _hex_to_rgba(cluster_color, 0.14),
+                    "highlight": {"background": _hex_to_rgba(cluster_color, 0.078), "border": _hex_to_rgba(cluster_color, 0.18)},
+                    "hover": {"background": _hex_to_rgba(cluster_color, 0.078), "border": _hex_to_rgba(cluster_color, 0.18)},
                 },
                 "font": {"size": 1, "color": "rgba(0,0,0,0)"},
                 "meta": {"question_id": qid, "role": "cluster_halo"},
@@ -656,9 +656,9 @@ def _build_combined_graph_payload(
                     },
                     "color": {
                         "background": "#ffffff",
-                        "border": _hex_to_rgba(cluster_color, 0.62 if node_type == "query" else 0.48),
-                        "highlight": {"background": "#ffffff", "border": _hex_to_rgba(cluster_color, 0.74 if node_type == "query" else 0.66)},
-                        "hover": {"background": "#ffffff", "border": _hex_to_rgba(cluster_color, 0.74 if node_type == "query" else 0.66)},
+                        "border": _hex_to_rgba(cluster_color, 0.70 if node_type == "query" else 0.58),
+                        "highlight": {"background": "#ffffff", "border": _hex_to_rgba(cluster_color, 0.82 if node_type == "query" else 0.72)},
+                        "hover": {"background": "#ffffff", "border": _hex_to_rgba(cluster_color, 0.82 if node_type == "query" else 0.72)},
                     },
                     "meta": {
                         "question_id": qid,

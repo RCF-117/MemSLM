@@ -99,6 +99,9 @@ class FinalAnswerComposer:
             cfg.get("composer_expanded_backfill_compact", False)
         )
         self.min_tool_confidence = max(0.0, float(cfg.get("composer_min_tool_confidence", 0.80)))
+        self.min_graph_claim_support = max(
+            0.0, float(cfg.get("composer_min_graph_claim_support", 0.20))
+        )
 
     def _limits_for_mode(self, prompt_mode: str | None) -> Dict[str, int]:
         mode = str(prompt_mode or self.default_prompt_mode).strip().lower()
@@ -277,8 +280,17 @@ class FinalAnswerComposer:
         graph = dict(light_graph or {})
         node_map = {str(node.get("id", "")): dict(node) for node in list(graph.get("nodes", []))}
         lines: List[str] = []
+        support_weights: Dict[str, float] = {}
         for edge in list(graph.get("edges", [])):
             edge_type = str(edge.get("type", "")).strip()
+            if edge_type == "supports_query":
+                src_id = str(edge.get("source", "")).strip()
+                if src_id:
+                    try:
+                        support_weights[src_id] = float(edge.get("weight", 0.0) or 0.0)
+                    except Exception:
+                        support_weights[src_id] = 0.0
+                continue
             if edge_type not in {"updates", "before", "after"}:
                 continue
             src = dict(node_map.get(str(edge.get("source", "")), {}) or {})
@@ -295,6 +307,32 @@ class FinalAnswerComposer:
                 lines.append(f"- {prefix}: {left} -> {right}")
             else:
                 lines.append(f"- {edge_type}: {left} -> {right}")
+        if not lines:
+            fallback_claims: List[Tuple[float, str]] = []
+            for node in list(graph.get("nodes", [])):
+                node_id = str(node.get("id", "")).strip()
+                node_type = str(node.get("type", "")).strip().lower()
+                if node_type not in {"fact", "state", "event"}:
+                    continue
+                weight = float(support_weights.get(node_id, 0.0) or 0.0)
+                if weight < self.min_graph_claim_support:
+                    continue
+                meta = dict(node.get("meta", {}) or {})
+                text = self._normalize_space(self._claim_to_text(meta))
+                if not text:
+                    continue
+                fallback_claims.append((weight, f"- claim[{node_type}]: {text}"))
+            if fallback_claims:
+                fallback_claims.sort(key=lambda item: item[0], reverse=True)
+                seen = set()
+                deduped: List[str] = []
+                for _weight, line in fallback_claims:
+                    key = line.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    deduped.append(line)
+                lines.extend(deduped)
         selected_lines = self._select_mode_items(
             lines,
             prompt_mode=prompt_mode,
@@ -369,9 +407,9 @@ class FinalAnswerComposer:
         _ = claim_result
 
         for name, text in [
-            ("filtered_evidence", filtered_text),
-            ("light_graph", light_graph_text),
             ("toolkit_output", toolkit_text),
+            ("light_graph", light_graph_text),
+            ("filtered_evidence", filtered_text),
         ]:
             if text:
                 sections.append({"section": name, "text": text})
