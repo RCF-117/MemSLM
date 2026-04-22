@@ -35,6 +35,9 @@ The active experiment workflow is centered on:
   - export eval DB rows into report artifacts
 - `local_llm_judge.py`
   - optional judge helper used by report export
+- `render_thesis_visuals.py`
+  - standalone paper-figure/table renderer from saved audit or comparison JSON
+  - recommended when you want stage-wise answerability / latency plots without rerunning eval
 
 ### Shared helpers
 
@@ -57,3 +60,23 @@ The active experiment workflow is centered on:
 - `export_graph.py`
   - active light-graph export from audit artifacts
   - writes one combined HTML / JSON overview canvas for multi-question screenshots
+
+## Typical Usage
+
+### Render stage-wise thesis visuals from an audit JSON
+
+```bash
+python -m llm_long_memory.experiments.render_thesis_visuals \
+  --audit-json llm_long_memory/data/processed/thesis_reports_debug_analysis/answer_source_audit_*.json \
+  --output-dir llm_long_memory/data/processed/thesis_visuals \
+  --prefix ragdebug_memslm_visuals
+```
+
+### Render comparison tables and figures from a comparison JSON
+
+```bash
+python -m llm_long_memory.experiments.render_thesis_visuals \
+  --comparison-json llm_long_memory/data/processed/thesis_reports_debug_analysis/*_comparison.json \
+  --output-dir llm_long_memory/data/processed/thesis_visuals \
+  --prefix thesis_compare_visuals
+```
