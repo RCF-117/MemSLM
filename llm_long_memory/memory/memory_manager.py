@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -234,6 +235,7 @@ class MemoryManager:
         self.last_prompt_eval_chunks: List[Dict[str, str]] = []
         self.last_query_plan: Dict[str, object] = {}
         self.last_evidence_graph_bundle: Dict[str, object] = {}
+        self.last_stage_latency_sec: Dict[str, float] = {}
         logger.info("MemoryManager initialized.")
 
     @staticmethod
@@ -1007,6 +1009,7 @@ class MemoryManager:
         enable_claims: Optional[bool] = None,
         enable_light_graph: Optional[bool] = None,
     ) -> Dict[str, object]:
+        started_total = time.perf_counter()
         if precomputed_context is None:
             _context_text, _topics, chunks = self.retrieve_context(query)
         else:
@@ -1027,6 +1030,12 @@ class MemoryManager:
             use_claims = True
         if use_claims and not use_filter:
             use_filter = True
+        stage_latency_sec: Dict[str, float] = {
+            "filter": 0.0,
+            "claims": 0.0,
+            "light_graph": 0.0,
+            "graph_total": 0.0,
+        }
         evidence_sentences = list(evidence_sentences or [])
         if not evidence_sentences:
             evidence_sentences = self.answer_grounding.collect_evidence_sentences(query, chunks)
@@ -1046,11 +1055,13 @@ class MemoryManager:
         )
         filtered_pack: Dict[str, object] = {}
         if use_filter:
+            stage_started = time.perf_counter()
             filtered_pack = self.evidence_filter.build_filtered_pack(
                 query=query,
                 query_plan=plan,
                 unified_source=unified_source,
             )
+            stage_latency_sec["filter"] = time.perf_counter() - stage_started
         extraction: Dict[str, object] = {
             "enabled": False,
             "model": getattr(self.evidence_graph_extractor, "model", ""),
@@ -1065,14 +1076,19 @@ class MemoryManager:
             },
         }
         if use_claims and filtered_pack:
+            stage_started = time.perf_counter()
             extraction = self.evidence_graph_extractor.extract_claims(filtered_pack)
+            stage_latency_sec["claims"] = time.perf_counter() - stage_started
         graph: Dict[str, object] = {"query": str(query or ""), "answer_type": str(plan.get("answer_type", "")), "nodes": [], "edges": [], "stats": {"node_count": 0, "edge_count": 0, "entity_count": 0, "claim_count": 0}}
         if use_light_graph and filtered_pack:
+            stage_started = time.perf_counter()
             graph = self.evidence_light_graph.build_graph(
                 query=query,
                 filtered_pack=filtered_pack,
                 claims=list(extraction.get("claims", [])),
             )
+            stage_latency_sec["light_graph"] = time.perf_counter() - stage_started
+        stage_latency_sec["graph_total"] = time.perf_counter() - started_total
         bundle = {
             "query": str(query or ""),
             "query_plan": plan,
@@ -1081,6 +1097,7 @@ class MemoryManager:
                 "claims_enabled": use_claims,
                 "light_graph_enabled": use_light_graph,
             },
+            "stage_latency_sec": stage_latency_sec,
             "unified_source": unified_source,
             "filtered_pack": filtered_pack,
             "claim_result": extraction,
@@ -1140,7 +1157,9 @@ class MemoryManager:
         precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]] = None,
     ) -> str:
         """Handle one user message with retrieval, LLM call, and memory updates."""
+        chat_started = time.perf_counter()
         self.last_prompt_eval_chunks = []
+        self.last_stage_latency_sec = {}
         logger.info(f"MemoryManager.chat: user input='{input_text}'")
         query = retrieval_query if retrieval_query is not None else input_text
         (
@@ -1193,6 +1212,7 @@ class MemoryManager:
         )
         logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
         self._record_turn(input_text, ai_response)
+        self.last_stage_latency_sec["chat_total"] = time.perf_counter() - chat_started
         return ai_response
 
     def _prepare_answer_inputs(

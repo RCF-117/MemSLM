@@ -6,6 +6,7 @@ graph-grounded tool output for the final answer composer.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List
 
 
@@ -55,19 +56,22 @@ class SpecialistLayer:
         fallback_answer = ""
         sources: List[str] = []
         tool_payload: Dict[str, object] = {}
+        latency_sec = 0.0
 
         if self.graph_toolkit_enabled:
             toolkit = getattr(self.m, "graph_toolkit", None)
             if toolkit is not None:
                 try:
+                    stage_started = time.perf_counter()
                     light_graph = dict(dict(graph_bundle or {}).get("light_graph", {}) or {})
                     tool_payload = dict(
                         toolkit.build_light_graph_tool_payload(
                             query=query,
                             light_graph=light_graph,
                         )
-                        or {}
+                            or {}
                     )
+                    latency_sec = time.perf_counter() - stage_started
                     gh = str(tool_payload.get("summary_text", "") or "").strip()
                     ga = str(tool_payload.get("answer_candidate", "") or "").strip()
                     if gh:
@@ -85,4 +89,5 @@ class SpecialistLayer:
         payload["fallback_answer"] = str(fallback_answer).strip()
         payload["sources"] = sources
         payload["tool_payload"] = tool_payload
+        payload["latency_sec"] = float(latency_sec)
         return payload

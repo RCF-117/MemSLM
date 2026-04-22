@@ -70,6 +70,8 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         )
         self.assertEqual(payload["intent"], "count")
         self.assertEqual(payload["answer_candidate"], "3")
+        self.assertTrue(payload["verified"])
+        self.assertEqual(payload["verified_candidate"], "3")
         self.assertTrue(any("count_graph_items=" in line for line in payload["summary_lines"]))
 
     def test_build_light_graph_tool_payload_temporal_count(self) -> None:
@@ -102,6 +104,7 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         )
         self.assertEqual(payload["intent"], "temporal_count")
         self.assertEqual(payload["answer_candidate"], "1 week")
+        self.assertTrue(payload["verified"])
 
     def test_build_light_graph_tool_payload_temporal_compare(self) -> None:
         graph = {
@@ -137,6 +140,7 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         )
         self.assertEqual(payload["intent"], "temporal_compare")
         self.assertEqual(payload["answer_candidate"], "Tom")
+        self.assertTrue(payload["verified"])
 
     def test_build_light_graph_tool_payload_update(self) -> None:
         graph = {
@@ -172,8 +176,72 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         )
         self.assertEqual(payload["intent"], "update")
         self.assertEqual(payload["answer_candidate"], "bedroom")
+        self.assertTrue(payload["verified"])
 
-    def test_build_light_graph_tool_payload_preference(self) -> None:
+    def test_count_solver_abstains_on_conflicting_or_impure_count_signals(self) -> None:
+        graph = {
+            "answer_type": "count",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Qx", "meta": {}},
+                _claim_node("c1", claim_type="fact_statement", subject="clothing items", predicate="count", value="2"),
+                _claim_node("c2", claim_type="fact_statement", subject="clothing items", predicate="count", value="1"),
+                _claim_node("c3", claim_type="fact_statement", subject="pickup list", predicate="status", value="yes"),
+            ],
+            "edges": [_supports_query("c1", 0.9), _supports_query("c2", 0.8), _supports_query("c3", 0.7)],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="How many items of clothing do I need to pick up?",
+            light_graph=graph,
+        )
+        self.assertEqual(payload["intent"], "count")
+        self.assertFalse(payload["activated"])
+        self.assertEqual(payload["abstain_reason"], "conflicting_count_signals")
+
+    def test_count_solver_can_emit_raw_but_not_verified_candidate(self) -> None:
+        graph = {
+            "answer_type": "count",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Qm", "meta": {}},
+                _claim_node("c1", claim_type="fact_statement", subject="musical instruments", predicate="count", value="2"),
+                _claim_node("c2", claim_type="fact_statement", subject="I", predicate="own", value="Korg B1"),
+            ],
+            "edges": [_supports_query("c1", 0.9), _supports_query("c2", 0.7)],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="How many musical instruments do I currently own?",
+            light_graph=graph,
+        )
+        self.assertEqual(payload["intent"], "count")
+        self.assertTrue(payload["activated"])
+        self.assertEqual(payload["answer_candidate"], "2")
+        self.assertFalse(payload["verified"])
+        self.assertEqual(payload["verified_candidate"], "")
+        self.assertEqual(payload["verification_reason"], "count_missing_second_support")
+
+    def test_update_solver_abstains_without_state_snapshot(self) -> None:
+        graph = {
+            "answer_type": "update",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Qy", "meta": {}},
+                _claim_node(
+                    "c1",
+                    claim_type="fact_statement",
+                    subject="video editing",
+                    predicate="preferred_direction",
+                    value="Adobe Premiere tutorials",
+                ),
+            ],
+            "edges": [_supports_query("c1", 0.9)],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="Can you recommend resources to learn more about Premiere Pro?",
+            light_graph=graph,
+        )
+        self.assertEqual(payload["intent"], "update")
+        self.assertFalse(payload["activated"])
+        self.assertEqual(payload["abstain_reason"], "missing_state_snapshot")
+
+    def test_build_light_graph_tool_payload_preference_is_not_routed_into_toolkit(self) -> None:
         graph = {
             "answer_type": "preference",
             "nodes": [
@@ -199,9 +267,7 @@ class TestGraphReasoningToolkit(unittest.TestCase):
             query="What advice fits my workflow preference?",
             light_graph=graph,
         )
-        self.assertEqual(payload["intent"], "preference")
-        self.assertIn("Preference:", payload["answer_candidate"])
-        self.assertTrue(any("preference_direction=" in line for line in payload["summary_lines"]))
+        self.assertEqual(payload, {})
 
     def test_query_intent_still_does_not_overtrigger_compare(self) -> None:
         intent = extract_query_intent("What was the first issue I had with my new car?")

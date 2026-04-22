@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from llm_long_memory.utils.logger import logger
@@ -697,6 +698,14 @@ class MemoryManagerChatRuntime:
         str,
         str,
     ]:
+        stage_latency_sec: Dict[str, float] = {
+            "rag": 0.0,
+            "filter": 0.0,
+            "claims": 0.0,
+            "light_graph": 0.0,
+            "toolkit": 0.0,
+        }
+        rag_started = time.perf_counter()
         if precomputed_context is not None:
             context_text, topics, chunks = precomputed_context
         else:
@@ -711,6 +720,7 @@ class MemoryManagerChatRuntime:
             best_evidence = ""
             best_candidate = ""
             self._last_specialist_payload = {}
+            stage_latency_sec["rag"] = time.perf_counter() - rag_started
         else:
             raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(query, chunks)
             self._last_evidence_pack = self._build_evidence_pack(
@@ -743,6 +753,10 @@ class MemoryManagerChatRuntime:
                 except (RuntimeError, ValueError, TypeError):
                     self.m.last_evidence_graph_bundle = {}
                     graph_bundle = {}
+            stage_latency_sec["rag"] = time.perf_counter() - rag_started
+            graph_stage_latency = dict(graph_bundle.get("stage_latency_sec", {}) or {})
+            for key in ("filter", "claims", "light_graph"):
+                stage_latency_sec[key] = float(graph_stage_latency.get(key, 0.0) or 0.0)
             evidence_sentences = self.m.final_answer_composer.bundle_to_evidence_sentences(
                 graph_bundle,
                 raw_fallback=raw_evidence_sentences,
@@ -760,6 +774,10 @@ class MemoryManagerChatRuntime:
                 query=query,
                 graph_bundle=graph_bundle,
             )
+            stage_latency_sec["toolkit"] = float(
+                dict(self._last_specialist_payload or {}).get("latency_sec", 0.0) or 0.0
+            )
+        self.m.last_stage_latency_sec = dict(stage_latency_sec)
         return (
             context_text,
             topics,
@@ -865,6 +883,7 @@ class MemoryManagerChatRuntime:
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
+        stage_started = time.perf_counter()
         compact_prompt, prompt_sections = self.m.final_answer_composer.build_prompt(
             input_text=input_text,
             filtered_pack=filtered_pack,
@@ -872,6 +891,7 @@ class MemoryManagerChatRuntime:
             light_graph=light_graph,
             toolkit_payload=toolkit_payload,
         )
+        self.m.last_stage_latency_sec["composer"] = time.perf_counter() - stage_started
         self.m._set_prompt_eval_chunks(prompt_sections)
         return compact_prompt
 
@@ -892,7 +912,9 @@ class MemoryManagerChatRuntime:
             "MemoryManager.chat: invoking main LLM "
             f"(model={model_name}, prompt_chars={len(prompt_text)})."
         )
+        stage_started = time.perf_counter()
         response = self.m.llm.chat(prompt_messages)
+        self.m.last_stage_latency_sec["final_generation"] = time.perf_counter() - stage_started
         execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
         if execution_mode in {"model_only", "naive_rag"}:
             ai_response = self.m.answer_grounding.normalize_final_answer(

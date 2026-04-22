@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -415,6 +416,7 @@ def _stage_texts_from_row(row: Dict[str, object]) -> Dict[str, List[str]]:
         "claims": [],
         "light_graph": [],
         "toolkit": [],
+        "final_prompt": [],
     }
     for item in list(row.get("source_1_rag_evidence_top", [])):
         text = _as_text(item.get("text", "")).strip()
@@ -465,6 +467,9 @@ def _stage_texts_from_row(row: Dict[str, object]) -> Dict[str, List[str]]:
     hints = _as_text(toolkit.get("hints", "")).strip()
     if hints:
         out["toolkit"].extend([x.strip() for x in hints.splitlines() if x.strip()])
+    final_prompt = _as_text(row.get("final_answer_prompt", "")).strip()
+    if final_prompt:
+        out["final_prompt"].extend([x.strip() for x in final_prompt.splitlines() if x.strip()])
     return out
 
 
@@ -475,7 +480,7 @@ def _row_stage_metrics(row: Dict[str, object]) -> Dict[str, Dict[str, float]]:
 
 
 def _summarize_stage_metrics(rows: List[Dict[str, object]]) -> Dict[str, object]:
-    stage_names = ["rag", "filter", "claims", "light_graph", "toolkit"]
+    stage_names = ["rag", "filter", "claims", "light_graph", "toolkit", "final_prompt"]
     overall: Dict[str, Dict[str, float]] = {}
     by_type: Dict[str, Dict[str, Dict[str, float]]] = {}
 
@@ -502,6 +507,33 @@ def _summarize_stage_metrics(rows: List[Dict[str, object]]) -> Dict[str, object]
         return out
 
     overall = _aggregate(rows)
+    buckets: Dict[str, List[Dict[str, object]]] = {}
+    for row in rows:
+        qtype = _as_text(row.get("question_type", "")).strip() or "unknown"
+        buckets.setdefault(qtype, []).append(row)
+    for qtype, bucket in sorted(buckets.items()):
+        by_type[qtype] = _aggregate(bucket)
+    return {"overall": overall, "by_type": by_type}
+
+
+def _summarize_stage_latency(rows: List[Dict[str, object]]) -> Dict[str, object]:
+    stage_names = ["rag", "filter", "claims", "light_graph", "toolkit", "composer", "total"]
+
+    def _aggregate(bucket: List[Dict[str, object]]) -> Dict[str, float]:
+        total = max(1, len(bucket))
+        out: Dict[str, float] = {}
+        for stage in stage_names:
+            out[stage] = (
+                sum(
+                    float(dict(row.get("stage_latency_sec", {}) or {}).get(stage, 0.0) or 0.0)
+                    for row in bucket
+                )
+                / float(total)
+            )
+        return out
+
+    overall = _aggregate(rows)
+    by_type: Dict[str, Dict[str, float]] = {}
     buckets: Dict[str, List[Dict[str, object]]] = {}
     for row in rows:
         qtype = _as_text(row.get("question_type", "")).strip() or "unknown"
@@ -549,6 +581,7 @@ def main() -> None:
     rows: List[Dict[str, object]] = []
     total = len(data)
     for i, item in enumerate(data, start=1):
+        total_started = time.perf_counter()
         manager.reset_for_new_instance()
         sessions = item.get("haystack_sessions", [])
         session_ids = list(item.get("haystack_session_ids", []))
@@ -572,6 +605,7 @@ def main() -> None:
         manager.archive_short_to_mid(clear_short=True)
 
         question = _as_text(item.get("question", ""))
+        rag_started = time.perf_counter()
         _ctx, _topics, chunks = manager.retrieve_context(question)
         sentence_units = sum(1 for c in chunks if str(c.get("unit_type", "")) == "sentence")
         chunk_units = sum(1 for c in chunks if str(c.get("unit_type", "")) != "sentence")
@@ -596,6 +630,15 @@ def main() -> None:
             plan_ev_limit=5,
             total_limit=20,
         )
+        stage_latency_sec: Dict[str, float] = {
+            "rag": time.perf_counter() - rag_started,
+            "filter": 0.0,
+            "claims": 0.0,
+            "light_graph": 0.0,
+            "toolkit": 0.0,
+            "composer": 0.0,
+            "total": 0.0,
+        }
 
         row: Dict[str, object] = {
             "idx": i,
@@ -623,11 +666,26 @@ def main() -> None:
                 enable_claims=stage_claims,
                 enable_light_graph=stage_light_graph,
             )
+            bundle_stage_latency = dict(graph_bundle.get("stage_latency_sec", {}) or {})
+            for key in ("filter", "claims", "light_graph"):
+                stage_latency_sec[key] = float(bundle_stage_latency.get(key, 0.0) or 0.0)
+            toolkit_started = time.perf_counter()
             claim_result = dict(graph_bundle.get("claim_result", {}) or {})
             toolkit_output = manager.specialist_layer.run(
                 query=question,
                 graph_bundle=graph_bundle,
             )
+            toolkit_latency = float(dict(toolkit_output or {}).get("latency_sec", 0.0) or 0.0)
+            stage_latency_sec["toolkit"] = toolkit_latency or (time.perf_counter() - toolkit_started)
+            composer_started = time.perf_counter()
+            final_prompt, prompt_sections = manager.final_answer_composer.build_prompt(
+                input_text=question,
+                filtered_pack=dict(graph_bundle.get("filtered_pack", {}) or {}),
+                claim_result=claim_result,
+                light_graph=dict(graph_bundle.get("light_graph", {}) or {}),
+                toolkit_payload=dict(toolkit_output or {}),
+            )
+            stage_latency_sec["composer"] = time.perf_counter() - composer_started
             row.update(
                 {
                     "evidence_graph_stage_flags": dict(graph_bundle.get("stage_flags", {}) or {}),
@@ -643,8 +701,13 @@ def main() -> None:
                     },
                     "evidence_light_graph": dict(graph_bundle.get("light_graph", {}) or {}),
                     "toolkit_output": dict(toolkit_output or {}),
+                    "final_answer_prompt": final_prompt,
+                    "final_answer_prompt_sections": list(prompt_sections),
+                    "final_answer_prompt_char_count": len(final_prompt),
                 }
             )
+        stage_latency_sec["total"] = time.perf_counter() - total_started
+        row["stage_latency_sec"] = stage_latency_sec
         row.update(_score_row_quality(row))
         row["audit_metrics"] = _row_audit_metrics(row)
         row["stage_metrics"] = _row_stage_metrics(row)
@@ -674,6 +737,7 @@ def main() -> None:
     out_json.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = _summarize_rows(rows)
     stage_summary = _summarize_stage_metrics(rows)
+    latency_summary = _summarize_stage_latency(rows)
     out_summary = output_dir / f"{prefix}_{tag}__{stem}__summary.json"
     out_summary.write_text(
         json.dumps(
@@ -683,6 +747,7 @@ def main() -> None:
                 "source_json": out_json.name,
                 "metrics": summary,
                 "stage_metrics": stage_summary,
+                "stage_latency_sec": latency_summary,
             },
             ensure_ascii=False,
             indent=2,
@@ -725,6 +790,24 @@ def main() -> None:
     lines.extend(
         [
             "",
+            "## Stage Latency Sec (Overall)",
+        ]
+    )
+    for stage, avg_latency in latency_summary["overall"].items():
+        lines.append(f"- {stage}: {float(avg_latency):.4f}s")
+    lines.extend(
+        [
+            "",
+            "## Stage Latency Sec (By Type)",
+        ]
+    )
+    for qtype, latency_map in latency_summary["by_type"].items():
+        lines.append(f"- {qtype}:")
+        for stage, avg_latency in latency_map.items():
+            lines.append(f"  - {stage}: {float(avg_latency):.4f}s")
+    lines.extend(
+        [
+            "",
             "## Stage Metrics (By Type)",
         ]
     )
@@ -754,10 +837,15 @@ def main() -> None:
         lines.append(f"- quality: {row['quality_tier']} (score={row['quality_score']})")
         lines.append(f"- quality_reasons: {_as_text(row['quality_reasons'])}")
         lines.append(f"- stage_metrics: {_as_text(row.get('stage_metrics', {}))}")
+        lines.append(f"- stage_latency_sec: {_as_text(row.get('stage_latency_sec', {}))}")
         if stage_filter or stage_claims or stage_light_graph:
             graph_stats = dict(dict(row.get("evidence_light_graph", {}) or {}).get("stats", {}) or {})
             filter_pack = dict(row.get("filtered_evidence_pack", {}) or {})
             claim_stats = dict(dict(row.get("evidence_graph_claim_result", {}) or {}).get("stats", {}) or {})
+            lines.append(
+                f"- final_answer_prompt: chars={int(row.get('final_answer_prompt_char_count', 0) or 0)}, "
+                f"sections={_as_text([x.get('section', '') for x in list(row.get('final_answer_prompt_sections', []))])}"
+            )
             lines.append(f"- evidence_graph_stage_flags: {_as_text(row.get('evidence_graph_stage_flags', {}))}")
             lines.append(
                 "- evidence_graph_stats: "

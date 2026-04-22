@@ -24,6 +24,7 @@ class FinalAnswerComposer:
         self.max_support_units = max(1, int(cfg.get("composer_max_support_units", 4)))
         self.max_graph_lines = max(1, int(cfg.get("composer_max_graph_lines", 6)))
         self.max_tool_lines = max(1, int(cfg.get("composer_max_tool_lines", 6)))
+        self.min_tool_confidence = max(0.0, float(cfg.get("composer_min_tool_confidence", 0.80)))
 
     @staticmethod
     def _normalize_space(text: str) -> str:
@@ -155,15 +156,38 @@ class FinalAnswerComposer:
     def _format_toolkit(self, toolkit_payload: Dict[str, object]) -> str:
         payload = dict(toolkit_payload or {})
         tool_payload = dict(payload.get("tool_payload", {}) or {})
+        activated = bool(tool_payload.get("activated", False))
+        verified = bool(tool_payload.get("verified", False))
+        confidence = float(tool_payload.get("confidence", 0.0) or 0.0)
+        used_claim_ids = [
+            self._normalize_space(str(x))
+            for x in list(tool_payload.get("verified_used_claim_ids", []) or tool_payload.get("used_claim_ids", []))
+            if self._normalize_space(str(x))
+        ]
+        summary_lines = list(tool_payload.get("summary_lines", []))
+        answer_candidate = self._normalize_space(
+            str(tool_payload.get("verified_candidate", "")) or str(tool_payload.get("answer_candidate", ""))
+        )
+        if not activated:
+            return ""
+        if not verified:
+            return ""
+        if not used_claim_ids:
+            return ""
+        if not summary_lines and not answer_candidate:
+            return ""
         lines: List[str] = []
         intent = self._normalize_space(str(tool_payload.get("intent", "")))
         if intent:
             lines.append(f"intent={intent}")
-        for line in list(tool_payload.get("summary_lines", []))[: self.max_tool_lines]:
+        verification_reason = self._normalize_space(str(tool_payload.get("verification_reason", "")))
+        if verification_reason:
+            lines.append(f"tool_verification={verification_reason}")
+        lines.append(f"tool_confidence={confidence:.2f}")
+        for line in summary_lines[: self.max_tool_lines]:
             text = self._normalize_space(str(line))
             if text:
                 lines.append(text)
-        answer_candidate = self._normalize_space(str(tool_payload.get("answer_candidate", "")))
         if answer_candidate:
             lines.append(f"tool_answer_candidate={answer_candidate}")
         return "[Toolkit Analysis]\n" + "\n".join(lines) if lines else ""

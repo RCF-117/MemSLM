@@ -65,6 +65,13 @@ class TestFinalAnswerComposer(unittest.TestCase):
             toolkit_payload={
                 "tool_payload": {
                     "intent": "update",
+                    "activated": True,
+                    "confidence": 0.92,
+                    "verified": True,
+                    "verified_candidate": "Boston",
+                    "verification_reason": "update_edge_verified",
+                    "verified_used_claim_ids": ["c1"],
+                    "used_claim_ids": ["c1"],
                     "summary_lines": ["state_update=she | location | Chicago -> she | location | Boston"],
                     "answer_candidate": "Boston",
                 }
@@ -80,6 +87,35 @@ class TestFinalAnswerComposer(unittest.TestCase):
         self.assertIn("[Light Graph]", prompt)
         self.assertIn("[Toolkit Analysis]", prompt)
         self.assertNotIn("[Query Plan]", prompt)
+        self.assertIn("tool_verification=update_edge_verified", prompt)
+
+    def test_build_prompt_omits_unverified_toolkit_even_if_activated(self) -> None:
+        prompt, sections = self.composer.build_prompt(
+            input_text="Where is the painting now?",
+            filtered_pack={
+                "core_evidence": [{"text": "I moved the painting to my bedroom."}],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={"nodes": [], "edges": []},
+            toolkit_payload={
+                "tool_payload": {
+                    "intent": "update",
+                    "activated": True,
+                    "confidence": 0.91,
+                    "verified": False,
+                    "verified_candidate": "",
+                    "verification_reason": "update_requires_trusted_update_edge",
+                    "used_claim_ids": ["c1"],
+                    "summary_lines": ["state_answer=painting | location | bedroom"],
+                    "answer_candidate": "bedroom",
+                }
+            },
+        )
+        section_names = [section["section"] for section in sections]
+        self.assertNotIn("toolkit_output", section_names)
+        self.assertNotIn("[Toolkit Analysis]", prompt)
 
 
 if __name__ == "__main__":

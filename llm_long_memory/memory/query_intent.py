@@ -52,7 +52,22 @@ def extract_query_intent(query: str) -> Dict[str, bool]:
     return {
         "asks_where": "where" in lowered or "location" in lowered,
         "asks_when": any(
-            token in lowered for token in ("when", "date", "time", "year", "month", "day")
+            token in lowered
+            for token in (
+                "when",
+                "date",
+                "time",
+                "year",
+                "month",
+                "day",
+                "week",
+                "hour",
+                "minute",
+                "duration",
+                "since",
+                "between",
+                "how long",
+            )
         ),
         "asks_how_many": any(
             token in lowered for token in ("how many", "number of", "count", "total")
