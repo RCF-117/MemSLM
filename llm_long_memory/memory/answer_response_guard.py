@@ -212,7 +212,7 @@ class AnswerResponseGuard:
         guidance = (
             "Re-check the same structured prompt.\n"
             "Use Toolkit Analysis first when it contains a grounded answer candidate.\n"
-            "Then use Light Graph relations and Graph Claims.\n"
+            "Then use Light Graph relations.\n"
             "Then use Filtered Evidence to fill missing detail.\n"
             "Do not invent facts that are not grounded in those sections.\n"
             "Do not say Not found unless all structured evidence is insufficient.\n"

@@ -11,11 +11,15 @@ class TestFinalAnswerComposer(unittest.TestCase):
     def setUp(self) -> None:
         self.composer = FinalAnswerComposer(
             {
+                "composer_default_prompt_mode": "compact",
+                "composer_compact_max_core_evidence": 2,
+                "composer_compact_max_supporting_evidence": 1,
+                "composer_compact_max_conflict_evidence": 0,
+                "composer_compact_max_graph_lines": 2,
+                "composer_compact_max_tool_lines": 2,
                 "composer_max_core_evidence": 4,
                 "composer_max_supporting_evidence": 2,
                 "composer_max_conflict_evidence": 1,
-                "composer_max_claims": 4,
-                "composer_max_support_units": 2,
                 "composer_max_graph_lines": 4,
                 "composer_max_tool_lines": 4,
             }
@@ -80,13 +84,13 @@ class TestFinalAnswerComposer(unittest.TestCase):
         section_names = [section["section"] for section in sections]
         self.assertEqual(
             section_names,
-            ["filtered_evidence", "graph_claims", "light_graph", "toolkit_output", "answer_rules"],
+            ["filtered_evidence", "light_graph", "toolkit_output", "answer_rules"],
         )
         self.assertIn("[Filtered Evidence]", prompt)
-        self.assertIn("[Graph Claims]", prompt)
         self.assertIn("[Light Graph]", prompt)
         self.assertIn("[Toolkit Analysis]", prompt)
         self.assertNotIn("[Query Plan]", prompt)
+        self.assertNotIn("[Graph Claims]", prompt)
         self.assertIn("tool_verification=update_edge_verified", prompt)
 
     def test_build_prompt_omits_unverified_toolkit_even_if_activated(self) -> None:
@@ -116,6 +120,74 @@ class TestFinalAnswerComposer(unittest.TestCase):
         section_names = [section["section"] for section in sections]
         self.assertNotIn("toolkit_output", section_names)
         self.assertNotIn("[Toolkit Analysis]", prompt)
+
+    def test_build_prompt_compact_is_shorter_than_expanded(self) -> None:
+        filtered_pack = {
+            "core_evidence": [
+                {"text": "Core evidence one."},
+                {"text": "Core evidence two."},
+                {"text": "Core evidence three."},
+                {"text": "Core evidence four."},
+                {"text": "Core evidence five."},
+            ],
+            "supporting_evidence": [
+                {"text": "Supporting evidence one."},
+                {"text": "Supporting evidence two."},
+                {"text": "Supporting evidence three."},
+            ],
+            "conflict_evidence": [{"text": "Conflict evidence one."}],
+        }
+        light_graph = {
+            "nodes": [
+                {"id": "a", "meta": {"subject": "A", "predicate": "p", "value": "1"}},
+                {"id": "b", "meta": {"subject": "A", "predicate": "p", "value": "2"}},
+                {"id": "c", "meta": {"subject": "B", "predicate": "p", "value": "3"}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "type": "updates", "state_key": "p"},
+                {"source": "b", "target": "c", "type": "before"},
+            ],
+        }
+        toolkit_payload = {
+            "tool_payload": {
+                "intent": "update",
+                "activated": True,
+                "confidence": 0.92,
+                "verified": True,
+                "verified_candidate": "2",
+                "verification_reason": "update_edge_verified",
+                "verified_used_claim_ids": ["c1"],
+                "summary_lines": [
+                    "state_update=A | p | 1 -> A | p | 2",
+                    "supporting line",
+                    "extra line",
+                ],
+            }
+        }
+        compact_prompt, _ = self.composer.build_prompt(
+            input_text="What is the latest value?",
+            filtered_pack=filtered_pack,
+            claim_result={"claims": [], "support_units": []},
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
+            prompt_mode="compact",
+        )
+        expanded_prompt, _ = self.composer.build_prompt(
+            input_text="What is the latest value?",
+            filtered_pack=filtered_pack,
+            claim_result={"claims": [], "support_units": []},
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
+            prompt_mode="expanded",
+        )
+        self.assertLess(len(compact_prompt), len(expanded_prompt))
+        self.assertNotIn("Core evidence three.", compact_prompt)
+        self.assertNotIn("Core evidence two.", expanded_prompt)
+        self.assertIn("Core evidence three.", expanded_prompt)
+        self.assertIn("Core evidence four.", expanded_prompt)
+        self.assertIn("Core evidence five.", expanded_prompt)
+        self.assertIn("Supporting evidence two.", expanded_prompt)
+        self.assertNotIn("Supporting evidence one.", expanded_prompt)
 
 
 if __name__ == "__main__":

@@ -15,14 +15,19 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 
 class FakeLLM:
-    def __init__(self, response: str = "mock-llm-response") -> None:
+    def __init__(self, response: str | list[str] = "mock-llm-response") -> None:
         self.response = response
         self.calls = 0
         self.last_messages = None
+        self.history = []
 
     def chat(self, messages):
         self.calls += 1
         self.last_messages = messages
+        self.history.append(messages)
+        if isinstance(self.response, list):
+            idx = min(self.calls - 1, len(self.response) - 1)
+            return self.response[idx]
         return self.response
 
 
@@ -210,6 +215,53 @@ class TestMemoryManager(unittest.TestCase):
         out = manager.chat("question")
         self.assertIsInstance(out, str)
         self.assertGreaterEqual(llm.calls, 1)
+
+    def test_second_pass_uses_expanded_prompt_variant(self):
+        llm = FakeLLM(["Not found in retrieved context.", "Boston"])
+        manager, _ = self._build_manager(llm=llm)
+        manager.last_evidence_graph_bundle = {
+            "filtered_pack": {
+                "core_evidence": [
+                    {"text": "Core evidence one."},
+                    {"text": "Core evidence two."},
+                    {"text": "Core evidence three."},
+                ],
+                "supporting_evidence": [
+                    {"text": "Supporting evidence one."},
+                    {"text": "Supporting evidence two."},
+                ],
+                "conflict_evidence": [{"text": "Conflict evidence one."}],
+            },
+            "claim_result": {"claims": [], "support_units": []},
+            "light_graph": {"nodes": [], "edges": []},
+        }
+        manager.chat_runtime._last_specialist_payload = {}
+        prompt_text = manager._build_generation_prompt(
+            input_text="Where did she move?",
+            retrieved_context_text="",
+            evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.9}],
+            chunks=[],
+            candidates=[],
+            best_evidence="",
+            fallback_answer="",
+            evidence_candidate=None,
+        )
+        ai_response, fallback_path, _ = manager._generate_final_answer(
+            input_text="Where did she move?",
+            query="Where did she move?",
+            prompt_text=prompt_text,
+            evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.9}],
+            candidates=[],
+            fallback_answer="",
+            evidence_candidate=None,
+        )
+        self.assertEqual(ai_response, "Boston")
+        self.assertTrue(fallback_path.startswith("second_pass:"))
+        self.assertEqual(llm.calls, 2)
+        first_prompt = llm.history[0][0]["content"]
+        second_prompt = llm.history[1][0]["content"]
+        self.assertNotIn("Supporting evidence two.", first_prompt)
+        self.assertIn("Supporting evidence two.", second_prompt)
 
     def test_reset_and_close(self):
         manager, _ = self._build_manager()

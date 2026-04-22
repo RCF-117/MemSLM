@@ -3,7 +3,10 @@
 This module turns structured intermediate artifacts into the only prompt that
 the final 8B answering model sees:
 
-filtered evidence + claims + light graph + toolkit
+filtered evidence + light graph + toolkit
+
+Claims remain an internal middle layer for graph/toolkit construction and are
+not exposed as a first-class final-answer prompt section.
 """
 
 from __future__ import annotations
@@ -17,14 +20,91 @@ class FinalAnswerComposer:
 
     def __init__(self, cfg: Dict[str, Any] | None = None) -> None:
         cfg = dict(cfg or {})
-        self.max_core = max(1, int(cfg.get("composer_max_core_evidence", 6)))
-        self.max_supporting = max(0, int(cfg.get("composer_max_supporting_evidence", 4)))
-        self.max_conflict = max(0, int(cfg.get("composer_max_conflict_evidence", 2)))
-        self.max_claims = max(1, int(cfg.get("composer_max_claims", 6)))
-        self.max_support_units = max(1, int(cfg.get("composer_max_support_units", 4)))
-        self.max_graph_lines = max(1, int(cfg.get("composer_max_graph_lines", 6)))
-        self.max_tool_lines = max(1, int(cfg.get("composer_max_tool_lines", 6)))
+        self.default_prompt_mode = str(
+            cfg.get("composer_default_prompt_mode", "compact")
+        ).strip().lower() or "compact"
+        self.expanded_limits = {
+            "core": max(1, int(cfg.get("composer_max_core_evidence", 6))),
+            "supporting": max(0, int(cfg.get("composer_max_supporting_evidence", 4))),
+            "conflict": max(0, int(cfg.get("composer_max_conflict_evidence", 2))),
+            "graph_lines": max(1, int(cfg.get("composer_max_graph_lines", 6))),
+            "tool_lines": max(1, int(cfg.get("composer_max_tool_lines", 6))),
+        }
+        self.compact_limits = {
+            "core": max(
+                1,
+                int(
+                    cfg.get(
+                        "composer_compact_max_core_evidence",
+                        min(3, self.expanded_limits["core"]),
+                    )
+                ),
+            ),
+            "supporting": max(
+                0,
+                int(
+                    cfg.get(
+                        "composer_compact_max_supporting_evidence",
+                        min(1, self.expanded_limits["supporting"]),
+                    )
+                ),
+            ),
+            "conflict": max(
+                0,
+                int(
+                    cfg.get(
+                        "composer_compact_max_conflict_evidence",
+                        min(1, self.expanded_limits["conflict"]),
+                    )
+                ),
+            ),
+            "graph_lines": max(
+                1,
+                int(
+                    cfg.get(
+                        "composer_compact_max_graph_lines",
+                        min(3, self.expanded_limits["graph_lines"]),
+                    )
+                ),
+            ),
+            "tool_lines": max(
+                1,
+                int(
+                    cfg.get(
+                        "composer_compact_max_tool_lines",
+                        min(4, self.expanded_limits["tool_lines"]),
+                    )
+                ),
+            ),
+        }
+        self.expanded_anchor_counts = {
+            "core": max(
+                0,
+                int(cfg.get("composer_expanded_anchor_core_evidence", 1)),
+            ),
+            "supporting": max(
+                0,
+                int(cfg.get("composer_expanded_anchor_supporting_evidence", 0)),
+            ),
+            "conflict": max(
+                0,
+                int(cfg.get("composer_expanded_anchor_conflict_evidence", 0)),
+            ),
+            "graph_lines": max(
+                0,
+                int(cfg.get("composer_expanded_anchor_graph_lines", 1)),
+            ),
+        }
+        self.expanded_backfill_compact = bool(
+            cfg.get("composer_expanded_backfill_compact", False)
+        )
         self.min_tool_confidence = max(0.0, float(cfg.get("composer_min_tool_confidence", 0.80)))
+
+    def _limits_for_mode(self, prompt_mode: str | None) -> Dict[str, int]:
+        mode = str(prompt_mode or self.default_prompt_mode).strip().lower()
+        if mode == "expanded":
+            return dict(self.expanded_limits)
+        return dict(self.compact_limits)
 
     @staticmethod
     def _normalize_space(text: str) -> str:
@@ -33,6 +113,55 @@ class FinalAnswerComposer:
     @staticmethod
     def _tokenize(text: str) -> List[str]:
         return re.findall(r"[a-z0-9]+", str(text or "").lower())
+
+    def _select_mode_items(
+        self,
+        items: Sequence[Dict[str, object]] | Sequence[str],
+        *,
+        prompt_mode: str | None,
+        compact_limit: int,
+        expanded_limit: int,
+        anchor_count: int = 0,
+    ) -> List[object]:
+        values = list(items)
+        if not values:
+            return []
+        mode = str(prompt_mode or self.default_prompt_mode).strip().lower()
+        if mode != "expanded":
+            return values[: max(0, int(compact_limit))]
+
+        expanded_limit = max(0, int(expanded_limit))
+        if expanded_limit <= 0:
+            return []
+        compact_limit = max(0, int(compact_limit))
+        anchor_count = max(0, min(int(anchor_count), compact_limit, expanded_limit, len(values)))
+
+        selected: List[object] = []
+        selected_ids: set[int] = set()
+
+        for idx in range(anchor_count):
+            selected.append(values[idx])
+            selected_ids.add(idx)
+
+        next_start = min(len(values), compact_limit)
+        for idx in range(next_start, len(values)):
+            if len(selected) >= expanded_limit:
+                break
+            if idx in selected_ids:
+                continue
+            selected.append(values[idx])
+            selected_ids.add(idx)
+
+        if self.expanded_backfill_compact:
+            for idx in range(anchor_count, min(compact_limit, len(values))):
+                if len(selected) >= expanded_limit:
+                    break
+                if idx in selected_ids:
+                    continue
+                selected.append(values[idx])
+                selected_ids.add(idx)
+
+        return selected[:expanded_limit]
 
     def _claim_to_text(self, claim: Dict[str, Any]) -> str:
         subject = self._normalize_space(str(claim.get("subject", "")))
@@ -83,51 +212,68 @@ class FinalAnswerComposer:
                     }
                 )
 
-        _append(list(filtered.get("core_evidence", [])), self.max_core, 0.30)
-        _append(list(filtered.get("supporting_evidence", [])), self.max_supporting, 0.10)
-        _append(list(filtered.get("conflict_evidence", [])), self.max_conflict, 0.05)
+        limits = self._limits_for_mode("expanded")
+        _append(list(filtered.get("core_evidence", [])), limits["core"], 0.30)
+        _append(list(filtered.get("supporting_evidence", [])), limits["supporting"], 0.10)
+        _append(list(filtered.get("conflict_evidence", [])), limits["conflict"], 0.05)
         if not out:
             _append(list(raw_fallback), min(8, len(list(raw_fallback))), 0.0)
         if out:
             out.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
         return out
 
-    def _format_filtered_pack(self, filtered_pack: Dict[str, object]) -> str:
+    def _format_filtered_pack(
+        self,
+        filtered_pack: Dict[str, object],
+        *,
+        limits: Dict[str, int],
+        prompt_mode: str | None,
+    ) -> str:
         filtered = dict(filtered_pack or {})
         lines: List[str] = []
-        for item in list(filtered.get("core_evidence", []))[: self.max_core]:
+        compact = self.compact_limits
+        core_items = self._select_mode_items(
+            list(filtered.get("core_evidence", [])),
+            prompt_mode=prompt_mode,
+            compact_limit=compact["core"],
+            expanded_limit=limits["core"],
+            anchor_count=self.expanded_anchor_counts["core"],
+        )
+        for item in core_items:
             text = self._normalize_space(str(item.get("text", "")))
             if text:
                 lines.append(f"- core: {text}")
-        for item in list(filtered.get("supporting_evidence", []))[: self.max_supporting]:
+        supporting_items = self._select_mode_items(
+            list(filtered.get("supporting_evidence", [])),
+            prompt_mode=prompt_mode,
+            compact_limit=compact["supporting"],
+            expanded_limit=limits["supporting"],
+            anchor_count=self.expanded_anchor_counts["supporting"],
+        )
+        for item in supporting_items:
             text = self._normalize_space(str(item.get("text", "")))
             if text:
                 lines.append(f"- support: {text}")
-        for item in list(filtered.get("conflict_evidence", []))[: self.max_conflict]:
+        conflict_items = self._select_mode_items(
+            list(filtered.get("conflict_evidence", [])),
+            prompt_mode=prompt_mode,
+            compact_limit=compact["conflict"],
+            expanded_limit=limits["conflict"],
+            anchor_count=self.expanded_anchor_counts["conflict"],
+        )
+        for item in conflict_items:
             text = self._normalize_space(str(item.get("text", "")))
             if text:
                 lines.append(f"- conflict: {text}")
         return "[Filtered Evidence]\n" + "\n".join(lines) if lines else ""
 
-    def _format_claim_result(self, claim_result: Dict[str, object]) -> str:
-        payload = dict(claim_result or {})
-        claims = list(payload.get("claims", []))
-        support_units = list(payload.get("support_units", []))
-        lines: List[str] = []
-        for claim in claims[: self.max_claims]:
-            text = self._normalize_space(self._claim_to_text(dict(claim)))
-            if text:
-                lines.append(f"- claim: {text}")
-        if not lines:
-            for unit in support_units[: self.max_support_units]:
-                text = self._normalize_space(
-                    str(unit.get("verbatim_span", "")) or str(unit.get("text", ""))
-                )
-                if text:
-                    lines.append(f"- support_unit: {text}")
-        return "[Graph Claims]\n" + "\n".join(lines) if lines else ""
-
-    def _format_light_graph(self, light_graph: Dict[str, object]) -> str:
+    def _format_light_graph(
+        self,
+        light_graph: Dict[str, object],
+        *,
+        limits: Dict[str, int],
+        prompt_mode: str | None,
+    ) -> str:
         graph = dict(light_graph or {})
         node_map = {str(node.get("id", "")): dict(node) for node in list(graph.get("nodes", []))}
         lines: List[str] = []
@@ -149,11 +295,16 @@ class FinalAnswerComposer:
                 lines.append(f"- {prefix}: {left} -> {right}")
             else:
                 lines.append(f"- {edge_type}: {left} -> {right}")
-            if len(lines) >= self.max_graph_lines:
-                break
-        return "[Light Graph]\n" + "\n".join(lines) if lines else ""
+        selected_lines = self._select_mode_items(
+            lines,
+            prompt_mode=prompt_mode,
+            compact_limit=self.compact_limits["graph_lines"],
+            expanded_limit=limits["graph_lines"],
+            anchor_count=self.expanded_anchor_counts["graph_lines"],
+        )
+        return "[Light Graph]\n" + "\n".join([str(x) for x in selected_lines]) if selected_lines else ""
 
-    def _format_toolkit(self, toolkit_payload: Dict[str, object]) -> str:
+    def _format_toolkit(self, toolkit_payload: Dict[str, object], *, limits: Dict[str, int]) -> str:
         payload = dict(toolkit_payload or {})
         tool_payload = dict(payload.get("tool_payload", {}) or {})
         activated = bool(tool_payload.get("activated", False))
@@ -184,7 +335,7 @@ class FinalAnswerComposer:
         if verification_reason:
             lines.append(f"tool_verification={verification_reason}")
         lines.append(f"tool_confidence={confidence:.2f}")
-        for line in summary_lines[: self.max_tool_lines]:
+        for line in summary_lines[: limits["tool_lines"]]:
             text = self._normalize_space(str(line))
             if text:
                 lines.append(text)
@@ -200,16 +351,25 @@ class FinalAnswerComposer:
         claim_result: Dict[str, object],
         light_graph: Dict[str, object],
         toolkit_payload: Dict[str, object],
+        prompt_mode: str | None = None,
     ) -> Tuple[str, List[Dict[str, str]]]:
         sections: List[Dict[str, str]] = []
-        filtered_text = self._format_filtered_pack(filtered_pack)
-        claims_text = self._format_claim_result(claim_result)
-        light_graph_text = self._format_light_graph(light_graph)
-        toolkit_text = self._format_toolkit(toolkit_payload)
+        limits = self._limits_for_mode(prompt_mode)
+        filtered_text = self._format_filtered_pack(
+            filtered_pack,
+            limits=limits,
+            prompt_mode=prompt_mode,
+        )
+        light_graph_text = self._format_light_graph(
+            light_graph,
+            limits=limits,
+            prompt_mode=prompt_mode,
+        )
+        toolkit_text = self._format_toolkit(toolkit_payload, limits=limits)
+        _ = claim_result
 
         for name, text in [
             ("filtered_evidence", filtered_text),
-            ("graph_claims", claims_text),
             ("light_graph", light_graph_text),
             ("toolkit_output", toolkit_text),
         ]:
@@ -218,7 +378,7 @@ class FinalAnswerComposer:
 
         rules = (
             "Use Toolkit Analysis first when it provides a grounded answer candidate.\n"
-            "Then use Light Graph relations and Graph Claims for structure and resolution.\n"
+            "Then use Light Graph relations for structure and resolution.\n"
             "Use Filtered Evidence to fill missing detail or resolve ambiguity.\n"
             "Do not use hidden fallback heuristics or raw noisy retrieval.\n"
             "If evidence conflicts, prefer explicit graph-grounded state updates or better query-aligned evidence.\n"

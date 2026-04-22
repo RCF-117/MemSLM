@@ -452,6 +452,22 @@ retrieval:
     response_evidence_min_token_overlap: 0.6
     response_evidence_min_shared_tokens: 2
     not_found_top_evidence_score_threshold: 0.35
+    composer_default_prompt_mode: compact
+    composer_compact_max_core_evidence: 3
+    composer_compact_max_supporting_evidence: 1
+    composer_compact_max_conflict_evidence: 1
+    composer_compact_max_graph_lines: 3
+    composer_compact_max_tool_lines: 4
+    composer_expanded_anchor_core_evidence: 1
+    composer_expanded_anchor_supporting_evidence: 0
+    composer_expanded_anchor_conflict_evidence: 0
+    composer_expanded_anchor_graph_lines: 1
+    composer_expanded_backfill_compact: false
+    composer_max_core_evidence: 6
+    composer_max_supporting_evidence: 4
+    composer_max_conflict_evidence: 2
+    composer_max_graph_lines: 6
+    composer_max_tool_lines: 6
     second_pass_llm_enabled: true
     second_pass_use_evidence_candidate: true
     not_found_force_evidence_candidate_when_available: true

@@ -16,6 +16,8 @@ class MemoryManagerChatRuntime:
         self.m = manager
         self._last_specialist_payload: Dict[str, object] = {}
         self._last_evidence_pack: Dict[str, object] = {}
+        self._last_compact_prompt_text = ""
+        self._last_expanded_prompt_text = ""
 
     @staticmethod
     def _tokenize(text: str) -> List[str]:
@@ -856,6 +858,8 @@ class MemoryManagerChatRuntime:
                 }
             ]
             compact_prompt = "[Answer Rules]\nReturn only the final answer.\n\nUser: " + input_text
+            self._last_compact_prompt_text = compact_prompt
+            self._last_expanded_prompt_text = compact_prompt
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
@@ -880,6 +884,8 @@ class MemoryManagerChatRuntime:
                 "Return only the final answer.\n\n"
                 f"User: {input_text}"
             )
+            self._last_compact_prompt_text = compact_prompt
+            self._last_expanded_prompt_text = compact_prompt
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
@@ -890,8 +896,19 @@ class MemoryManagerChatRuntime:
             claim_result=claim_result,
             light_graph=light_graph,
             toolkit_payload=toolkit_payload,
+            prompt_mode="compact",
+        )
+        expanded_prompt, _ = self.m.final_answer_composer.build_prompt(
+            input_text=input_text,
+            filtered_pack=filtered_pack,
+            claim_result=claim_result,
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
+            prompt_mode="expanded",
         )
         self.m.last_stage_latency_sec["composer"] = time.perf_counter() - stage_started
+        self._last_compact_prompt_text = compact_prompt
+        self._last_expanded_prompt_text = expanded_prompt
         self.m._set_prompt_eval_chunks(prompt_sections)
         return compact_prompt
 
@@ -949,8 +966,9 @@ class MemoryManagerChatRuntime:
                 "MemoryManager.chat: invoking second-pass LLM "
                 f"(model={model_name})."
             )
+            expanded_source_prompt = self._last_expanded_prompt_text.strip() or prompt_text
             second_prompt = self.m.answer_grounding.build_second_pass_retry_prompt(
-                prompt_text=prompt_text,
+                prompt_text=expanded_source_prompt,
                 evidence_candidate=evidence_candidate,
             )
             second_response = self.m.llm.chat([{"role": "user", "content": second_prompt}])

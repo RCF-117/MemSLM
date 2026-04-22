@@ -58,6 +58,7 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         self.assertIn("Toolkit Analysis", prompt)
         self.assertIn("Light Graph", prompt)
         self.assertIn("Filtered Evidence", prompt)
+        self.assertNotIn("Graph Claims", prompt)
         self.assertIn("Preferred evidence candidate: Boston", prompt)
 
 if __name__ == "__main__":
