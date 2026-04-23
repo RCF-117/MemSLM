@@ -65,6 +65,22 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         )
         self.assertEqual(result, "Tom")
 
+    def test_apply_response_guard_accepts_high_confidence_single_event_answer(self) -> None:
+        result = self.pipeline.apply_response_guard(
+            response="GPS system issue",
+            evidence_sentences=[],
+            candidates=[],
+            support_sources=[
+                {
+                    "text": "claim[event]: my car's GPS system | had an issue | time=3/22",
+                    "score": 0.92,
+                    "section": "light_graph",
+                    "bucket": "graph",
+                }
+            ],
+        )
+        self.assertEqual(result, "GPS system issue")
+
     def test_build_second_pass_retry_prompt_uses_structured_language(self) -> None:
         prompt = self.pipeline.build_second_pass_retry_prompt(
             prompt_text="[Filtered Evidence]\n- She moved to Boston in 2023.",

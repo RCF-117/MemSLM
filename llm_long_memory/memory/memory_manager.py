@@ -953,6 +953,7 @@ class MemoryManager:
         evidence_pack: Dict[str, object],
         plan: Dict[str, object],
     ) -> List[Dict[str, object]]:
+        answer_type = str(plan.get("answer_type", "")).strip().lower()
         rag_items = [
             {**item, "channel": "rag_evidence"}
             for item in self._top_text_items(evidence_sentences, limit=6)
@@ -978,6 +979,25 @@ class MemoryManager:
                     "channel": "evidence_pack",
                 }
             )
+        if answer_type == "temporal_comparison":
+            merged: List[Dict[str, object]] = []
+            seen: set[str] = set()
+            for item in pack_items:
+                text = str(item.get("text", "")).strip()
+                key = re.sub(r"\s+", " ", text.lower())
+                if not text or key in seen:
+                    continue
+                seen.add(key)
+                merged.append(
+                    {
+                        "text": text,
+                        "score": 0.92,
+                        "chunk_id": 0,
+                        "session_date": "",
+                        "channel": "evidence_pack",
+                    }
+                )
+            return merged
         plan_items = self._build_plan_combined_evidence(chunks=chunks, plan=plan, limit=6)
 
         merged: List[Dict[str, object]] = []

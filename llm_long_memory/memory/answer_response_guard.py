@@ -98,6 +98,41 @@ class AnswerResponseGuard:
                 return True
         return False
 
+    def _single_event_high_confidence_supported(
+        self,
+        response: str,
+        support_sources: List[Dict[str, object]],
+    ) -> bool:
+        response_tokens = self._tokenize(response)
+        if not response_tokens:
+            return False
+        response_token_set = set(response_tokens)
+        token_count = len(response_token_set)
+        if token_count < 2 or token_count > 8:
+            return False
+        response_token_len = float(max(1, token_count))
+        for item in support_sources:
+            section = str(item.get("section", "")).strip().lower()
+            bucket = str(item.get("bucket", "")).strip().lower()
+            score = float(item.get("score", 0.0) or 0.0)
+            if section in {"light_graph", "evidence_pack"}:
+                trusted = True
+            elif section == "filtered_evidence" and bucket in {"core", "support"}:
+                trusted = score >= 0.80
+            else:
+                trusted = False
+            if not trusted:
+                continue
+            sentence_tokens = set(self._tokenize(str(item.get("text", ""))))
+            if not sentence_tokens:
+                continue
+            shared = response_token_set.intersection(sentence_tokens)
+            shared_count = len(shared)
+            overlap_ratio = float(shared_count) / response_token_len
+            if shared_count >= 2 and overlap_ratio >= 0.34:
+                return True
+        return False
+
     def _fallback_usable(
         self,
         fallback_text: str,
@@ -204,6 +239,11 @@ class AnswerResponseGuard:
                             "fallback_path": "compress_supported_response_to_evidence_candidate",
                         }
             return {"response": response, "fallback_path": "llm_supported_by_evidence"}
+        if self._single_event_high_confidence_supported(response, active_support_sources):
+            return {
+                "response": response,
+                "fallback_path": "llm_supported_by_high_confidence_single_event",
+            }
         if fallback_text and self._fallback_usable(fallback_text, active_support_sources):
             return {
                 "response": fallback_text,

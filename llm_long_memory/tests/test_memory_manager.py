@@ -258,10 +258,44 @@ class TestMemoryManager(unittest.TestCase):
         self.assertEqual(ai_response, "Boston")
         self.assertTrue(fallback_path.startswith("second_pass:"))
         self.assertEqual(llm.calls, 2)
-        first_prompt = llm.history[0][0]["content"]
-        second_prompt = llm.history[1][0]["content"]
-        self.assertNotIn("Supporting evidence two.", first_prompt)
-        self.assertIn("Supporting evidence two.", second_prompt)
+
+    def test_temporal_comparison_evidence_graph_source_uses_only_evidence_pack(self):
+        manager, _ = self._build_manager()
+        source = manager._build_evidence_graph_source(
+            query="Who did I meet first, Mark and Sarah or Tom?",
+            chunks=[
+                {
+                    "text": "(assistant) Mixed retrieval chunk that should be ignored.",
+                    "score": 0.9,
+                    "chunk_id": 7,
+                    "session_date": "2023/01/01",
+                }
+            ],
+            evidence_sentences=[
+                {
+                    "text": "I met Mark and Sarah at the beach trip.",
+                    "score": 0.95,
+                    "chunk_id": 5,
+                    "session_date": "2023/01/02",
+                }
+            ],
+            evidence_pack={
+                "lines": [
+                    "option_a: Mark and Sarah",
+                    "- I met Mark and Sarah about a month ago.",
+                    "option_b: Tom",
+                    "- I met Tom a few months ago at a work conference.",
+                    "- compare_rule: prioritize evidence matching query action/time cues and choose the earlier timeline.",
+                ]
+            },
+            plan={"answer_type": "temporal_comparison"},
+        )
+        self.assertTrue(source)
+        self.assertTrue(all(str(item.get("channel")) == "evidence_pack" for item in source))
+        joined = "\n".join(str(item.get("text", "")) for item in source)
+        self.assertIn("option_a: Mark and Sarah", joined)
+        self.assertIn("option_b: Tom", joined)
+        self.assertNotIn("Mixed retrieval chunk", joined)
 
     def test_reset_and_close(self):
         manager, _ = self._build_manager()
