@@ -450,10 +450,11 @@ retrieval:
     candidate_top_n: 3
     context_only: true
     log_decision_details: true
-    llm_fallback_to_top_candidate: true
-    fallback_min_score: 0.75
     response_evidence_min_token_overlap: 0.6
     response_evidence_min_shared_tokens: 2
+    response_evidence_relaxed_overlap_enabled: true
+    response_evidence_relaxed_min_token_overlap: 0.34
+    response_evidence_relaxed_min_shared_tokens: 1
     not_found_top_evidence_score_threshold: 0.35
     composer_default_prompt_mode: compact
     composer_compact_max_core_evidence: 3
@@ -472,8 +473,6 @@ retrieval:
     composer_max_graph_lines: 6
     composer_max_tool_lines: 6
     second_pass_llm_enabled: true
-    second_pass_use_evidence_candidate: true
-    not_found_force_evidence_candidate_when_available: true
     span_min_tokens: 1
     span_max_tokens: 5
     span_top_n_per_sentence: 8

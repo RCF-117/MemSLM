@@ -42,7 +42,6 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         result = self.pipeline.apply_response_guard(
             response="Completely unrelated answer",
             evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.8}],
-            candidates=[],
         )
         if self.pipeline.answer_context_only:
             self.assertEqual(result, "Not found in retrieved context.")
@@ -53,7 +52,6 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         result = self.pipeline.apply_response_guard(
             response="Tom",
             evidence_sentences=[],
-            candidates=[],
             support_sources=[
                 {
                     "text": "- before: Mark and Sarah | first met | beach trip -> Tom | first met | work conference",
@@ -69,7 +67,6 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         result = self.pipeline.apply_response_guard(
             response="GPS system issue",
             evidence_sentences=[],
-            candidates=[],
             support_sources=[
                 {
                     "text": "claim[event]: my car's GPS system | had an issue | time=3/22",
@@ -84,14 +81,12 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
     def test_build_second_pass_retry_prompt_uses_structured_language(self) -> None:
         prompt = self.pipeline.build_second_pass_retry_prompt(
             prompt_text="[Filtered Evidence]\n- She moved to Boston in 2023.",
-            evidence_candidate={"answer": "Boston"},
             first_answer="Not found in retrieved context.",
         )
         self.assertIn("[First Answer]", prompt)
         self.assertIn("[Candidate Evidence Packet]", prompt)
         self.assertIn("[Adjudication Task]", prompt)
         self.assertNotIn("Graph Claims", prompt)
-        self.assertIn("Optional extracted candidate: Boston", prompt)
 
 if __name__ == "__main__":
     unittest.main()

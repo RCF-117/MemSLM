@@ -153,7 +153,6 @@ class TestMemoryManager(unittest.TestCase):
     def test_chat_context_only_fallback(self):
         cfg = self._config()
         cfg["retrieval"]["answering"]["context_only"] = True
-        cfg["retrieval"]["answering"]["llm_fallback_to_top_candidate"] = False
         llm = FakeLLM("unrelated answer not in evidence")
         manager, _ = self._build_manager(cfg=cfg, llm=llm)
         out = manager.chat("where did she move?")
@@ -186,20 +185,15 @@ class TestMemoryManager(unittest.TestCase):
                         "session_date": "2023/01/01",
                     }
                 ],
-                [],
-                "",
-                {"answer": "GPS system not functioning correctly", "source": "intent_span", "score": "0.9000"},
-                "The first issue was the GPS system not functioning correctly.",
-                "",
             )
 
         manager._prepare_answer_inputs = _prepare_answer_inputs  # type: ignore[method-assign]
         out = manager.chat("What was the first issue with my car?")
-        self.assertEqual(out, "GPS system not functioning correctly")
+        self.assertEqual(out, "Not found in retrieved context.")
         self.assertIsNotNone(llm.last_messages)
         self.assertNotIn("[Query Plan]", llm.last_messages[0]["content"])
         self.assertIn("[Answer Rules]", llm.last_messages[0]["content"])
-        self.assertNotEqual(out, "Not found in retrieved context.")
+        self.assertEqual(out, "Not found in retrieved context.")
 
     def test_counting_fallback_is_not_forced_without_evidence_support(self):
         manager, llm = self._build_manager(llm=FakeLLM("unrelated answer"))
@@ -241,19 +235,12 @@ class TestMemoryManager(unittest.TestCase):
             retrieved_context_text="",
             evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.9}],
             chunks=[],
-            candidates=[],
-            best_evidence="",
-            fallback_answer="",
-            evidence_candidate=None,
         )
         ai_response, fallback_path, _ = manager._generate_final_answer(
             input_text="Where did she move?",
             query="Where did she move?",
             prompt_text=prompt_text,
             evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.9}],
-            candidates=[],
-            fallback_answer="",
-            evidence_candidate=None,
         )
         self.assertEqual(ai_response, "Boston")
         self.assertTrue(fallback_path.startswith("second_pass:"))

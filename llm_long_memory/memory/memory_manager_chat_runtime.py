@@ -65,38 +65,6 @@ class MemoryManagerChatRuntime:
                     slots.update(self._tokenize(value))
         return slots
 
-    def _fallback_confident(
-        self,
-        *,
-        text: str,
-        query_plan: Dict[str, object],
-        evidence_candidate: Optional[Dict[str, str]],
-    ) -> bool:
-        norm = self._normalize_space(text)
-        if not norm:
-            return False
-        tokens = self._tokenize(norm)
-        if not tokens or len(tokens) > 14:
-            return False
-        low = norm.lower()
-        if low.startswith("(user)") or low.startswith("(assistant)") or low.startswith("(system)"):
-            return False
-        answer_type = str(query_plan.get("answer_type", "")).strip().lower()
-        if answer_type == "count" and re.fullmatch(r"\d+", norm):
-            return False
-        slots = self._plan_slots(query_plan)
-        if slots:
-            overlap = len(slots.intersection(set(tokens)))
-            if overlap <= 0:
-                score = 0.0
-                if evidence_candidate is not None:
-                    try:
-                        score = float(str(evidence_candidate.get("score", "0") or "0"))
-                    except ValueError:
-                        score = 0.0
-                return score >= 0.55
-        return True
-
     def _score_overlap(self, query: str, sentence: str) -> float:
         q = set(self._tokenize(query))
         s = set(self._tokenize(sentence))
@@ -699,10 +667,6 @@ class MemoryManagerChatRuntime:
         List[Dict[str, object]],
         List[Dict[str, object]],
         List[Dict[str, object]],
-        str,
-        Optional[Dict[str, str]],
-        str,
-        str,
     ]:
         stage_latency_sec: Dict[str, float] = {
             "rag": 0.0,
@@ -720,11 +684,6 @@ class MemoryManagerChatRuntime:
 
         if self.m.retrieval_execution_mode in {"model_only", "naive_rag"}:
             evidence_sentences: List[Dict[str, object]] = []
-            candidates: List[Dict[str, object]] = []
-            fallback_answer = ""
-            evidence_candidate = None
-            best_evidence = ""
-            best_candidate = ""
             self._last_specialist_payload = {}
             stage_latency_sec["rag"] = time.perf_counter() - rag_started
         else:
@@ -769,13 +728,6 @@ class MemoryManagerChatRuntime:
             )
             if not evidence_sentences:
                 evidence_sentences = list(raw_evidence_sentences[:8])
-            candidates = []
-            fallback_answer = ""
-            evidence_candidate = None
-            best_evidence = (
-                str(evidence_sentences[0].get("text", ""))[:160] if evidence_sentences else ""
-            )
-            best_candidate = ""
             self._last_specialist_payload = self.m.specialist_layer.run(
                 query=query,
                 graph_bundle=graph_bundle,
@@ -789,50 +741,7 @@ class MemoryManagerChatRuntime:
             topics,
             chunks,
             evidence_sentences,
-            candidates,
-            fallback_answer,
-            evidence_candidate,
-            best_evidence,
-            best_candidate,
         )
-
-    def resolve_prompt_backup_answer(
-        self,
-        fallback_answer: str,
-        evidence_candidate: Optional[Dict[str, str]],
-        candidates: List[Dict[str, object]],
-        best_evidence: str,
-        query_plan: Optional[Dict[str, object]] = None,
-    ) -> str:
-        if str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower() == "memslm":
-            return ""
-        plan = dict(query_plan or {})
-        answer_type = str(plan.get("answer_type", "")).strip().lower()
-        if answer_type == "temporal_comparison":
-            return ""
-        fallback_candidates: List[str] = []
-        if str(fallback_answer or "").strip():
-            fallback_candidates.append(str(fallback_answer).strip())
-        if evidence_candidate is not None:
-            ans = str(evidence_candidate.get("answer", "")).strip()
-            if ans:
-                fallback_candidates.append(ans)
-        if candidates:
-            cand_text = str(candidates[0].get("text", "")).strip()
-            if cand_text:
-                fallback_candidates.append(cand_text)
-        # Never use full raw evidence sentence as generic fallback; only allow extractive modes.
-        if answer_type in {"extractive", "span"} and best_evidence.strip():
-            fallback_candidates.append(best_evidence.strip())
-
-        for cand in fallback_candidates:
-            if self._fallback_confident(
-                text=cand,
-                query_plan=plan,
-                evidence_candidate=evidence_candidate,
-            ):
-                return cand
-        return ""
 
     def build_generation_prompt(
         self,
@@ -841,10 +750,6 @@ class MemoryManagerChatRuntime:
         retrieved_context_text: str,
         evidence_sentences: List[Dict[str, object]],
         chunks: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        best_evidence: str,
-        fallback_answer: str,
-        evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
         execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
         retrieved_context_text = str(retrieved_context_text or "").strip()
@@ -891,7 +796,7 @@ class MemoryManagerChatRuntime:
                 f"User: {input_text}"
             )
             self._last_compact_prompt_text = compact_prompt
-            self._last_expanded_prompt_text = compact_prompt
+            self._last_expanded_prompt_text = ""
             self._last_compact_prompt_support_sources = []
             self._last_expanded_prompt_support_sources = []
             self.m._set_prompt_eval_chunks(prompt_sections)
@@ -930,6 +835,71 @@ class MemoryManagerChatRuntime:
             route_packet=route_packet,
             answer_rules_text=compact_answer_rules_text,
         )
+        compact_support_sources = self.m.final_answer_composer.build_support_sources(
+            filtered_pack=filtered_pack,
+            claim_result=claim_result,
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
+            prompt_mode="compact",
+            route_packet=route_packet,
+        )
+        self.m.last_stage_latency_sec["composer"] = time.perf_counter() - stage_started
+        self._last_compact_prompt_text = compact_prompt
+        self._last_compact_prompt_support_sources = compact_support_sources
+        self._last_expanded_prompt_text = ""
+        self._last_expanded_prompt_support_sources = []
+        self._last_compact_route_packet = dict(route_packet or {})
+        self._last_expanded_route_packet = dict(route_packet or {})
+        self.m._set_prompt_eval_chunks(prompt_sections)
+        return compact_prompt
+
+    def _build_expanded_generation_prompt(
+        self,
+        *,
+        input_text: str,
+        retrieved_context_text: str,
+        evidence_sentences: List[Dict[str, object]],
+        chunks: List[Dict[str, object]],
+    ) -> Tuple[str, List[Dict[str, str]]]:
+        if self._last_expanded_prompt_text and self._last_expanded_prompt_support_sources:
+            return (
+                self._last_expanded_prompt_text,
+                list(self._last_expanded_prompt_support_sources),
+            )
+        execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
+        if execution_mode in {"model_only", "naive_rag"}:
+            prompt_text = "[Answer Rules]\nReturn only the final answer.\n\nUser: " + input_text
+            self._last_expanded_prompt_text = prompt_text
+            self._last_expanded_prompt_support_sources = []
+            return prompt_text, []
+
+        retrieved_context_text = str(retrieved_context_text or "").strip()
+        _ = evidence_sentences, chunks
+        bundle = dict(getattr(self.m, "last_evidence_graph_bundle", {}) or {})
+        filtered_pack = dict(bundle.get("filtered_pack", {}) or {})
+        claim_result = dict(bundle.get("claim_result", {}) or {})
+        light_graph = dict(bundle.get("light_graph", {}) or {})
+        toolkit_payload = dict(self._last_specialist_payload or {})
+        route_packet = dict(self._last_expanded_route_packet or {})
+        if not route_packet:
+            router = getattr(self.m, "final_answer_router", None)
+            if router is not None:
+                route_packet = router.route(
+                    query=input_text,
+                    filtered_pack=filtered_pack,
+                    claim_result=claim_result,
+                    light_graph=light_graph,
+                    toolkit_payload=toolkit_payload,
+                )
+            else:
+                route_packet = {}
+            self._last_expanded_route_packet = dict(route_packet)
+        router = getattr(self.m, "final_answer_router", None)
+        expanded_answer_rules_text = (
+            router.build_answer_rules(route_packet, prompt_mode="expanded")
+            if router is not None and route_packet
+            else None
+        )
         expanded_prompt, _ = self.m.final_answer_composer.build_prompt(
             input_text=input_text,
             filtered_pack=filtered_pack,
@@ -940,14 +910,6 @@ class MemoryManagerChatRuntime:
             route_packet=route_packet,
             answer_rules_text=expanded_answer_rules_text,
         )
-        compact_support_sources = self.m.final_answer_composer.build_support_sources(
-            filtered_pack=filtered_pack,
-            claim_result=claim_result,
-            light_graph=light_graph,
-            toolkit_payload=toolkit_payload,
-            prompt_mode="compact",
-            route_packet=route_packet,
-        )
         expanded_support_sources = self.m.final_answer_composer.build_support_sources(
             filtered_pack=filtered_pack,
             claim_result=claim_result,
@@ -956,15 +918,9 @@ class MemoryManagerChatRuntime:
             prompt_mode="expanded",
             route_packet=route_packet,
         )
-        self.m.last_stage_latency_sec["composer"] = time.perf_counter() - stage_started
-        self._last_compact_prompt_text = compact_prompt
         self._last_expanded_prompt_text = expanded_prompt
-        self._last_compact_prompt_support_sources = compact_support_sources
-        self._last_expanded_prompt_support_sources = expanded_support_sources
-        self._last_compact_route_packet = dict(route_packet or {})
-        self._last_expanded_route_packet = dict(route_packet or {})
-        self.m._set_prompt_eval_chunks(prompt_sections)
-        return compact_prompt
+        self._last_expanded_prompt_support_sources = list(expanded_support_sources)
+        return expanded_prompt, list(expanded_support_sources)
 
     def generate_final_answer(
         self,
@@ -973,9 +929,6 @@ class MemoryManagerChatRuntime:
         query: str,
         prompt_text: str,
         evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        fallback_answer: str,
-        evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
         prompt_messages: List[Dict[str, str]] = [{"role": "user", "content": prompt_text}]
         model_name = str(getattr(self.m.llm, "model_name", "unknown"))
@@ -989,15 +942,12 @@ class MemoryManagerChatRuntime:
         execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
         if execution_mode in {"model_only", "naive_rag"}:
             ai_response = self.m.answer_grounding.normalize_final_answer(
-                response, query, evidence_candidate=None
+                response, query
             )
             return ai_response, f"{execution_mode}_direct", ""
         fallback_result = self.m.answer_grounding.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            evidence_candidate=evidence_candidate,
-            fallback_answer=fallback_answer,
             support_sources=self._last_compact_prompt_support_sources,
         )
         ai_response = str(fallback_result.get("response", "")).strip()
@@ -1021,19 +971,24 @@ class MemoryManagerChatRuntime:
                 "MemoryManager.chat: invoking second-pass LLM "
                 f"(model={model_name})."
             )
-            expanded_source_prompt = self._last_expanded_prompt_text.strip() or prompt_text
+            expanded_source_prompt, expanded_support_sources = self._build_expanded_generation_prompt(
+                input_text=input_text,
+                retrieved_context_text="",
+                evidence_sentences=evidence_sentences,
+                chunks=[],
+            )
+            if expanded_source_prompt:
+                self._last_expanded_prompt_text = expanded_source_prompt
+            if expanded_support_sources:
+                self._last_expanded_prompt_support_sources = expanded_support_sources
             second_prompt = self.m.answer_grounding.build_second_pass_retry_prompt(
                 prompt_text=expanded_source_prompt,
-                evidence_candidate=evidence_candidate,
                 first_answer=response,
             )
             second_response = self.m.llm.chat([{"role": "user", "content": second_prompt}])
             second_result = self.m.answer_grounding.evaluate_response_guard(
                 response=second_response,
                 evidence_sentences=evidence_sentences,
-                candidates=candidates,
-                evidence_candidate=evidence_candidate,
-                fallback_answer=fallback_answer,
                 support_sources=self._last_expanded_prompt_support_sources,
             )
             second_path = str(second_result.get("fallback_path", "none"))
@@ -1045,6 +1000,6 @@ class MemoryManagerChatRuntime:
             not_found_reason = str(second_result.get("not_found_reason", not_found_reason))
 
         ai_response = self.m.answer_grounding.normalize_final_answer(
-            ai_response, query, evidence_candidate=evidence_candidate
+            ai_response, query
         )
         return ai_response, fallback_path, not_found_reason

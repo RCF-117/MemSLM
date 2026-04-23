@@ -176,13 +176,13 @@ retrieval:
     candidate_top_n: 3
     context_only: true
     log_decision_details: true
-    llm_fallback_to_top_candidate: true
-    fallback_min_score: 0.75
     response_evidence_min_token_overlap: 0.6
     response_evidence_min_shared_tokens: 2
+    response_evidence_relaxed_overlap_enabled: true
+    response_evidence_relaxed_min_token_overlap: 0.25
+    response_evidence_relaxed_min_shared_tokens: 1
     not_found_top_evidence_score_threshold: 0.35
     second_pass_llm_enabled: true
-    second_pass_use_evidence_candidate: true
     span_min_tokens: 1
     span_max_tokens: 5
     span_top_n_per_sentence: 8

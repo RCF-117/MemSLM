@@ -53,10 +53,11 @@ class TestHelpers(unittest.TestCase):
                 evidence_top_n_sentences: 5
                 evidence_sentence_max_chars: 200
                 candidate_top_n: 3
-                llm_fallback_to_top_candidate: true
-                fallback_min_score: 0.5
                 response_evidence_min_token_overlap: 0.5
                 response_evidence_min_shared_tokens: 2
+                response_evidence_relaxed_overlap_enabled: true
+                response_evidence_relaxed_min_token_overlap: 0.25
+                response_evidence_relaxed_min_shared_tokens: 1
                 span_min_tokens: 1
                 span_max_tokens: 3
                 span_top_n_per_sentence: 5

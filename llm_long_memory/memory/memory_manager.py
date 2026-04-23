@@ -1189,48 +1189,24 @@ class MemoryManager:
             _topics,
             chunks,
             evidence_sentences,
-            candidates,
-            fallback_answer,
-            evidence_candidate,
-            best_evidence,
-            best_candidate,
         ) = self._prepare_answer_inputs(query, precomputed_context)
-        prompt_backup_answer = self.chat_runtime.resolve_prompt_backup_answer(
-            fallback_answer=fallback_answer,
-            evidence_candidate=evidence_candidate,
-            candidates=candidates,
-            best_evidence=best_evidence,
-            query_plan=dict(self.last_query_plan or {}),
-        )
-
         prompt_text = self._build_generation_prompt(
             input_text=input_text,
             retrieved_context_text=retrieved_context_text,
             evidence_sentences=evidence_sentences,
             chunks=chunks,
-            candidates=candidates,
-            best_evidence=best_evidence,
-            fallback_answer=prompt_backup_answer,
-            evidence_candidate=evidence_candidate,
         )
         ai_response, fallback_path, not_found_reason = self._generate_final_answer(
             input_text=input_text,
             query=query,
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            fallback_answer=prompt_backup_answer,
-            evidence_candidate=evidence_candidate,
         )
         logger.info(
             "MemoryManager.answer_debug: "
             f"fallback_path={fallback_path}, "
             f"not_found_reason={not_found_reason or 'none'}, "
-            f"best_evidence='{best_evidence}', "
-            f"best_candidate='{best_candidate}', "
-            f"fallback_answer='{fallback_answer}', "
-            f"prompt_backup_answer='{prompt_backup_answer}', "
-            f"evidence_candidate='{(evidence_candidate or {}).get('answer', '')}'."
+            "best evidence routing fallback chain disabled."
         )
         logger.info(f"MemoryManager.chat: LLM response='{ai_response}'")
         self._record_turn(input_text, ai_response)
@@ -1246,11 +1222,6 @@ class MemoryManager:
         List[Dict[str, object]],
         List[Dict[str, object]],
         List[Dict[str, object]],
-        List[Dict[str, object]],
-        str,
-        Optional[Dict[str, str]],
-        str,
-        str,
     ]:
         return self.chat_runtime.prepare_answer_inputs(
             query=query,
@@ -1283,20 +1254,12 @@ class MemoryManager:
         retrieved_context_text: str,
         evidence_sentences: List[Dict[str, object]],
         chunks: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        best_evidence: str,
-        fallback_answer: str,
-        evidence_candidate: Optional[Dict[str, str]],
     ) -> str:
         return self.chat_runtime.build_generation_prompt(
             input_text=input_text,
             retrieved_context_text=retrieved_context_text,
             evidence_sentences=evidence_sentences,
             chunks=chunks,
-            candidates=candidates,
-            best_evidence=best_evidence,
-            fallback_answer=fallback_answer,
-            evidence_candidate=evidence_candidate,
         )
 
     def offline_build_long_graph_from_chunks(
@@ -1320,18 +1283,12 @@ class MemoryManager:
         query: str,
         prompt_text: str,
         evidence_sentences: List[Dict[str, object]],
-        candidates: List[Dict[str, object]],
-        fallback_answer: str,
-        evidence_candidate: Optional[Dict[str, str]],
     ) -> Tuple[str, str, str]:
         return self.chat_runtime.generate_final_answer(
             input_text=input_text,
             query=query,
             prompt_text=prompt_text,
             evidence_sentences=evidence_sentences,
-            candidates=candidates,
-            fallback_answer=fallback_answer,
-            evidence_candidate=evidence_candidate,
         )
 
     def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
