@@ -910,8 +910,13 @@ class MemoryManagerChatRuntime:
             if router is not None
             else {}
         )
-        answer_rules_text = (
-            router.build_answer_rules(route_packet)
+        compact_answer_rules_text = (
+            router.build_answer_rules(route_packet, prompt_mode="compact")
+            if router is not None and route_packet
+            else None
+        )
+        expanded_answer_rules_text = (
+            router.build_answer_rules(route_packet, prompt_mode="expanded")
             if router is not None and route_packet
             else None
         )
@@ -923,7 +928,7 @@ class MemoryManagerChatRuntime:
             toolkit_payload=toolkit_payload,
             prompt_mode="compact",
             route_packet=route_packet,
-            answer_rules_text=answer_rules_text,
+            answer_rules_text=compact_answer_rules_text,
         )
         expanded_prompt, _ = self.m.final_answer_composer.build_prompt(
             input_text=input_text,
@@ -933,7 +938,7 @@ class MemoryManagerChatRuntime:
             toolkit_payload=toolkit_payload,
             prompt_mode="expanded",
             route_packet=route_packet,
-            answer_rules_text=answer_rules_text,
+            answer_rules_text=expanded_answer_rules_text,
         )
         compact_support_sources = self.m.final_answer_composer.build_support_sources(
             filtered_pack=filtered_pack,

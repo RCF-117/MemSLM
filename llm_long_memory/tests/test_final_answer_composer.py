@@ -80,17 +80,18 @@ class TestFinalAnswerComposer(unittest.TestCase):
                     "answer_candidate": "Boston",
                 }
             },
+            route_packet={
+                "compact_sections": ["toolkit_output", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
         )
         section_names = [section["section"] for section in sections]
-        self.assertEqual(
-            section_names,
-            ["toolkit_output", "light_graph", "filtered_evidence", "answer_rules"],
-        )
-        self.assertLess(prompt.index("[Toolkit Analysis]"), prompt.index("[Light Graph]"))
-        self.assertLess(prompt.index("[Light Graph]"), prompt.index("[Filtered Evidence]"))
+        self.assertEqual(section_names, ["toolkit_output", "answer_rules"])
         self.assertNotIn("[Query Plan]", prompt)
         self.assertNotIn("[Graph Claims]", prompt)
         self.assertIn("tool_verification=update_edge_verified", prompt)
+        self.assertNotIn("[Light Graph]", prompt)
+        self.assertNotIn("[Filtered Evidence]", prompt)
 
     def test_build_prompt_omits_unverified_toolkit_even_if_activated(self) -> None:
         prompt, sections = self.composer.build_prompt(
@@ -170,6 +171,10 @@ class TestFinalAnswerComposer(unittest.TestCase):
             light_graph=light_graph,
             toolkit_payload=toolkit_payload,
             prompt_mode="compact",
+            route_packet={
+                "compact_sections": ["light_graph", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
         )
         expanded_prompt, _ = self.composer.build_prompt(
             input_text="What is the latest value?",
@@ -178,10 +183,18 @@ class TestFinalAnswerComposer(unittest.TestCase):
             light_graph=light_graph,
             toolkit_payload=toolkit_payload,
             prompt_mode="expanded",
+            route_packet={
+                "compact_sections": ["light_graph", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
         )
         self.assertLess(len(compact_prompt), len(expanded_prompt))
-        self.assertNotIn("Core evidence three.", compact_prompt)
+        self.assertNotIn("Core evidence one.", compact_prompt)
+        self.assertIn("[Light Graph]", compact_prompt)
+        self.assertNotIn("[Filtered Evidence]", compact_prompt)
         self.assertNotIn("Core evidence two.", expanded_prompt)
+        self.assertIn("[Filtered Evidence]", expanded_prompt)
+        self.assertNotIn("[Light Graph]", expanded_prompt)
         self.assertIn("Core evidence three.", expanded_prompt)
         self.assertIn("Core evidence four.", expanded_prompt)
         self.assertIn("Core evidence five.", expanded_prompt)
@@ -210,6 +223,10 @@ class TestFinalAnswerComposer(unittest.TestCase):
             light_graph={"nodes": [], "edges": []},
             toolkit_payload={},
             prompt_mode="compact",
+            route_packet={
+                "compact_sections": ["filtered_evidence", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
         )
         self.assertIn("boots from Zara on 2/5", prompt)
         self.assertIn("More generic advice about notes apps", prompt)
@@ -253,11 +270,53 @@ class TestFinalAnswerComposer(unittest.TestCase):
             },
             toolkit_payload={},
             prompt_mode="compact",
+            route_packet={
+                "compact_sections": ["light_graph", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
         )
         section_names = [section["section"] for section in sections]
         self.assertIn("light_graph", section_names)
         self.assertIn("[Light Graph]", prompt)
         self.assertIn("claim[fact]: I | led | market research project | time=2023", prompt)
+
+    def test_build_support_sources_follow_mode_specific_sections(self) -> None:
+        sources = self.composer.build_support_sources(
+            filtered_pack={
+                "core_evidence": [{"text": "Core evidence one."}],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={
+                "nodes": [
+                    {
+                        "id": "claim_a",
+                        "type": "fact",
+                        "meta": {"subject": "A", "predicate": "p", "value": "1"},
+                    },
+                    {"id": "query_root", "type": "query", "meta": {}},
+                ],
+                "edges": [{"source": "claim_a", "target": "query_root", "type": "supports_query", "weight": 0.9}],
+            },
+            toolkit_payload={
+                "tool_payload": {
+                    "activated": True,
+                    "verified": True,
+                    "confidence": 0.9,
+                    "verified_candidate": "1",
+                    "verified_used_claim_ids": ["c1"],
+                    "summary_lines": ["tool says 1"],
+                }
+            },
+            prompt_mode="compact",
+            route_packet={
+                "compact_sections": ["toolkit_output", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
+        )
+        buckets = [s["section"] for s in sources]
+        self.assertEqual(buckets, ["toolkit_output", "toolkit_output"])
 
     def test_build_prompt_prefers_prompt_text_for_filtered_evidence(self) -> None:
         long_text = (
@@ -318,12 +377,12 @@ class TestFinalAnswerComposer(unittest.TestCase):
                 "mode": "graph-first",
                 "schema_sections": ["light_graph", "filtered_evidence", "answer_rules"],
             },
-            answer_rules_text="Use Light Graph as the primary answer source.\nReturn only the final answer.",
+            answer_rules_text="Use the light graph below as the answer source. Return only the final answer.",
         )
         section_names = [section["section"] for section in sections]
         self.assertEqual(section_names, ["light_graph", "filtered_evidence", "answer_rules"])
         self.assertLess(prompt.index("[Light Graph]"), prompt.index("[Filtered Evidence]"))
-        self.assertIn("Use Light Graph as the primary answer source.", prompt)
+        self.assertIn("Use the light graph below as the answer source.", prompt)
 
     def test_build_support_sources_includes_toolkit_graph_and_filtered(self) -> None:
         support_sources = self.composer.build_support_sources(

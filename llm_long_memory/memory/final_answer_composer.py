@@ -113,6 +113,26 @@ class FinalAnswerComposer:
     def _normalize_space(text: str) -> str:
         return " ".join(str(text or "").split())
 
+    def _section_order(
+        self,
+        route_packet: Dict[str, object] | None,
+        *,
+        prompt_mode: str | None,
+    ) -> List[str]:
+        mode = str(prompt_mode or self.default_prompt_mode).strip().lower()
+        packet = dict(route_packet or {})
+        key = "expanded_sections" if mode == "expanded" else "compact_sections"
+        order = [
+            str(x).strip()
+            for x in list(packet.get(key, []) or packet.get("schema_sections", []) or [])
+            if str(x).strip() and str(x).strip() != "answer_rules"
+        ]
+        if order:
+            return order
+        if mode == "expanded":
+            return ["filtered_evidence"]
+        return ["toolkit_output", "light_graph", "filtered_evidence"]
+
     def _item_prompt_text(self, item: Dict[str, object]) -> str:
         prompt_text = self._normalize_space(str(item.get("prompt_text", "")))
         if prompt_text:
@@ -616,13 +636,7 @@ class FinalAnswerComposer:
     ) -> List[Dict[str, object]]:
         limits = self._limits_for_mode(prompt_mode)
         _ = claim_result
-        section_order = [
-            str(x).strip()
-            for x in list((route_packet or {}).get("schema_sections", []))
-            if str(x).strip() and str(x).strip() != "answer_rules"
-        ]
-        if not section_order:
-            section_order = ["toolkit_output", "light_graph", "filtered_evidence"]
+        section_order = self._section_order(route_packet, prompt_mode=prompt_mode)
         section_to_sources = {
             "toolkit_output": self._selected_toolkit_support_sources(
                 toolkit_payload, limits=limits
@@ -670,13 +684,7 @@ class FinalAnswerComposer:
         toolkit_text = self._format_toolkit(toolkit_payload, limits=limits)
         _ = claim_result
 
-        section_order = [
-            str(x).strip()
-            for x in list((route_packet or {}).get("schema_sections", []))
-            if str(x).strip() and str(x).strip() != "answer_rules"
-        ]
-        if not section_order:
-            section_order = ["toolkit_output", "light_graph", "filtered_evidence"]
+        section_order = self._section_order(route_packet, prompt_mode=prompt_mode)
         section_to_text = {
             "toolkit_output": toolkit_text,
             "light_graph": light_graph_text,
