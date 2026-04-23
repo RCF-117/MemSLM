@@ -216,10 +216,12 @@ class AnswerGroundingPipeline:
         self,
         prompt_text: str,
         evidence_candidate: Optional[Dict[str, str]],
+        first_answer: str = "",
     ) -> str:
         return self.response_guard.build_second_pass_retry_prompt(
             prompt_text=prompt_text,
             evidence_candidate=evidence_candidate,
+            first_answer=first_answer,
         )
 
     def normalize_final_answer(

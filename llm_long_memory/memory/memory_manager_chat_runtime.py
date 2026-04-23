@@ -1025,6 +1025,7 @@ class MemoryManagerChatRuntime:
             second_prompt = self.m.answer_grounding.build_second_pass_retry_prompt(
                 prompt_text=expanded_source_prompt,
                 evidence_candidate=evidence_candidate,
+                first_answer=response,
             )
             second_response = self.m.llm.chat([{"role": "user", "content": second_prompt}])
             second_result = self.m.answer_grounding.evaluate_response_guard(

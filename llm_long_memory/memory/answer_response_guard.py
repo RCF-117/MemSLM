@@ -272,28 +272,29 @@ class AnswerResponseGuard:
         self,
         prompt_text: str,
         evidence_candidate: Optional[Dict[str, str]],
+        first_answer: str = "",
     ) -> str:
         candidate_text = (
             str(evidence_candidate.get("answer", "")) if evidence_candidate is not None else ""
         )
         guidance = (
-            "Re-check the same structured prompt.\n"
-            "Use Toolkit Analysis first when it contains a grounded answer candidate.\n"
-            "Then use Light Graph relations.\n"
-            "Then use Filtered Evidence to fill missing detail.\n"
-            "Do not invent facts that are not grounded in those sections.\n"
-            "Do not say Not found unless all structured evidence is insufficient.\n"
-            "Prefer the shortest grounded phrase that fully answers the question.\n"
+            "Adjudicate the candidate packet against the first answer.\n"
+            "If the first answer is supported, return it in the shortest form.\n"
+            "If a stronger supported candidate is present, return that candidate.\n"
+            "Return Not found in retrieved context only when no candidate is supported.\n"
             "Return only the final answer."
         )
         if candidate_text:
-            guidance += f"\nPreferred evidence candidate: {candidate_text}"
+            guidance += f"\nOptional extracted candidate: {candidate_text}"
+        first_answer = self._normalize_space(first_answer).strip()
         return (
-            "[Original Prompt]\n"
+            "[First Answer]\n"
+            f"{first_answer or 'Not provided.'}\n\n"
+            "[Candidate Evidence Packet]\n"
             f"{prompt_text}\n\n"
-            "[Rules]\n"
+            "[Adjudication Task]\n"
             f"{guidance}\n\n"
-            "Question: Re-check the answer above."
+            "Question: Return the final answer."
         )
 
     def normalize_final_answer(

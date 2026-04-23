@@ -54,8 +54,14 @@ class TestFinalAnswerRouter(unittest.TestCase):
         )
         self.assertEqual(packet["mode"], "graph-first")
         self.assertEqual(packet["primary_source"], "light_graph")
-        self.assertEqual(packet["compact_sections"], ["light_graph", "answer_rules"])
-        self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "answer_rules"])
+        self.assertEqual(packet["presentation_mode"], "structure-led")
+        self.assertEqual(
+            packet["compact_sections"],
+            ["light_graph", "filtered_evidence", "answer_rules"],
+        )
+        self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "light_graph", "answer_rules"])
+        self.assertEqual(packet["section_roles"]["light_graph"], "primary")
+        self.assertEqual(packet["section_roles"]["filtered_evidence"], "cross_check")
 
     def test_route_keeps_preference_out_of_graph_first(self) -> None:
         packet = self.router.route(
@@ -105,8 +111,9 @@ class TestFinalAnswerRouter(unittest.TestCase):
         )
         self.assertEqual(packet["mode"], "evidence-heavy")
         self.assertEqual(packet["primary_source"], "filtered_evidence")
-        self.assertEqual(packet["compact_sections"], ["filtered_evidence", "answer_rules"])
-        self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "answer_rules"])
+        self.assertEqual(packet["presentation_mode"], "evidence-led")
+        self.assertEqual(packet["compact_sections"], ["filtered_evidence", "light_graph", "answer_rules"])
+        self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "light_graph", "answer_rules"])
 
 
 if __name__ == "__main__":

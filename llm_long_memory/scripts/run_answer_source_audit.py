@@ -678,12 +678,30 @@ def main() -> None:
             toolkit_latency = float(dict(toolkit_output or {}).get("latency_sec", 0.0) or 0.0)
             stage_latency_sec["toolkit"] = toolkit_latency or (time.perf_counter() - toolkit_started)
             composer_started = time.perf_counter()
+            route_packet = {}
+            router = getattr(manager, "final_answer_router", None)
+            if router is not None:
+                route_packet = router.route(
+                    query=question,
+                    filtered_pack=dict(graph_bundle.get("filtered_pack", {}) or {}),
+                    claim_result=claim_result,
+                    light_graph=dict(graph_bundle.get("light_graph", {}) or {}),
+                    toolkit_payload=dict(toolkit_output or {}),
+                )
+            answer_rules_text = (
+                router.build_answer_rules(route_packet, prompt_mode="compact")
+                if router is not None and route_packet
+                else None
+            )
             final_prompt, prompt_sections = manager.final_answer_composer.build_prompt(
                 input_text=question,
                 filtered_pack=dict(graph_bundle.get("filtered_pack", {}) or {}),
                 claim_result=claim_result,
                 light_graph=dict(graph_bundle.get("light_graph", {}) or {}),
                 toolkit_payload=dict(toolkit_output or {}),
+                prompt_mode="compact",
+                route_packet=route_packet,
+                answer_rules_text=answer_rules_text,
             )
             stage_latency_sec["composer"] = time.perf_counter() - composer_started
             row.update(
@@ -701,6 +719,7 @@ def main() -> None:
                     },
                     "evidence_light_graph": dict(graph_bundle.get("light_graph", {}) or {}),
                     "toolkit_output": dict(toolkit_output or {}),
+                    "final_answer_route": dict(route_packet or {}),
                     "final_answer_prompt": final_prompt,
                     "final_answer_prompt_sections": list(prompt_sections),
                     "final_answer_prompt_char_count": len(final_prompt),

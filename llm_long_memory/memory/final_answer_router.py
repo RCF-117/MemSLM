@@ -7,8 +7,9 @@ answering modes:
 - graph-first
 - evidence-heavy
 
-Unlike soft prompt-only priority hints, this router makes the source priority a
-runtime decision before the final 8B prompt is built.
+The mode now means "primary source", not "only source". The composer still adds
+a small cross-check source so the final 8B model receives a compact candidate
+packet instead of a single isolated representation.
 """
 
 from __future__ import annotations
@@ -197,11 +198,40 @@ class FinalAnswerRouter:
                 reason = "fallback_to_filtered_evidence"
 
         compact_sections = {
-            "toolkit-first": ["toolkit_output", "answer_rules"],
-            "graph-first": ["light_graph", "answer_rules"],
-            "evidence-heavy": ["filtered_evidence", "answer_rules"],
+            "toolkit-first": [
+                "toolkit_output",
+                "light_graph",
+                "filtered_evidence",
+                "answer_rules",
+            ],
+            "graph-first": ["light_graph", "filtered_evidence", "answer_rules"],
+            "evidence-heavy": ["filtered_evidence", "light_graph", "answer_rules"],
         }[mode]
-        expanded_sections = ["filtered_evidence", "answer_rules"]
+        expanded_sections = ["filtered_evidence", "light_graph", "answer_rules"]
+        section_roles = {
+            "toolkit-first": {
+                "toolkit_output": "primary",
+                "light_graph": "cross_check",
+                "filtered_evidence": "cross_check",
+            },
+            "graph-first": {
+                "light_graph": "primary",
+                "filtered_evidence": "cross_check",
+            },
+            "evidence-heavy": {
+                "filtered_evidence": "primary",
+                "light_graph": "cross_check",
+            },
+        }[mode]
+        expanded_section_roles = {
+            "filtered_evidence": "primary",
+            "light_graph": "cross_check",
+        }
+        presentation_mode = {
+            "toolkit-first": "verdict-led",
+            "graph-first": "structure-led",
+            "evidence-heavy": "evidence-led",
+        }[mode]
 
         return {
             "mode": mode,
@@ -209,6 +239,9 @@ class FinalAnswerRouter:
             "schema_sections": compact_sections,
             "compact_sections": compact_sections,
             "expanded_sections": expanded_sections,
+            "section_roles": section_roles,
+            "expanded_section_roles": expanded_section_roles,
+            "presentation_mode": presentation_mode,
             "primary_source": (
                 "toolkit"
                 if mode == "toolkit-first"
@@ -229,18 +262,16 @@ class FinalAnswerRouter:
         prompt_mode = str(prompt_mode or "compact").strip().lower()
         if prompt_mode == "expanded":
             return (
-                "Use only the filtered evidence below.\n"
-                "If it is insufficient, answer Not found in retrieved context. Return only the final answer."
+                "Adjudicate the candidate packet. Correct the answer only if the support or conflict evidence is stronger. Return only the final answer."
             )
         if mode == "toolkit-first":
             return (
-                "Use the toolkit result below as the answer source. Return only the final answer."
+                "Use the primary candidate unless the cross-check support clearly contradicts it. Return only the final answer."
             )
         if mode == "graph-first":
             return (
-                "Use the light graph below as the answer source. Return only the final answer."
+                "Use the primary graph candidate unless the cross-check support clearly contradicts it. Return only the final answer."
             )
         return (
-            "Use the filtered evidence below.\n"
-            "If it is insufficient, answer Not found in retrieved context. Return only the final answer."
+            "Use the primary evidence candidate. Return Not found in retrieved context only if the packet has no supported candidate. Return only the final answer."
         )

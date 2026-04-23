@@ -85,13 +85,13 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         prompt = self.pipeline.build_second_pass_retry_prompt(
             prompt_text="[Filtered Evidence]\n- She moved to Boston in 2023.",
             evidence_candidate={"answer": "Boston"},
+            first_answer="Not found in retrieved context.",
         )
-        self.assertIn("[Original Prompt]", prompt)
-        self.assertIn("Toolkit Analysis", prompt)
-        self.assertIn("Light Graph", prompt)
-        self.assertIn("Filtered Evidence", prompt)
+        self.assertIn("[First Answer]", prompt)
+        self.assertIn("[Candidate Evidence Packet]", prompt)
+        self.assertIn("[Adjudication Task]", prompt)
         self.assertNotIn("Graph Claims", prompt)
-        self.assertIn("Preferred evidence candidate: Boston", prompt)
+        self.assertIn("Optional extracted candidate: Boston", prompt)
 
 if __name__ == "__main__":
     unittest.main()

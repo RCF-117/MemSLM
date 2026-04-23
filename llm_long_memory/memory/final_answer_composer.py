@@ -133,6 +133,185 @@ class FinalAnswerComposer:
             return ["filtered_evidence"]
         return ["toolkit_output", "light_graph", "filtered_evidence"]
 
+    def _section_roles(
+        self,
+        route_packet: Dict[str, object] | None,
+        *,
+        prompt_mode: str | None,
+    ) -> Dict[str, str]:
+        mode = str(prompt_mode or self.default_prompt_mode).strip().lower()
+        packet = dict(route_packet or {})
+        key = "expanded_section_roles" if mode == "expanded" else "section_roles"
+        roles = dict(packet.get(key, {}) or {})
+        if roles:
+            return {str(k): str(v) for k, v in roles.items()}
+        order = self._section_order(route_packet, prompt_mode=prompt_mode)
+        if not order:
+            return {}
+        return {name: ("primary" if idx == 0 else "cross_check") for idx, name in enumerate(order)}
+
+    def _limits_for_role(
+        self,
+        section_name: str,
+        *,
+        role: str,
+        prompt_mode: str | None,
+        base_limits: Dict[str, int],
+    ) -> Dict[str, int]:
+        """Keep cross-check sources intentionally tiny."""
+        role = str(role or "").strip().lower()
+        limits = dict(base_limits)
+        if role == "primary":
+            return limits
+        if section_name == "toolkit_output":
+            return {**limits, "tool_lines": min(1, limits["tool_lines"])}
+        if section_name == "light_graph":
+            return {**limits, "graph_lines": min(1, limits["graph_lines"])}
+        if section_name == "filtered_evidence":
+            return {
+                **limits,
+                "core": min(1, limits["core"]),
+                "supporting": 0,
+                "conflict": min(1, limits["conflict"]),
+            }
+        return limits
+
+    def _sources_for_section(
+        self,
+        section_name: str,
+        *,
+        filtered_pack: Dict[str, object],
+        light_graph: Dict[str, object],
+        toolkit_payload: Dict[str, object],
+        prompt_mode: str | None,
+        limits: Dict[str, int],
+    ) -> List[Dict[str, object]]:
+        if section_name == "toolkit_output":
+            return self._selected_toolkit_support_sources(toolkit_payload, limits=limits)
+        if section_name == "light_graph":
+            return self._selected_light_graph_support_sources(
+                light_graph,
+                limits=limits,
+                prompt_mode=prompt_mode,
+            )
+        if section_name == "filtered_evidence":
+            return self._selected_filtered_support_sources(
+                filtered_pack,
+                limits=limits,
+                prompt_mode=prompt_mode,
+            )
+        return []
+
+    def _source_label(self, section_name: str) -> str:
+        return {
+            "toolkit_output": "toolkit",
+            "light_graph": "light_graph",
+            "filtered_evidence": "filtered_evidence",
+        }.get(section_name, section_name)
+
+    def _strip_source_markup(self, text: str) -> str:
+        text = self._normalize_space(str(text or ""))
+        text = re.sub(r"^-\s*", "", text)
+        text = re.sub(r"^(core|support|conflict):\s*", "", text, flags=re.IGNORECASE)
+        return text
+
+    def _build_candidate_packet_sections(
+        self,
+        *,
+        input_text: str,
+        section_order: Sequence[str],
+        section_roles: Dict[str, str],
+        section_to_sources: Dict[str, List[Dict[str, object]]],
+        route_packet: Dict[str, object] | None,
+        prompt_mode: str | None,
+    ) -> List[Dict[str, str]]:
+        _ = input_text
+        packet = dict(route_packet or {})
+        presentation_mode = self._normalize_space(
+            str(packet.get("presentation_mode", "") or packet.get("mode", "") or "evidence-led")
+        )
+        primary_section = ""
+        primary_sources: List[Dict[str, object]] = []
+        cross_sources: List[Tuple[str, Dict[str, object]]] = []
+        conflict_sources: List[Dict[str, object]] = []
+
+        for section_name in section_order:
+            sources = list(section_to_sources.get(section_name, []))
+            role = str(section_roles.get(section_name, "")).strip().lower()
+            if role == "primary" and not primary_section:
+                primary_section = section_name
+                primary_sources = sources
+            else:
+                for source in sources:
+                    cross_sources.append((section_name, source))
+            for source in sources:
+                if str(source.get("bucket", "")).strip().lower() == "conflict":
+                    conflict_sources.append(source)
+
+        if not primary_section and section_order:
+            primary_section = str(section_order[0])
+            primary_sources = list(section_to_sources.get(primary_section, []))
+
+        primary_candidate = (
+            self._strip_source_markup(str(primary_sources[0].get("text", "")))
+            if primary_sources
+            else ""
+        )
+        secondary_candidate = ""
+        if cross_sources:
+            secondary_candidate = self._strip_source_markup(
+                str(cross_sources[0][1].get("text", ""))
+            )
+
+        sections: List[Dict[str, str]] = []
+        candidate_lines = [
+            f"mode={presentation_mode}",
+            f"primary_source={self._source_label(primary_section)}",
+        ]
+        if primary_candidate:
+            candidate_lines.append(f"primary_candidate={primary_candidate}")
+        if secondary_candidate:
+            candidate_lines.append(f"secondary_candidate={secondary_candidate}")
+        sections.append(
+            {
+                "section": "candidate_packet",
+                "text": "[Candidate Packet]\n" + "\n".join(candidate_lines),
+            }
+        )
+
+        support_lines: List[str] = []
+        primary_limit = 3 if str(prompt_mode or "").lower() != "expanded" else 6
+        for source in primary_sources[:primary_limit]:
+            text = self._strip_source_markup(str(source.get("text", "")))
+            if text:
+                support_lines.append(f"- primary: {text}")
+        cross_limit = 2 if str(prompt_mode or "").lower() != "expanded" else 3
+        for section_name, source in cross_sources[:cross_limit]:
+            text = self._strip_source_markup(str(source.get("text", "")))
+            if text:
+                support_lines.append(f"- cross_check[{self._source_label(section_name)}]: {text}")
+        if support_lines:
+            sections.append(
+                {
+                    "section": "support_snippets",
+                    "text": "[Support Snippets]\n" + "\n".join(support_lines),
+                }
+            )
+
+        conflict_lines: List[str] = []
+        for source in conflict_sources[:2]:
+            text = self._strip_source_markup(str(source.get("text", "")))
+            if text:
+                conflict_lines.append(f"- conflict: {text}")
+        if conflict_lines:
+            sections.append(
+                {
+                    "section": "conflict_or_missing",
+                    "text": "[Conflict Or Missing]\n" + "\n".join(conflict_lines),
+                }
+            )
+        return sections
+
     def _item_prompt_text(self, item: Dict[str, object]) -> str:
         prompt_text = self._normalize_space(str(item.get("prompt_text", "")))
         if prompt_text:
@@ -637,21 +816,23 @@ class FinalAnswerComposer:
         limits = self._limits_for_mode(prompt_mode)
         _ = claim_result
         section_order = self._section_order(route_packet, prompt_mode=prompt_mode)
-        section_to_sources = {
-            "toolkit_output": self._selected_toolkit_support_sources(
-                toolkit_payload, limits=limits
-            ),
-            "light_graph": self._selected_light_graph_support_sources(
-                light_graph,
-                limits=limits,
+        section_roles = self._section_roles(route_packet, prompt_mode=prompt_mode)
+        section_to_sources: Dict[str, List[Dict[str, object]]] = {}
+        for section_name in section_order:
+            role_limits = self._limits_for_role(
+                section_name,
+                role=section_roles.get(section_name, "cross_check"),
                 prompt_mode=prompt_mode,
-            ),
-            "filtered_evidence": self._selected_filtered_support_sources(
-                filtered_pack,
-                limits=limits,
+                base_limits=limits,
+            )
+            section_to_sources[section_name] = self._sources_for_section(
+                section_name,
+                filtered_pack=filtered_pack,
+                light_graph=light_graph,
+                toolkit_payload=toolkit_payload,
                 prompt_mode=prompt_mode,
-            ),
-        }
+                limits=role_limits,
+            )
         support_sources: List[Dict[str, object]] = []
         for section_name in section_order:
             support_sources.extend(list(section_to_sources.get(section_name, [])))
@@ -669,41 +850,42 @@ class FinalAnswerComposer:
         route_packet: Dict[str, object] | None = None,
         answer_rules_text: str | None = None,
     ) -> Tuple[str, List[Dict[str, str]]]:
-        sections: List[Dict[str, str]] = []
         limits = self._limits_for_mode(prompt_mode)
-        filtered_text = self._format_filtered_pack(
-            filtered_pack,
-            limits=limits,
-            prompt_mode=prompt_mode,
-        )
-        light_graph_text = self._format_light_graph(
-            light_graph,
-            limits=limits,
-            prompt_mode=prompt_mode,
-        )
-        toolkit_text = self._format_toolkit(toolkit_payload, limits=limits)
         _ = claim_result
 
         section_order = self._section_order(route_packet, prompt_mode=prompt_mode)
-        section_to_text = {
-            "toolkit_output": toolkit_text,
-            "light_graph": light_graph_text,
-            "filtered_evidence": filtered_text,
-        }
-        for name in section_order:
-            text = str(section_to_text.get(name, "") or "")
-            if text:
-                sections.append({"section": name, "text": text})
+        section_roles = self._section_roles(route_packet, prompt_mode=prompt_mode)
+        section_to_sources: Dict[str, List[Dict[str, object]]] = {}
+        for section_name in section_order:
+            role_limits = self._limits_for_role(
+                section_name,
+                role=section_roles.get(section_name, "cross_check"),
+                prompt_mode=prompt_mode,
+                base_limits=limits,
+            )
+            section_to_sources[section_name] = self._sources_for_section(
+                section_name,
+                filtered_pack=filtered_pack,
+                light_graph=light_graph,
+                toolkit_payload=toolkit_payload,
+                prompt_mode=prompt_mode,
+                limits=role_limits,
+            )
+
+        sections = self._build_candidate_packet_sections(
+            input_text=input_text,
+            section_order=section_order,
+            section_roles=section_roles,
+            section_to_sources=section_to_sources,
+            route_packet=route_packet,
+            prompt_mode=prompt_mode,
+        )
 
         rules = str(answer_rules_text or "").strip()
         if not rules:
             rules = (
-                "Use Toolkit Analysis first when it provides a grounded answer candidate.\n"
-                "Then use Light Graph relations for structure and resolution.\n"
-                "Use Filtered Evidence to fill missing detail or resolve ambiguity.\n"
-                "Do not use hidden fallback heuristics or raw noisy retrieval.\n"
-                "If evidence conflicts, prefer explicit graph-grounded state updates or better query-aligned evidence.\n"
-                "If the available evidence is still insufficient, answer Not found in retrieved context.\n"
+                "Use the primary candidate unless cross-check support clearly contradicts it.\n"
+                "Do not invent facts outside the candidate packet.\n"
                 "Return only the final answer."
             )
         sections.append({"section": "answer_rules", "text": "[Answer Rules]\n" + rules})
