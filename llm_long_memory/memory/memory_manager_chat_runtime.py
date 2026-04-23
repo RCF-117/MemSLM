@@ -18,6 +18,10 @@ class MemoryManagerChatRuntime:
         self._last_evidence_pack: Dict[str, object] = {}
         self._last_compact_prompt_text = ""
         self._last_expanded_prompt_text = ""
+        self._last_compact_prompt_support_sources: List[Dict[str, object]] = []
+        self._last_expanded_prompt_support_sources: List[Dict[str, object]] = []
+        self._last_compact_route_packet: Dict[str, object] = {}
+        self._last_expanded_route_packet: Dict[str, object] = {}
 
     @staticmethod
     def _tokenize(text: str) -> List[str]:
@@ -860,6 +864,8 @@ class MemoryManagerChatRuntime:
             compact_prompt = "[Answer Rules]\nReturn only the final answer.\n\nUser: " + input_text
             self._last_compact_prompt_text = compact_prompt
             self._last_expanded_prompt_text = compact_prompt
+            self._last_compact_prompt_support_sources = []
+            self._last_expanded_prompt_support_sources = []
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
@@ -886,10 +892,29 @@ class MemoryManagerChatRuntime:
             )
             self._last_compact_prompt_text = compact_prompt
             self._last_expanded_prompt_text = compact_prompt
+            self._last_compact_prompt_support_sources = []
+            self._last_expanded_prompt_support_sources = []
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
 
         stage_started = time.perf_counter()
+        router = getattr(self.m, "final_answer_router", None)
+        route_packet = (
+            router.route(
+                query=input_text,
+                filtered_pack=filtered_pack,
+                claim_result=claim_result,
+                light_graph=light_graph,
+                toolkit_payload=toolkit_payload,
+            )
+            if router is not None
+            else {}
+        )
+        answer_rules_text = (
+            router.build_answer_rules(route_packet)
+            if router is not None and route_packet
+            else None
+        )
         compact_prompt, prompt_sections = self.m.final_answer_composer.build_prompt(
             input_text=input_text,
             filtered_pack=filtered_pack,
@@ -897,6 +922,8 @@ class MemoryManagerChatRuntime:
             light_graph=light_graph,
             toolkit_payload=toolkit_payload,
             prompt_mode="compact",
+            route_packet=route_packet,
+            answer_rules_text=answer_rules_text,
         )
         expanded_prompt, _ = self.m.final_answer_composer.build_prompt(
             input_text=input_text,
@@ -905,10 +932,32 @@ class MemoryManagerChatRuntime:
             light_graph=light_graph,
             toolkit_payload=toolkit_payload,
             prompt_mode="expanded",
+            route_packet=route_packet,
+            answer_rules_text=answer_rules_text,
+        )
+        compact_support_sources = self.m.final_answer_composer.build_support_sources(
+            filtered_pack=filtered_pack,
+            claim_result=claim_result,
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
+            prompt_mode="compact",
+            route_packet=route_packet,
+        )
+        expanded_support_sources = self.m.final_answer_composer.build_support_sources(
+            filtered_pack=filtered_pack,
+            claim_result=claim_result,
+            light_graph=light_graph,
+            toolkit_payload=toolkit_payload,
+            prompt_mode="expanded",
+            route_packet=route_packet,
         )
         self.m.last_stage_latency_sec["composer"] = time.perf_counter() - stage_started
         self._last_compact_prompt_text = compact_prompt
         self._last_expanded_prompt_text = expanded_prompt
+        self._last_compact_prompt_support_sources = compact_support_sources
+        self._last_expanded_prompt_support_sources = expanded_support_sources
+        self._last_compact_route_packet = dict(route_packet or {})
+        self._last_expanded_route_packet = dict(route_packet or {})
         self.m._set_prompt_eval_chunks(prompt_sections)
         return compact_prompt
 
@@ -944,6 +993,7 @@ class MemoryManagerChatRuntime:
             candidates=candidates,
             evidence_candidate=evidence_candidate,
             fallback_answer=fallback_answer,
+            support_sources=self._last_compact_prompt_support_sources,
         )
         ai_response = str(fallback_result.get("response", "")).strip()
         fallback_path = str(fallback_result.get("fallback_path", "none"))
@@ -978,6 +1028,7 @@ class MemoryManagerChatRuntime:
                 candidates=candidates,
                 evidence_candidate=evidence_candidate,
                 fallback_answer=fallback_answer,
+                support_sources=self._last_expanded_prompt_support_sources,
             )
             second_path = str(second_result.get("fallback_path", "none"))
             ai_response = str(second_result.get("response", "")).strip()

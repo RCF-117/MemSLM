@@ -149,6 +149,15 @@ class EvidenceFilter:
             "evidence_pack": max(1, int(cfg.get("filter_core_pack_cap", 3))),
             "plan_combined_evidence": max(1, int(cfg.get("filter_core_plan_cap", 3))),
         }
+        self.prompt_text_max_chars = max(
+            80, int(cfg.get("filter_prompt_text_max_chars", 280))
+        )
+        self.prompt_text_max_sentences = max(
+            1, int(cfg.get("filter_prompt_text_max_sentences", 2))
+        )
+        self.prompt_text_max_structured_units = max(
+            1, int(cfg.get("filter_prompt_text_max_structured_units", 3))
+        )
 
     @staticmethod
     def _normalize_space(text: str) -> str:
@@ -211,6 +220,53 @@ class EvidenceFilter:
             seen.add(key)
             deduped.append(piece)
         return deduped
+
+    def _compose_prompt_text(
+        self,
+        text: str,
+        *,
+        structured_units: Optional[Sequence[str]] = None,
+    ) -> str:
+        normalized = self._normalize_space(text)
+        if not normalized:
+            return ""
+        pieces = [
+            self._normalize_space(x)
+            for x in list(structured_units or [])
+            if self._normalize_space(x)
+        ]
+        separator = " ; "
+        max_segments = self.prompt_text_max_structured_units
+        if not pieces:
+            pieces = self._split_sentences(normalized) or [normalized]
+            separator = " "
+            max_segments = self.prompt_text_max_sentences
+        selected: List[str] = []
+        total_chars = 0
+        for piece in pieces:
+            if len(selected) >= max_segments:
+                break
+            remaining = self.prompt_text_max_chars - total_chars
+            if remaining <= 0:
+                break
+            clipped = piece
+            if len(clipped) > remaining:
+                clipped = clipped[: max(remaining - 3, 0)].rstrip(" ,.;:!?")
+                if clipped:
+                    clipped += "..."
+            clipped = self._normalize_space(clipped)
+            if not clipped:
+                continue
+            selected.append(clipped)
+            total_chars += len(clipped)
+            if total_chars >= self.prompt_text_max_chars:
+                break
+        prompt_text = separator.join(selected).strip()
+        if not prompt_text:
+            prompt_text = normalized[: self.prompt_text_max_chars].rstrip(" ,.;:!?")
+            if len(normalized) > len(prompt_text):
+                prompt_text = f"{prompt_text}..." if prompt_text else ""
+        return prompt_text
 
     @staticmethod
     def _looks_structured(text: str) -> bool:
@@ -697,6 +753,10 @@ class EvidenceFilter:
                     backup_item = {
                         "evidence_id": f"ev_{evidence_counter:03d}",
                         "text": text,
+                        "prompt_text": self._compose_prompt_text(
+                            text,
+                            structured_units=structured_units,
+                        ),
                         "channel": channel,
                         "score": float(raw_item.get("score", 0.0)) * 0.92,
                         "chunk_id": int(raw_item.get("chunk_id", 0) or 0),
@@ -740,6 +800,7 @@ class EvidenceFilter:
                 item = {
                     "evidence_id": f"ev_{evidence_counter:03d}",
                     "text": sent,
+                    "prompt_text": self._compose_prompt_text(sent),
                     "channel": channel,
                     "score": float(raw_item.get("score", 0.0)),
                     "chunk_id": int(raw_item.get("chunk_id", 0) or 0),

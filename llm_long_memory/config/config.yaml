@@ -410,6 +410,9 @@ retrieval:
     filter_max_selected: 22
     filter_split_long_chars: 380
     filter_min_sentence_chars: 18
+    filter_prompt_text_max_chars: 500
+    filter_prompt_text_max_sentences: 3
+    filter_prompt_text_max_structured_units: 5
     filter_core_min_score: 0.34
     filter_supporting_min_score: 0.22
     filter_core_rag_cap: 5

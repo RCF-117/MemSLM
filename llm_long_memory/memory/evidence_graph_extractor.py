@@ -394,6 +394,28 @@ class EvidenceGraphExtractor:
                 return value
         return None
 
+    def _item_prompt_text(self, item: Dict[str, Any]) -> str:
+        prompt_text = self._normalize_space(str(item.get("prompt_text", "")))
+        if prompt_text:
+            return prompt_text
+        return self._normalize_space(str(item.get("text", "")))
+
+    def _claim_key(self, claim: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+        return (
+            self._text_key(str(claim.get("subject", ""))),
+            self._text_key(str(claim.get("predicate", ""))),
+            self._text_key(str(claim.get("value", ""))),
+            self._text_key(str(claim.get("time_anchor", ""))),
+            self._text_key(str(claim.get("state_key", ""))),
+        )
+
+    def _support_unit_key(self, unit: Dict[str, Any]) -> Tuple[str, str, str]:
+        return (
+            self._text_key(str(unit.get("text", ""))),
+            self._text_key(str(unit.get("time_anchor", ""))),
+            self._text_key(str(unit.get("state_key", ""))),
+        )
+
     def _batch_anchor_key(self, item: Dict[str, Any], filtered_pack: Dict[str, Any]) -> str:
         target_object = self._text_key(str(filtered_pack.get("target_object", "")))
         if bool(item.get("target_match")) and target_object:
@@ -434,20 +456,33 @@ class EvidenceGraphExtractor:
             key=lambda k: (group_scores.get(k, 0.0), len(grouped.get(k, []))),
             reverse=True,
         )
-        batches: List[List[Dict[str, Any]]] = []
-        for key in ordered_keys:
-            items = sorted(
+        group_queues: Dict[str, List[Dict[str, Any]]] = {
+            key: sorted(
                 grouped.get(key, []),
                 key=lambda x: (float(x.get("score", 0.0)), -int(x.get("raw_rank", 0))),
                 reverse=True,
             )
-            cursor = 0
-            while cursor < len(items) and len(batches) < self.max_batches:
-                batches.append(items[cursor : cursor + self.batch_size])
-                cursor += self.batch_size
-            if len(batches) >= self.max_batches:
+            for key in ordered_keys
+        }
+        flattened: List[Dict[str, Any]] = []
+        max_items = self.max_batches * self.batch_size
+        while len(flattened) < max_items:
+            progressed = False
+            for key in ordered_keys:
+                queue = group_queues.get(key, [])
+                if not queue:
+                    continue
+                flattened.append(queue.pop(0))
+                progressed = True
+                if len(flattened) >= max_items:
+                    break
+            if not progressed:
                 break
-        return batches
+        return [
+            flattened[idx : idx + self.batch_size]
+            for idx in range(0, len(flattened), self.batch_size)
+            if flattened[idx : idx + self.batch_size]
+        ]
 
     def _prompt(
         self,
@@ -479,7 +514,7 @@ class EvidenceGraphExtractor:
                     signal_tags.append(str(tag).strip())
             if signal_tags:
                 prefix += " {" + ",".join(signal_tags) + "}"
-            lines.append(f"{prefix}: {self._normalize_space(str(item.get('text', '')))}")
+            lines.append(f"{prefix}: {self._item_prompt_text(item)}")
         schema = {
             "support_units": [
                 {
@@ -1391,11 +1426,7 @@ class EvidenceGraphExtractor:
                     )
                     if unit is None:
                         continue
-                    key = (
-                        self._text_key(unit["text"]),
-                        self._text_key(str(unit.get("time_anchor", ""))),
-                        self._text_key(str(unit.get("state_key", ""))),
-                    )
+                    key = self._support_unit_key(unit)
                     if key in seen_unit_keys:
                         continue
                     attempt_units.append(unit)
@@ -1413,13 +1444,7 @@ class EvidenceGraphExtractor:
                         continue
                     if not allow_compare_role:
                         claim["compare_role"] = ""
-                    key = (
-                        self._text_key(claim["subject"]),
-                        self._text_key(claim["predicate"]),
-                        self._text_key(claim["value"]),
-                        self._text_key(claim["time_anchor"]),
-                        self._text_key(claim["state_key"]),
-                    )
+                    key = self._claim_key(claim)
                     if key in seen_keys:
                         continue
                     attempt_claims.append(claim)
@@ -1434,11 +1459,7 @@ class EvidenceGraphExtractor:
                 )
                 if attempt_units and not normalized_units:
                     for unit in attempt_units:
-                        key = (
-                            self._text_key(unit["text"]),
-                            self._text_key(str(unit.get("time_anchor", ""))),
-                            self._text_key(str(unit.get("state_key", ""))),
-                        )
+                        key = self._support_unit_key(unit)
                         if key in seen_unit_keys:
                             continue
                         seen_unit_keys.add(key)
@@ -1446,13 +1467,7 @@ class EvidenceGraphExtractor:
                         support_units.append(unit)
                 if attempt_claims:
                     for claim in attempt_claims:
-                        key = (
-                            self._text_key(claim["subject"]),
-                            self._text_key(claim["predicate"]),
-                            self._text_key(claim["value"]),
-                            self._text_key(claim["time_anchor"]),
-                            self._text_key(claim["state_key"]),
-                        )
+                        key = self._claim_key(claim)
                         if key in seen_keys:
                             continue
                         seen_keys.add(key)
@@ -1470,8 +1485,9 @@ class EvidenceGraphExtractor:
                     "claim_count": len(normalized_batch),
                 }
             )
-            if not normalized_batch and normalized_units:
-                synthesized_batch: List[Dict[str, Any]] = []
+            synthesized_batch: List[Dict[str, Any]] = []
+            batch_claim_keys = {self._claim_key(claim) for claim in normalized_batch}
+            if normalized_units:
                 for unit in normalized_units:
                     claim_counter += 1
                     claim = self._synthesize_claim_from_unit(
@@ -1480,38 +1496,29 @@ class EvidenceGraphExtractor:
                     )
                     if claim is None:
                         continue
-                    key = (
-                        self._text_key(claim["subject"]),
-                        self._text_key(claim["predicate"]),
-                        self._text_key(claim["value"]),
-                        self._text_key(claim["time_anchor"]),
-                        self._text_key(claim["state_key"]),
-                    )
-                    if key in seen_keys:
+                    key = self._claim_key(claim)
+                    if key in seen_keys or key in batch_claim_keys:
                         continue
                     seen_keys.add(key)
+                    batch_claim_keys.add(key)
                     synthesized_batch.append(claim)
                     claims.append(claim)
-                claim_counter += 1
                 count_claim = self._synthesize_count_summary_claim(
                     filtered_pack=filtered_pack,
                     support_units=normalized_units,
-                    fallback_claim_id=f"cl_{claim_counter:03d}",
+                    fallback_claim_id=f"cl_{claim_counter + 1:03d}",
                 )
                 if count_claim is not None:
-                    key = (
-                        self._text_key(count_claim["subject"]),
-                        self._text_key(count_claim["predicate"]),
-                        self._text_key(count_claim["value"]),
-                        self._text_key(count_claim["time_anchor"]),
-                        self._text_key(count_claim["state_key"]),
-                    )
-                    if key not in seen_keys:
+                    key = self._claim_key(count_claim)
+                    if key not in seen_keys and key not in batch_claim_keys:
+                        claim_counter += 1
+                        count_claim["claim_id"] = f"cl_{claim_counter:03d}"
                         seen_keys.add(key)
+                        batch_claim_keys.add(key)
                         synthesized_batch.append(count_claim)
                         claims.append(count_claim)
                 if synthesized_batch:
-                    raw_batches[-1]["claim_count"] = len(synthesized_batch)
+                    raw_batches[-1]["claim_count"] = len(normalized_batch) + len(synthesized_batch)
 
         support_units = self._filter_preference_support_units(
             filtered_pack=filtered_pack,
@@ -1521,16 +1528,7 @@ class EvidenceGraphExtractor:
             filtered_pack=filtered_pack,
             claims=claims,
         )
-        seen_keys = {
-            (
-                self._text_key(claim["subject"]),
-                self._text_key(claim["predicate"]),
-                self._text_key(claim["value"]),
-                self._text_key(claim["time_anchor"]),
-                self._text_key(claim["state_key"]),
-            )
-            for claim in claims
-        }
+        seen_keys = {self._claim_key(claim) for claim in claims}
         for raw_claim in self._synthesize_preference_summary_claims(
             filtered_pack=filtered_pack,
             selected_evidence=selected,

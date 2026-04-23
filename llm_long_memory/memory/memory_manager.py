@@ -13,6 +13,7 @@ from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
 from llm_long_memory.memory.answer_grounding_pipeline import AnswerGroundingPipeline
 from llm_long_memory.memory.evidence_filter import EvidenceFilter
 from llm_long_memory.memory.final_answer_composer import FinalAnswerComposer
+from llm_long_memory.memory.final_answer_router import FinalAnswerRouter
 from llm_long_memory.memory.evidence_graph_extractor import EvidenceGraphExtractor
 from llm_long_memory.memory.evidence_light_graph import EvidenceLightGraph
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
@@ -130,6 +131,7 @@ class MemoryManager:
         answer_grounding_cfg = dict(self.config["retrieval"]["answering"])
         self.answer_grounding = AnswerGroundingPipeline(answer_grounding_cfg)
         self.final_answer_composer = FinalAnswerComposer(answer_grounding_cfg)
+        self.final_answer_router = FinalAnswerRouter(answer_grounding_cfg)
         self.specialist_layer = SpecialistLayer(
             self,
             dict(answer_grounding_cfg.get("specialist_layer", {})),

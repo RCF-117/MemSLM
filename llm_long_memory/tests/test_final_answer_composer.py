@@ -259,6 +259,116 @@ class TestFinalAnswerComposer(unittest.TestCase):
         self.assertIn("[Light Graph]", prompt)
         self.assertIn("claim[fact]: I | led | market research project | time=2023", prompt)
 
+    def test_build_prompt_prefers_prompt_text_for_filtered_evidence(self) -> None:
+        long_text = (
+            "I just exchanged a pair of boots from Zara on 2/5 and still need to pick up the new pair. "
+            "Here are several general tips about using reminders and organizing returns that are not central. "
+            "More generic advice about notes apps and organization follows for a long time."
+        )
+        prompt, _ = self.composer.build_prompt(
+            input_text="How many items of clothing do I need to pick up from the store?",
+            filtered_pack={
+                "query": "How many items of clothing do I need to pick up from the store?",
+                "answer_type": "count",
+                "focus_phrases": ["items of clothing", "pick up from the store"],
+                "target_object": "items of clothing",
+                "core_evidence": [
+                    {
+                        "text": long_text,
+                        "prompt_text": "I just exchanged a pair of boots from Zara on 2/5 and still need to pick up the new pair.",
+                    }
+                ],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={"nodes": [], "edges": []},
+            toolkit_payload={},
+            prompt_mode="compact",
+        )
+        self.assertIn("boots from Zara on 2/5", prompt)
+        self.assertNotIn("More generic advice about notes apps", prompt)
+
+    def test_build_prompt_obeys_graph_first_route_schema(self) -> None:
+        prompt, sections = self.composer.build_prompt(
+            input_text="Where is the painting now?",
+            filtered_pack={
+                "core_evidence": [{"text": "I moved the painting to my bedroom."}],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={
+                "nodes": [
+                    {
+                        "id": "old",
+                        "type": "state",
+                        "meta": {"subject": "painting", "predicate": "location", "value": "living room"},
+                    },
+                    {
+                        "id": "new",
+                        "type": "state",
+                        "meta": {"subject": "painting", "predicate": "location", "value": "bedroom"},
+                    },
+                ],
+                "edges": [{"source": "old", "target": "new", "type": "updates", "state_key": "location"}],
+            },
+            toolkit_payload={},
+            route_packet={
+                "mode": "graph-first",
+                "schema_sections": ["light_graph", "filtered_evidence", "answer_rules"],
+            },
+            answer_rules_text="Use Light Graph as the primary answer source.\nReturn only the final answer.",
+        )
+        section_names = [section["section"] for section in sections]
+        self.assertEqual(section_names, ["light_graph", "filtered_evidence", "answer_rules"])
+        self.assertLess(prompt.index("[Light Graph]"), prompt.index("[Filtered Evidence]"))
+        self.assertIn("Use Light Graph as the primary answer source.", prompt)
+
+    def test_build_support_sources_includes_toolkit_graph_and_filtered(self) -> None:
+        support_sources = self.composer.build_support_sources(
+            filtered_pack={
+                "core_evidence": [{"text": "She moved to Boston in 2023.", "score": 0.9}],
+                "supporting_evidence": [],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={
+                "nodes": [
+                    {
+                        "id": "state_1",
+                        "type": "state",
+                        "meta": {"subject": "she", "predicate": "location", "value": "Chicago"},
+                    },
+                    {
+                        "id": "state_2",
+                        "type": "state",
+                        "meta": {"subject": "she", "predicate": "location", "value": "Boston"},
+                    },
+                ],
+                "edges": [
+                    {"source": "state_1", "target": "state_2", "type": "updates", "state_key": "location"}
+                ],
+            },
+            toolkit_payload={
+                "tool_payload": {
+                    "intent": "update",
+                    "activated": True,
+                    "verified": True,
+                    "confidence": 0.91,
+                    "verified_candidate": "Boston",
+                    "verification_reason": "update_edge_verified",
+                    "verified_used_claim_ids": ["c1"],
+                    "summary_lines": ["state_update=she | location | Chicago -> she | location | Boston"],
+                }
+            },
+            prompt_mode="compact",
+        )
+        joined = "\n".join(str(item.get("text", "")) for item in support_sources)
+        self.assertIn("Boston", joined)
+        self.assertIn("update[location]", joined)
+        self.assertIn("She moved to Boston in 2023.", joined)
+
 
 if __name__ == "__main__":
     unittest.main()

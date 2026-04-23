@@ -49,6 +49,22 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
         else:
             self.assertEqual(result, "Completely unrelated answer")
 
+    def test_apply_response_guard_accepts_graph_supported_answer(self) -> None:
+        result = self.pipeline.apply_response_guard(
+            response="Tom",
+            evidence_sentences=[],
+            candidates=[],
+            support_sources=[
+                {
+                    "text": "- before: Mark and Sarah | first met | beach trip -> Tom | first met | work conference",
+                    "score": 0.72,
+                    "section": "light_graph",
+                    "bucket": "graph",
+                }
+            ],
+        )
+        self.assertEqual(result, "Tom")
+
     def test_build_second_pass_retry_prompt_uses_structured_language(self) -> None:
         prompt = self.pipeline.build_second_pass_retry_prompt(
             prompt_text="[Filtered Evidence]\n- She moved to Boston in 2023.",

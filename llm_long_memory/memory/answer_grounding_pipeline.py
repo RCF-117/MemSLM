@@ -167,6 +167,13 @@ class AnswerGroundingPipeline:
             response, evidence_sentences
         )
 
+    def response_supported_by_sources(
+        self, response: str, support_sources: List[Dict[str, object]]
+    ) -> bool:
+        return self.response_guard.response_supported_by_sources(
+            response, support_sources
+        )
+
     def evaluate_response_guard(
         self,
         response: str,
@@ -174,6 +181,7 @@ class AnswerGroundingPipeline:
         candidates: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]] = None,
         fallback_answer: Optional[str] = None,
+        support_sources: Optional[List[Dict[str, object]]] = None,
     ) -> Dict[str, str]:
         return self.response_guard.evaluate_response_guard(
             response=response,
@@ -181,6 +189,7 @@ class AnswerGroundingPipeline:
             candidates=candidates,
             evidence_candidate=evidence_candidate,
             fallback_answer=fallback_answer,
+            support_sources=support_sources,
         )
 
     def apply_response_guard(
@@ -190,6 +199,7 @@ class AnswerGroundingPipeline:
         candidates: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]] = None,
         fallback_answer: Optional[str] = None,
+        support_sources: Optional[List[Dict[str, object]]] = None,
     ) -> str:
         """Return only the final guarded answer text."""
         result = self.evaluate_response_guard(
@@ -198,6 +208,7 @@ class AnswerGroundingPipeline:
             candidates=candidates,
             evidence_candidate=evidence_candidate,
             fallback_answer=fallback_answer,
+            support_sources=support_sources,
         )
         return str(result.get("response", ""))
 

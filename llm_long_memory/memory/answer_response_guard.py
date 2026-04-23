@@ -53,10 +53,17 @@ class AnswerResponseGuard:
         return " ".join(str(text).split())
 
     def response_in_evidence(self, response: str, evidence_sentences: List[Dict[str, object]]) -> bool:
+        return self.response_in_support_sources(response, evidence_sentences)
+
+    def response_in_support_sources(
+        self,
+        response: str,
+        support_sources: List[Dict[str, object]],
+    ) -> bool:
         ans = self._normalize_space(response).lower()
         if not ans:
             return False
-        for item in evidence_sentences:
+        for item in support_sources:
             sentence = self._normalize_space(str(item.get("text", ""))).lower()
             if ans in sentence:
                 return True
@@ -65,12 +72,19 @@ class AnswerResponseGuard:
     def response_supported_by_evidence(
         self, response: str, evidence_sentences: List[Dict[str, object]]
     ) -> bool:
+        return self.response_supported_by_sources(response, evidence_sentences)
+
+    def response_supported_by_sources(
+        self,
+        response: str,
+        support_sources: List[Dict[str, object]],
+    ) -> bool:
         response_tokens = self._tokenize(response)
         if not response_tokens:
             return False
         response_token_set = set(response_tokens)
         response_token_len = float(max(1, len(response_token_set)))
-        for item in evidence_sentences:
+        for item in support_sources:
             sentence_tokens = set(self._tokenize(str(item.get("text", ""))))
             if not sentence_tokens:
                 continue
@@ -87,7 +101,7 @@ class AnswerResponseGuard:
     def _fallback_usable(
         self,
         fallback_text: str,
-        evidence_sentences: List[Dict[str, object]],
+        support_sources: List[Dict[str, object]],
     ) -> bool:
         text = self._normalize_space(fallback_text).strip()
         if not text:
@@ -101,9 +115,9 @@ class AnswerResponseGuard:
         if len(self._tokenize(text)) > 24:
             return False
         # Require evidence support; do not allow naked short-number fallback.
-        if self.response_in_evidence(text, evidence_sentences):
+        if self.response_in_support_sources(text, support_sources):
             return True
-        if self.response_supported_by_evidence(text, evidence_sentences):
+        if self.response_supported_by_sources(text, support_sources):
             return True
         return False
 
@@ -114,16 +128,29 @@ class AnswerResponseGuard:
         candidates: List[Dict[str, object]],
         evidence_candidate: Optional[Dict[str, str]] = None,
         fallback_answer: Optional[str] = None,
+        support_sources: Optional[List[Dict[str, object]]] = None,
     ) -> Dict[str, str]:
         if not self.answer_context_only:
             return {"response": response, "fallback_path": "context_free"}
+        active_support_sources = list(evidence_sentences)
+        for item in list(support_sources or []):
+            text = self._normalize_space(str(item.get("text", "")))
+            if not text:
+                continue
+            active_support_sources.append(dict(item))
         top_evidence_score = (
-            float(evidence_sentences[0].get("score", 0.0)) if evidence_sentences else 0.0
+            max(
+                (
+                    float(item.get("score", 0.0) or 0.0)
+                    for item in active_support_sources
+                ),
+                default=0.0,
+            )
         )
         fallback_text = self._normalize_space(str(fallback_answer or "")).strip()
         normalized_response = self._normalize_space(response).lower()
         if normalized_response == "not found in retrieved context.":
-            if fallback_text and self._fallback_usable(fallback_text, evidence_sentences):
+            if fallback_text and self._fallback_usable(fallback_text, active_support_sources):
                 return {
                     "response": fallback_text,
                     "fallback_path": "fallback_to_reasoning_fallback",
@@ -139,7 +166,7 @@ class AnswerResponseGuard:
                     "not_found_reason": "candidate_available",
                 }
             if (
-                evidence_sentences
+                active_support_sources
                 and top_evidence_score >= self.not_found_top_evidence_score_threshold
             ):
                 if self.second_pass_llm_enabled:
@@ -158,11 +185,11 @@ class AnswerResponseGuard:
                 "response": response,
                 "fallback_path": "llm_not_found_accepted",
                 "not_found_reason": (
-                    "empty_evidence" if not evidence_sentences else "low_top_evidence_score"
+                    "empty_evidence" if not active_support_sources else "low_top_evidence_score"
                 ),
             }
-        if self.response_in_evidence(response, evidence_sentences) or self.response_supported_by_evidence(
-            response, evidence_sentences
+        if self.response_in_support_sources(response, active_support_sources) or self.response_supported_by_sources(
+            response, active_support_sources
         ):
             if evidence_candidate is not None:
                 candidate_answer = self._normalize_space(str(evidence_candidate.get("answer", "")))
@@ -177,7 +204,7 @@ class AnswerResponseGuard:
                             "fallback_path": "compress_supported_response_to_evidence_candidate",
                         }
             return {"response": response, "fallback_path": "llm_supported_by_evidence"}
-        if fallback_text and self._fallback_usable(fallback_text, evidence_sentences):
+        if fallback_text and self._fallback_usable(fallback_text, active_support_sources):
             return {
                 "response": fallback_text,
                 "fallback_path": "fallback_to_reasoning_fallback",
