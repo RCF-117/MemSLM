@@ -472,6 +472,13 @@ retrieval:
     composer_max_conflict_evidence: 2
     composer_max_graph_lines: 6
     composer_max_tool_lines: 6
+    toolkit_direct_answer_enabled: true
+    toolkit_direct_min_confidence: 0.65
+    toolkit_direct_allowed_intents:
+      - count
+      - temporal_count
+      - temporal_compare
+      - update
     final_answer_guard_enabled: false
     final_answer_second_pass_enabled: false
     second_pass_llm_enabled: true

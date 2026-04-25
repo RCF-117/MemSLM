@@ -218,6 +218,82 @@ class TestGraphReasoningToolkit(unittest.TestCase):
         self.assertEqual(payload["verified_candidate"], "")
         self.assertEqual(payload["verification_reason"], "count_missing_second_support")
 
+    def test_count_solver_prefers_latest_supported_state_when_running_total_changes(self) -> None:
+        graph = {
+            "answer_type": "count",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Qk", "meta": {}},
+                _claim_node(
+                    "c1",
+                    claim_type="fact_statement",
+                    subject="I",
+                    predicate="tried",
+                    value="four different Korean restaurants",
+                    time_anchor="2023-09-30",
+                    confidence=0.9,
+                ),
+                _claim_node(
+                    "c2",
+                    claim_type="fact_statement",
+                    subject="I",
+                    predicate="tried",
+                    value="three different Korean restaurants",
+                    time_anchor="2023-08-11",
+                    confidence=0.9,
+                ),
+                _claim_node(
+                    "c3",
+                    claim_type="fact_statement",
+                    subject="Korean restaurants",
+                    predicate="count",
+                    value="2",
+                    confidence=0.9,
+                ),
+            ],
+            "edges": [_supports_query("c1", 0.7), _supports_query("c2", 0.7), _supports_query("c3", 0.85)],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="How many Korean restaurants have I tried in my city?",
+            light_graph=graph,
+        )
+        self.assertEqual(payload["intent"], "count")
+        self.assertEqual(payload["answer_candidate"], "4")
+        self.assertTrue(payload["verified"])
+        self.assertEqual(payload["verification_reason"], "count_verified_by_latest_supported_state")
+
+    def test_update_solver_handles_numeric_more_less_questions(self) -> None:
+        graph = {
+            "answer_type": "update",
+            "nodes": [
+                {"id": "query", "type": "query", "label": "Qz", "meta": {}},
+                _claim_node(
+                    "old",
+                    claim_type="fact_statement",
+                    subject="French press ratio",
+                    predicate="ratio",
+                    value="6 ounces of water per 1 tablespoon of coffee",
+                    time_anchor="2023-02-11",
+                ),
+                _claim_node(
+                    "new",
+                    claim_type="fact_statement",
+                    subject="French press ratio",
+                    predicate="ratio",
+                    value="5 ounces of water per 1 tablespoon of coffee",
+                    time_anchor="2023-06-30",
+                ),
+            ],
+            "edges": [_supports_query("old", 1.0), _supports_query("new", 1.0)],
+        }
+        payload = self.toolkit.build_light_graph_tool_payload(
+            query="For the coffee-to-water ratio in my French press, did I switch to more water per tablespoon of coffee, or less?",
+            light_graph=graph,
+        )
+        self.assertEqual(payload["intent"], "update")
+        self.assertTrue(payload["verified"])
+        self.assertEqual(payload["verification_reason"], "update_numeric_compare_verified")
+        self.assertIn("less", payload["answer_candidate"].lower())
+
     def test_update_solver_abstains_without_state_snapshot(self) -> None:
         graph = {
             "answer_type": "update",

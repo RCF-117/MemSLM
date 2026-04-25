@@ -459,6 +459,17 @@ class GraphReasoningToolkit:
             return False, "missing_candidate"
         claims = list(subgraph.get("claims", []))
         if intent == "count":
+            resolution_mode = self._normalize(str(structured_result.get("resolution_mode", ""))).lower()
+            if resolution_mode == "latest_supported_state":
+                latest = self._normalize(str(structured_result.get("latest_count", "")))
+                latest_status = self._normalize(str(structured_result.get("latest_status", ""))).lower()
+                latest_date = self._normalize(str(structured_result.get("latest_date", "")))
+                previous = self._normalize(str(structured_result.get("previous_count", "")))
+                if latest == candidate and (latest_status in {"current", "latest"} or latest_date):
+                    if previous and previous != candidate:
+                        return True, "count_verified_by_latest_supported_state"
+                    if len([x for x in used_claim_ids if str(x).strip()]) >= 1:
+                        return True, "count_verified_by_latest_supported_state"
             explicit = [self._normalize(str(x)) for x in list(structured_result.get("explicit_count_candidates", [])) if self._normalize(str(x))]
             enumerated = [self._normalize(str(x)) for x in list(structured_result.get("enumerated_items", [])) if self._normalize(str(x))]
             if len(explicit) != 1 or explicit[0] != candidate:
@@ -502,6 +513,12 @@ class GraphReasoningToolkit:
             trusted_state_keys = {"location", "status", "state", "count", "ratio", "time", "amount"}
             if resolution_mode == "update_edge" and state_key in trusted_state_keys:
                 return True, "update_edge_verified"
+            if resolution_mode == "numeric_state_compare":
+                previous_numeric = self._normalize(str(structured_result.get("previous_numeric", "")))
+                current_numeric = self._normalize(str(structured_result.get("current_numeric", "")))
+                relation = self._normalize(str(structured_result.get("numeric_relation", ""))).lower()
+                if previous_numeric and current_numeric and previous_numeric != current_numeric and relation in {"higher", "lower"} and state_key:
+                    return True, "update_numeric_compare_verified"
             return False, "update_requires_trusted_update_edge"
         return False, "intent_not_verifiable"
 
@@ -556,6 +573,110 @@ class GraphReasoningToolkit:
             out.append(str(spelled))
         return list(dict.fromkeys(out))
 
+    @staticmethod
+    def _status_rank(status: str) -> int:
+        lowered = " ".join(str(status or "").lower().split())
+        if lowered in {"current", "latest", "now"}:
+            return 3
+        if lowered in {"recent", "ongoing"}:
+            return 2
+        if lowered in {"past", "before", "previous", "old"}:
+            return 1
+        return 0
+
+    def _claim_best_date(self, item: Dict[str, object]) -> datetime | None:
+        dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(self._claim_text(item))
+        if not dates:
+            return None
+        return sorted(dates)[-1]
+
+    def _extract_count_signal(
+        self,
+        *,
+        claim: Dict[str, object],
+        object_heads: Sequence[str],
+    ) -> Dict[str, object] | None:
+        predicate = self._normalize(str(claim.get("predicate", ""))).lower()
+        subject = self._normalize(str(claim.get("subject", "")))
+        value = self._normalize(str(claim.get("value", ""))).strip(" ,.;:!?\"'")
+        text = self._claim_text(claim)
+        claim_tokens = {self._singular(tok) for tok in self._tokenize(text)}
+        object_tokens = {self._singular(tok) for tok in object_heads if tok}
+        if object_tokens and not claim_tokens.intersection(object_tokens):
+            if predicate not in {"count", "number", "total", "item", "member"}:
+                return None
+
+        numeric_candidates = self._extract_numeric_candidates(value) or self._extract_numeric_candidates(text)
+        if not numeric_candidates:
+            return None
+
+        try:
+            count_value = int(numeric_candidates[0])
+        except (TypeError, ValueError):
+            return None
+
+        status = self._normalize(str(claim.get("status", ""))).lower()
+        score = float(claim.get("_projection_score", 0.0) or 0.0)
+        score += 0.20 * self._status_rank(status)
+        score += 0.10 * float(claim.get("support_weight", 0.0) or 0.0)
+        score += 0.10 * float(claim.get("confidence", 0.0) or 0.0)
+        kind = "summary_count" if predicate in {"count", "number", "total"} else "count_observation"
+        if kind == "count_observation":
+            score += 0.15
+        return {
+            "claim_id": self._normalize(str(claim.get("claim_id", ""))),
+            "candidate": str(count_value),
+            "count": count_value,
+            "kind": kind,
+            "status": status,
+            "status_rank": self._status_rank(status),
+            "date": self._claim_best_date(claim),
+            "text": text,
+            "score": score,
+        }
+
+    @staticmethod
+    def _numeric_measurements(text: str) -> List[float]:
+        values: List[float] = []
+        for match in re.finditer(r"\b(\d+(?:\.\d+)?)\b", str(text or "")):
+            try:
+                values.append(float(match.group(1)))
+            except ValueError:
+                continue
+        spelled = GraphReasoningToolkit._extract_spelled_number(text)
+        if spelled >= 0:
+            values.append(float(spelled))
+        deduped: List[float] = []
+        seen: set[float] = set()
+        for value in values:
+            if value in seen:
+                continue
+            seen.add(value)
+            deduped.append(value)
+        return deduped
+
+    def _extract_update_numeric_signal(self, claim: Dict[str, object]) -> Dict[str, object] | None:
+        subject = self._normalize(str(claim.get("subject", "")))
+        predicate = self._normalize(str(claim.get("predicate", ""))).lower()
+        value = self._normalize(str(claim.get("value", "")))
+        if not subject or not predicate or not value:
+            return None
+        measurements = self._numeric_measurements(value)
+        if not measurements:
+            return None
+        status = self._normalize(str(claim.get("status", ""))).lower()
+        return {
+            "claim_id": self._normalize(str(claim.get("claim_id", ""))),
+            "subject": subject,
+            "predicate": predicate,
+            "value": value,
+            "numeric_value": max(measurements),
+            "status": status,
+            "status_rank": self._status_rank(status),
+            "date": self._claim_best_date(claim),
+            "score": float(claim.get("_projection_score", 0.0) or 0.0),
+        }
+
     def _is_count_item_value(
         self,
         *,
@@ -600,6 +721,7 @@ class GraphReasoningToolkit:
         enumerated_items: List[str] = []
         used_claim_ids: List[str] = []
         seen_values: set[str] = set()
+        count_signals: List[Dict[str, object]] = []
         for claim in claims:
             text = self._claim_text(dict(claim))
             claim_tokens = {self._singular(tok) for tok in self._tokenize(text)}
@@ -611,6 +733,9 @@ class GraphReasoningToolkit:
             predicate = self._normalize(str(claim.get("predicate", ""))).lower()
             subject = self._normalize(str(claim.get("subject", "")))
             value = self._normalize(str(claim.get("value", ""))).strip(" ,.;:!?\"'")
+            signal = self._extract_count_signal(claim=claim, object_heads=object_heads)
+            if signal is not None:
+                count_signals.append(signal)
             numeric_signals = self._extract_numeric_candidates(text)
             if predicate in {"count", "number", "total"} or re.fullmatch(r"\d+", value):
                 explicit_counts.extend(numeric_signals or ([value] if value else []))
@@ -634,23 +759,62 @@ class GraphReasoningToolkit:
         final_count = ""
         abstain_reason = ""
         confidence = 0.0
+        resolution_mode = ""
+        latest_signal: Dict[str, object] | None = None
+        previous_signal: Dict[str, object] | None = None
 
-        if len(unique_counts) == 1:
+        observation_signals = [item for item in count_signals if str(item.get("kind", "")) == "count_observation"]
+        if observation_signals:
+            observation_signals.sort(
+                key=lambda item: (
+                    int(item.get("status_rank", 0) or 0),
+                    item.get("date") or datetime.min,
+                    float(item.get("score", 0.0) or 0.0),
+                ),
+                reverse=True,
+            )
+            latest_signal = observation_signals[0]
+            for item in observation_signals[1:]:
+                if str(item.get("candidate", "")) != str(latest_signal.get("candidate", "")):
+                    previous_signal = item
+                    break
+            conflicting_latest = [
+                item
+                for item in observation_signals[1:]
+                if str(item.get("candidate", "")) != str(latest_signal.get("candidate", ""))
+                and int(item.get("status_rank", 0) or 0) >= int(latest_signal.get("status_rank", 0) or 0)
+                and (
+                    (latest_signal.get("date") is None and item.get("date") is None)
+                    or (
+                        latest_signal.get("date") is not None
+                        and item.get("date") is not None
+                        and abs(((latest_signal.get("date") or datetime.min) - (item.get("date") or datetime.min)).days) <= 1
+                    )
+                )
+            ]
+            if not conflicting_latest and (
+                int(latest_signal.get("status_rank", 0) or 0) >= 1 or latest_signal.get("date") is not None
+            ):
+                final_count = str(latest_signal.get("candidate", ""))
+                confidence = 0.80 if int(latest_signal.get("status_rank", 0) or 0) >= 2 else 0.74
+                resolution_mode = "latest_supported_state"
+
+        if not final_count and len(unique_counts) == 1:
             final_count = unique_counts[0]
             if enumerated_items and int(final_count) != len(enumerated_items):
                 abstain_reason = "conflicting_count_signals"
                 final_count = ""
             else:
                 confidence = 0.74 if enumerated_items else 0.68
-        elif len(unique_counts) > 1:
+        elif not final_count and len(unique_counts) > 1:
             abstain_reason = "conflicting_count_signals"
-        elif enumerated_items:
+        elif not final_count and enumerated_items:
             if len(enumerated_items) >= 2:
                 final_count = str(len(enumerated_items))
                 confidence = 0.66
             else:
                 abstain_reason = "insufficient_object_list"
-        else:
+        elif not final_count:
             abstain_reason = "missing_count_signal"
 
         structured = {
@@ -658,6 +822,13 @@ class GraphReasoningToolkit:
             "explicit_count_candidates": unique_counts[:4],
             "enumerated_items": enumerated_items[:8],
             "final_count": final_count,
+            "resolution_mode": resolution_mode,
+            "latest_count": str((latest_signal or {}).get("candidate", "")),
+            "latest_status": str((latest_signal or {}).get("status", "")),
+            "latest_date": ((latest_signal or {}).get("date") or datetime.min).strftime("%Y-%m-%d")
+            if (latest_signal or {}).get("date") is not None
+            else "",
+            "previous_count": str((previous_signal or {}).get("candidate", "")),
         }
         if not final_count:
             return self._abstain_payload(
@@ -669,6 +840,10 @@ class GraphReasoningToolkit:
         rationale = []
         if object_heads:
             rationale.append(f"count_object_type={object_heads[0]}")
+        if resolution_mode == "latest_supported_state" and latest_signal is not None:
+            rationale.append("count_latest_supported=" + str(latest_signal.get("text", "")))
+            if previous_signal is not None:
+                rationale.append("count_previous_supported=" + str(previous_signal.get("text", "")))
         if unique_counts:
             rationale.append("count_explicit_candidates=" + " | ".join(unique_counts[:4]))
         if enumerated_items:
@@ -858,6 +1033,7 @@ class GraphReasoningToolkit:
     def _solve_update(
         self,
         *,
+        query: str,
         subgraph: Dict[str, object],
     ) -> Dict[str, object]:
         claims = list(subgraph.get("claims", []))
@@ -888,6 +1064,88 @@ class GraphReasoningToolkit:
                     used_claim_ids=[str(old_item.get("claim_id", "")).strip(), str(new_item.get("claim_id", "")).strip()],
                     rationale_lines=[f"state_update={self._claim_text(old_item)} -> {self._claim_text(new_item)}"],
                     structured_result={**structured, "resolution_mode": "update_edge"},
+                    subgraph=subgraph,
+                )
+
+        query_low = str(query or "").lower()
+        if any(token in query_low for token in ("more", "less", "higher", "lower")):
+            numeric_signals = [
+                signal
+                for signal in (self._extract_update_numeric_signal(claim) for claim in claims)
+                if signal is not None
+            ]
+            grouped: Dict[Tuple[str, str], List[Dict[str, object]]] = {}
+            for signal in numeric_signals:
+                key = (str(signal.get("subject", "")), str(signal.get("predicate", "")))
+                grouped.setdefault(key, []).append(signal)
+            ranked_groups = sorted(
+                grouped.values(),
+                key=lambda items: (
+                    len({str(item.get("numeric_value", "")) for item in items}),
+                    sum(float(item.get("score", 0.0) or 0.0) for item in items),
+                ),
+                reverse=True,
+            )
+            for items in ranked_groups:
+                distinct_values = {float(item.get("numeric_value", 0.0) or 0.0) for item in items}
+                if len(distinct_values) < 2:
+                    continue
+                items.sort(
+                    key=lambda item: (
+                        int(item.get("status_rank", 0) or 0),
+                        item.get("date") or datetime.min,
+                        float(item.get("score", 0.0) or 0.0),
+                    ),
+                    reverse=True,
+                )
+                current = items[0]
+                previous = next(
+                    (
+                        item
+                        for item in items[1:]
+                        if float(item.get("numeric_value", 0.0) or 0.0)
+                        != float(current.get("numeric_value", 0.0) or 0.0)
+                    ),
+                    None,
+                )
+                if previous is None:
+                    continue
+                current_value = float(current.get("numeric_value", 0.0) or 0.0)
+                previous_value = float(previous.get("numeric_value", 0.0) or 0.0)
+                if current_value == previous_value:
+                    continue
+                relation = "higher" if current_value > previous_value else "lower"
+                answer_word = relation
+                if "more" in query_low or "less" in query_low:
+                    answer_word = "more" if current_value > previous_value else "less"
+                answer = (
+                    f"{answer_word} now ({self._normalize(str(current.get('value', '')))} "
+                    f"instead of {self._normalize(str(previous.get('value', '')))})."
+                )
+                structured = {
+                    "subject": self._normalize(str(current.get("subject", ""))),
+                    "state_key": self._normalize(str(current.get("predicate", ""))),
+                    "old_value": self._normalize(str(previous.get("value", ""))),
+                    "new_value": self._normalize(str(current.get("value", ""))),
+                    "final_value": answer_word,
+                    "previous_numeric": str(previous_value).rstrip("0").rstrip("."),
+                    "current_numeric": str(current_value).rstrip("0").rstrip("."),
+                    "numeric_relation": relation,
+                    "resolution_mode": "numeric_state_compare",
+                }
+                return self._finalize_payload(
+                    intent="update",
+                    answer_candidate=answer,
+                    confidence=0.76,
+                    used_claim_ids=[
+                        str(current.get("claim_id", "")).strip(),
+                        str(previous.get("claim_id", "")).strip(),
+                    ],
+                    rationale_lines=[
+                        f"numeric_state_compare={self._normalize(str(previous.get('value', '')))} -> {self._normalize(str(current.get('value', '')))}",
+                        f"numeric_relation={relation}",
+                    ],
+                    structured_result=structured,
                     subgraph=subgraph,
                 )
 
@@ -1015,7 +1273,7 @@ class GraphReasoningToolkit:
         elif intent == "temporal_compare":
             payload = self._solve_temporal_compare(query=query, subgraph=subgraph)
         elif intent == "update":
-            payload = self._solve_update(subgraph=subgraph)
+            payload = self._solve_update(query=query, subgraph=subgraph)
         elif intent == "preference":
             payload = self._solve_preference(subgraph=subgraph)
         else:

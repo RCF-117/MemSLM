@@ -254,6 +254,31 @@ class TestMemoryManager(unittest.TestCase):
         self.assertEqual(out, "Not found in retrieved context.")
         self.assertEqual(llm.calls, 1)
 
+    def test_toolkit_direct_answer_bypasses_final_llm_when_verified(self):
+        cfg = self._config()
+        cfg["retrieval"]["answering"]["final_answer_guard_enabled"] = False
+        cfg["retrieval"]["answering"]["toolkit_direct_answer_enabled"] = True
+        manager, llm = self._build_manager(cfg=cfg, llm=FakeLLM("should not be used"))
+        manager.chat_runtime._last_specialist_payload = {
+            "tool_payload": {
+                "intent": "count",
+                "verified": True,
+                "verified_candidate": "4",
+                "answer_candidate": "4",
+                "verification_reason": "count_verified_by_latest_supported_state",
+                "confidence": 0.80,
+            }
+        }
+        answer, path, _ = manager._generate_final_answer(
+            input_text="How many Korean restaurants have I tried in my city?",
+            query="How many Korean restaurants have I tried in my city?",
+            prompt_text="[Filtered Evidence]\nplaceholder",
+            evidence_sentences=[],
+        )
+        self.assertEqual(answer, "4")
+        self.assertEqual(path, "toolkit_direct:count_verified_by_latest_supported_state")
+        self.assertEqual(llm.calls, 0)
+
     def test_chat_always_invokes_llm(self):
         cfg = self._config()
         llm = FakeLLM("this should not be used")

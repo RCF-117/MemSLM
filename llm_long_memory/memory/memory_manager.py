@@ -138,6 +138,22 @@ class MemoryManager:
         self.final_answer_second_pass_enabled = bool(
             answer_grounding_cfg.get("final_answer_second_pass_enabled", False)
         )
+        self.toolkit_direct_answer_enabled = bool(
+            answer_grounding_cfg.get("toolkit_direct_answer_enabled", True)
+        )
+        self.toolkit_direct_min_confidence = float(
+            answer_grounding_cfg.get("toolkit_direct_min_confidence", 0.65)
+        )
+        self.toolkit_direct_allowed_intents = {
+            str(x).strip().lower()
+            for x in list(
+                answer_grounding_cfg.get(
+                    "toolkit_direct_allowed_intents",
+                    ["count", "temporal_count", "temporal_compare", "update"],
+                )
+            )
+            if str(x).strip()
+        }
         self.specialist_layer = SpecialistLayer(
             self,
             dict(answer_grounding_cfg.get("specialist_layer", {})),

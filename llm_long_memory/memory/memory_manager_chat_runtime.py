@@ -67,6 +67,52 @@ class MemoryManagerChatRuntime:
             or norm.startswith("not found in context")
         )
 
+    def _maybe_get_toolkit_direct_answer(self, query: str) -> Tuple[str, str]:
+        if not bool(getattr(self.m, "toolkit_direct_answer_enabled", False)):
+            return "", ""
+        tool_payload = dict(dict(self._last_specialist_payload or {}).get("tool_payload", {}) or {})
+        if not bool(tool_payload.get("verified", False)):
+            return "", ""
+        intent = self._normalize_space(str(tool_payload.get("intent", ""))).lower()
+        allowed_intents = {
+            str(x).strip().lower()
+            for x in set(getattr(self.m, "toolkit_direct_allowed_intents", set()) or set())
+            if str(x).strip()
+        }
+        if intent not in allowed_intents:
+            return "", ""
+        confidence = float(tool_payload.get("confidence", 0.0) or 0.0)
+        if confidence < float(getattr(self.m, "toolkit_direct_min_confidence", 0.65)):
+            return "", ""
+        verification_reason = self._normalize_space(str(tool_payload.get("verification_reason", ""))).lower()
+        if intent == "update" and verification_reason not in {
+            "update_edge_verified",
+            "update_numeric_compare_verified",
+        }:
+            return "", ""
+        if intent == "count" and verification_reason not in {
+            "count_verified_by_enumeration",
+            "count_verified_by_duplicate_count_claims",
+            "count_verified_by_latest_supported_state",
+        }:
+            return "", ""
+        if intent == "temporal_count" and verification_reason != "temporal_count_dual_anchor_verified":
+            return "", ""
+        if intent == "temporal_compare" and verification_reason not in {
+            "temporal_compare_graph_edge_verified",
+            "temporal_compare_dual_dates_verified",
+        }:
+            return "", ""
+        candidate = self._normalize_space(
+            str(tool_payload.get("verified_candidate", "")) or str(tool_payload.get("answer_candidate", ""))
+        )
+        if not candidate:
+            return "", ""
+        normalized = self.m.answer_grounding.normalize_final_answer(candidate, query)
+        if not normalized:
+            return "", ""
+        return normalized, f"toolkit_direct:{verification_reason}"
+
     def _score_overlap(self, query: str, sentence: str) -> float:
         q = set(self._tokenize(query))
         s = set(self._tokenize(sentence))
@@ -932,6 +978,12 @@ class MemoryManagerChatRuntime:
         prompt_text: str,
         evidence_sentences: List[Dict[str, object]],
     ) -> Tuple[str, str, str]:
+        execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
+        if execution_mode == "memslm":
+            direct_answer, direct_path = self._maybe_get_toolkit_direct_answer(query)
+            if direct_answer:
+                self.m.last_stage_latency_sec["final_generation"] = 0.0
+                return direct_answer, direct_path, ""
         prompt_messages: List[Dict[str, str]] = [{"role": "user", "content": prompt_text}]
         model_name = str(getattr(self.m.llm, "model_name", "unknown"))
         logger.info(
@@ -941,7 +993,6 @@ class MemoryManagerChatRuntime:
         stage_started = time.perf_counter()
         response = self.m.llm.chat(prompt_messages)
         self.m.last_stage_latency_sec["final_generation"] = time.perf_counter() - stage_started
-        execution_mode = str(getattr(self.m, "retrieval_execution_mode", "memslm")).strip().lower()
         if execution_mode in {"model_only", "naive_rag"}:
             ai_response = self.m.answer_grounding.normalize_final_answer(
                 response, query
