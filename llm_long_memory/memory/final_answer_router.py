@@ -7,9 +7,10 @@ answering modes:
 - graph-first
 - evidence-heavy
 
-The mode now means "primary source", not "only source". The composer still adds
-a small cross-check source so the final 8B model receives a compact candidate
-packet instead of a single isolated representation.
+The router also chooses a prompt schema:
+
+- source-direct: a single primary source in compact mode
+- primary-plus-check: a primary source plus a tiny cross-check block
 """
 
 from __future__ import annotations
@@ -143,11 +144,23 @@ class FinalAnswerRouter:
         core = list(filtered.get("core_evidence", []))
         supporting = list(filtered.get("supporting_evidence", []))
         conflict = list(filtered.get("conflict_evidence", []))
+        combined = core + supporting + conflict
+
+        def _looks_assistant_text(item: Dict[str, object]) -> bool:
+            text = self._normalize(str(item.get("text", "")) or str(item.get("prompt_text", ""))).lower()
+            if not text:
+                return False
+            return text.startswith("(assistant)") or text.startswith("assistant:")
+
+        assistant_like_count = sum(1 for item in combined if _looks_assistant_text(dict(item)))
+        total_count = len(combined)
         return {
             "core_count": len(core),
             "supporting_count": len(supporting),
             "conflict_count": len(conflict),
             "top_core_score": float(core[0].get("score", 0.0) or 0.0) if core else 0.0,
+            "assistant_like_count": assistant_like_count,
+            "assistant_like_ratio": (assistant_like_count / total_count) if total_count else 0.0,
         }
 
     def route(
@@ -165,6 +178,11 @@ class FinalAnswerRouter:
         graph_stats = self._inspect_graph(light_graph)
         filter_stats = self._inspect_filter(filtered_pack)
         answer_type = self._normalize(str(dict(light_graph or {}).get("answer_type", ""))).lower()
+        has_assistant_surface = bool(
+            int(filter_stats.get("assistant_like_count", 0) or 0) > 0
+            and float(filter_stats.get("assistant_like_ratio", 0.0) or 0.0) >= 0.50
+        )
+        structured_types = {"update", "count", "temporal", "temporal_comparison"}
 
         if bool(toolkit_stats["eligible"]):
             mode = "toolkit-first"
@@ -197,41 +215,55 @@ class FinalAnswerRouter:
                 mode = "evidence-heavy"
                 reason = "fallback_to_filtered_evidence"
 
+        prompt_schema = "source-direct"
         compact_sections = {
-            "toolkit-first": [
-                "toolkit_output",
-                "light_graph",
-                "filtered_evidence",
-                "answer_rules",
-            ],
-            "graph-first": ["light_graph", "filtered_evidence", "answer_rules"],
-            "evidence-heavy": ["filtered_evidence", "light_graph", "answer_rules"],
+            "toolkit-first": ["toolkit_output", "answer_rules"],
+            "graph-first": ["light_graph", "answer_rules"],
+            "evidence-heavy": ["filtered_evidence", "answer_rules"],
         }[mode]
-        expanded_sections = ["filtered_evidence", "light_graph", "answer_rules"]
+        expanded_sections = ["filtered_evidence", "answer_rules"]
         section_roles = {
-            "toolkit-first": {
-                "toolkit_output": "primary",
-                "light_graph": "cross_check",
-                "filtered_evidence": "cross_check",
-            },
-            "graph-first": {
-                "light_graph": "primary",
-                "filtered_evidence": "cross_check",
-            },
-            "evidence-heavy": {
+            name: "primary"
+            for name in compact_sections
+            if name != "answer_rules"
+        }
+        expanded_section_roles = {"filtered_evidence": "primary"}
+        if mode != "toolkit-first" and answer_type in structured_types:
+            prompt_schema = "primary-plus-check"
+            if mode == "graph-first":
+                compact_sections = ["light_graph", "filtered_evidence", "answer_rules"]
+                section_roles = {
+                    "light_graph": "primary",
+                    "filtered_evidence": "cross_check",
+                }
+            else:
+                compact_sections = ["filtered_evidence", "light_graph", "answer_rules"]
+                section_roles = {
+                    "filtered_evidence": "primary",
+                    "light_graph": "cross_check",
+                }
+            expanded_sections = ["filtered_evidence", "light_graph", "answer_rules"]
+            expanded_section_roles = {
                 "filtered_evidence": "primary",
                 "light_graph": "cross_check",
-            },
-        }[mode]
-        expanded_section_roles = {
-            "filtered_evidence": "primary",
-            "light_graph": "cross_check",
-        }
+            }
         presentation_mode = {
             "toolkit-first": "verdict-led",
             "graph-first": "structure-led",
             "evidence-heavy": "evidence-led",
         }[mode]
+        evidence_present = bool(
+            int(filter_stats["core_count"]) + int(filter_stats["supporting_count"]) > 0
+            or bool(graph_stats["eligible"])
+            or bool(toolkit_stats["eligible"])
+        )
+        abstention_policy = "standard"
+        if evidence_present and (
+            answer_type in structured_types
+            or answer_type == "preference"
+            or has_assistant_surface
+        ):
+            abstention_policy = "missing-only"
 
         return {
             "mode": mode,
@@ -242,6 +274,9 @@ class FinalAnswerRouter:
             "section_roles": section_roles,
             "expanded_section_roles": expanded_section_roles,
             "presentation_mode": presentation_mode,
+            "prompt_schema": prompt_schema,
+            "abstention_policy": abstention_policy,
+            "assistant_surface": has_assistant_surface,
             "primary_source": (
                 "toolkit"
                 if mode == "toolkit-first"
@@ -260,18 +295,80 @@ class FinalAnswerRouter:
     ) -> str:
         mode = str(route_packet.get("mode", "evidence-heavy")).strip().lower()
         prompt_mode = str(prompt_mode or "compact").strip().lower()
-        if prompt_mode == "expanded":
+        prompt_schema = str(route_packet.get("prompt_schema", "source-direct") or "source-direct").strip().lower()
+        answer_type = str(route_packet.get("answer_type", "") or "").strip().lower()
+        abstention_policy = str(route_packet.get("abstention_policy", "standard") or "standard").strip().lower()
+        assistant_surface = bool(route_packet.get("assistant_surface", False))
+
+        def _missing_only_suffix() -> str:
             return (
-                "Adjudicate the candidate packet. Correct the answer only if the support or conflict evidence is stronger. Return only the final answer."
+                "Only answer Not found in retrieved context if the evidence does not address the question at all. "
+                "Return only the final answer."
+            )
+
+        if prompt_mode == "expanded":
+            if prompt_schema == "primary-plus-check":
+                return (
+                    "Use the Primary Evidence as the main source. "
+                    "Use the Cross-check only to resolve count, ordering, latest/current, or before/after differences. "
+                    "If both sections address the question, prefer the more specific or later-supported answer. "
+                    + _missing_only_suffix()
+                )
+            if abstention_policy == "missing-only":
+                if answer_type == "preference" or assistant_surface:
+                    return (
+                        "Use the filtered evidence below to synthesize the most specific answer it supports. "
+                        "Do not give generic advice beyond the evidence. "
+                        + _missing_only_suffix()
+                    )
+                return (
+                    "Use only the filtered evidence below. "
+                    "Answer directly from it whenever it addresses the question. "
+                    + _missing_only_suffix()
+                )
+            return (
+                "Use only the filtered evidence below. "
+                "If it is insufficient, answer Not found in retrieved context. "
+                "Return only the final answer."
             )
         if mode == "toolkit-first":
             return (
-                "Use the primary candidate unless the cross-check support clearly contradicts it. Return only the final answer."
+                "Use the toolkit result below as the answer source. "
+                "Return only the final answer."
             )
         if mode == "graph-first":
+            if prompt_schema == "primary-plus-check":
+                return (
+                    "Use the Primary Evidence as the answer source. "
+                    "Use the Cross-check only to confirm count, ordering, or latest/current details. "
+                    "If the cross-check is more specific, directly comparative, or clearly later in time, prefer it. "
+                    + _missing_only_suffix()
+                )
             return (
-                "Use the primary graph candidate unless the cross-check support clearly contradicts it. Return only the final answer."
+                "Use the light graph below as the answer source. "
+                "Return only the final answer."
+            )
+        if prompt_schema == "primary-plus-check":
+            return (
+                "Use the Primary Evidence as the main source. "
+                "Use the Cross-check only to resolve count, ordering, or latest/current differences. "
+                "If the evidence addresses the question, answer from it instead of defaulting to Not found. "
+                + _missing_only_suffix()
+            )
+        if abstention_policy == "missing-only":
+            if answer_type == "preference" or assistant_surface:
+                return (
+                    "Use the filtered evidence below. "
+                    "Synthesize the most specific answer supported by it, instead of giving generic advice. "
+                    + _missing_only_suffix()
+                )
+            return (
+                "Use the filtered evidence below. "
+                "Answer directly from it whenever it addresses the question. "
+                + _missing_only_suffix()
             )
         return (
-            "Use the primary evidence candidate. Return Not found in retrieved context only if the packet has no supported candidate. Return only the final answer."
+            "Use the filtered evidence below. "
+            "If it is insufficient, answer Not found in retrieved context. "
+            "Return only the final answer."
         )

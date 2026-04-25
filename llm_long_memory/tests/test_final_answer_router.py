@@ -55,6 +55,7 @@ class TestFinalAnswerRouter(unittest.TestCase):
         self.assertEqual(packet["mode"], "graph-first")
         self.assertEqual(packet["primary_source"], "light_graph")
         self.assertEqual(packet["presentation_mode"], "structure-led")
+        self.assertEqual(packet["prompt_schema"], "primary-plus-check")
         self.assertEqual(
             packet["compact_sections"],
             ["light_graph", "filtered_evidence", "answer_rules"],
@@ -62,6 +63,7 @@ class TestFinalAnswerRouter(unittest.TestCase):
         self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "light_graph", "answer_rules"])
         self.assertEqual(packet["section_roles"]["light_graph"], "primary")
         self.assertEqual(packet["section_roles"]["filtered_evidence"], "cross_check")
+        self.assertEqual(packet["abstention_policy"], "missing-only")
 
     def test_route_keeps_preference_out_of_graph_first(self) -> None:
         packet = self.router.route(
@@ -81,6 +83,7 @@ class TestFinalAnswerRouter(unittest.TestCase):
             toolkit_payload={"tool_payload": {"activated": False}},
         )
         self.assertEqual(packet["mode"], "evidence-heavy")
+        self.assertEqual(packet["abstention_policy"], "missing-only")
 
     def test_route_keeps_temporal_without_structure_out_of_graph_first(self) -> None:
         packet = self.router.route(
@@ -100,6 +103,12 @@ class TestFinalAnswerRouter(unittest.TestCase):
             toolkit_payload={"tool_payload": {"activated": False}},
         )
         self.assertEqual(packet["mode"], "evidence-heavy")
+        self.assertEqual(packet["prompt_schema"], "primary-plus-check")
+        self.assertEqual(
+            packet["compact_sections"],
+            ["filtered_evidence", "light_graph", "answer_rules"],
+        )
+        self.assertEqual(packet["abstention_policy"], "missing-only")
 
     def test_route_falls_back_to_evidence_heavy_when_toolkit_and_graph_are_weak(self) -> None:
         packet = self.router.route(
@@ -112,8 +121,35 @@ class TestFinalAnswerRouter(unittest.TestCase):
         self.assertEqual(packet["mode"], "evidence-heavy")
         self.assertEqual(packet["primary_source"], "filtered_evidence")
         self.assertEqual(packet["presentation_mode"], "evidence-led")
-        self.assertEqual(packet["compact_sections"], ["filtered_evidence", "light_graph", "answer_rules"])
-        self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "light_graph", "answer_rules"])
+        self.assertEqual(packet["prompt_schema"], "source-direct")
+        self.assertEqual(packet["compact_sections"], ["filtered_evidence", "answer_rules"])
+        self.assertEqual(packet["expanded_sections"], ["filtered_evidence", "answer_rules"])
+
+    def test_route_relaxes_abstention_for_assistant_dominant_evidence(self) -> None:
+        packet = self.router.route(
+            query="What did you say about the shift schedule?",
+            filtered_pack={
+                "core_evidence": [
+                    {
+                        "text": "(assistant) Here is the shift schedule for Sunday: Admon works the day shift.",
+                        "score": 0.92,
+                    }
+                ],
+                "supporting_evidence": [
+                    {
+                        "text": "(assistant) The same schedule lists Magdy on the afternoon shift.",
+                        "score": 0.81,
+                    }
+                ],
+            },
+            claim_result={},
+            light_graph={"answer_type": "factoid", "nodes": [], "edges": []},
+            toolkit_payload={"tool_payload": {"activated": False}},
+        )
+        self.assertEqual(packet["mode"], "evidence-heavy")
+        self.assertEqual(packet["prompt_schema"], "source-direct")
+        self.assertTrue(packet["assistant_surface"])
+        self.assertEqual(packet["abstention_policy"], "missing-only")
 
 
 if __name__ == "__main__":

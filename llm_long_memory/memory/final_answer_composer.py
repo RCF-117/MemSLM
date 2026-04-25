@@ -102,7 +102,6 @@ class FinalAnswerComposer:
         self.min_graph_claim_support = max(
             0.0, float(cfg.get("composer_min_graph_claim_support", 0.20))
         )
-
     def _limits_for_mode(self, prompt_mode: str | None) -> Dict[str, int]:
         mode = str(prompt_mode or self.default_prompt_mode).strip().lower()
         if mode == "expanded":
@@ -215,99 +214,145 @@ class FinalAnswerComposer:
         text = re.sub(r"^(core|support|conflict):\s*", "", text, flags=re.IGNORECASE)
         return text
 
-    def _build_candidate_packet_sections(
+    def _structured_value_fragment(self, text: str) -> str:
+        text = self._normalize_space(text)
+        if not text or "|" not in text:
+            return ""
+        parts = [self._normalize_space(part) for part in text.split("|")]
+        content_parts = [part for part in parts if part and "=" not in part]
+        if content_parts:
+            return content_parts[-1]
+        return parts[-1] if parts else ""
+
+    def _answer_form_text(self, text: str) -> str:
+        text = self._strip_source_markup(text)
+        if not text:
+            return ""
+        if ":" in text:
+            prefix, suffix = text.split(":", 1)
+            if prefix.strip().startswith(("update[", "claim[", "before", "after", "update")):
+                text = self._normalize_space(suffix)
+        if re.match(r"^[a-z_]+\s*=", text) and "|" in text:
+            _left, right = text.split("=", 1)
+            text = self._normalize_space(right)
+        if "->" in text:
+            _left, right = text.rsplit("->", 1)
+            text = self._normalize_space(right)
+        structured_value = self._structured_value_fragment(text)
+        return structured_value or text
+
+    def _dedupe_texts(self, texts: Sequence[str]) -> List[str]:
+        deduped: List[str] = []
+        seen: set[str] = set()
+        for text in texts:
+            normalized = self._normalize_space(text)
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized)
+        return deduped
+
+    def _prompt_schema(
+        self,
+        route_packet: Dict[str, object] | None,
+    ) -> str:
+        packet = dict(route_packet or {})
+        return self._normalize_space(str(packet.get("prompt_schema", "source-direct"))).lower() or "source-direct"
+
+    def _effective_section_order(
+        self,
+        section_order: Sequence[str],
+        section_roles: Dict[str, str],
+        *,
+        route_packet: Dict[str, object] | None,
+        prompt_mode: str | None,
+    ) -> List[str]:
+        order = [str(x).strip() for x in section_order if str(x).strip()]
+        _ = section_roles, route_packet, prompt_mode
+        return order
+
+    def _format_section_text(
+        self,
+        section_name: str,
+        *,
+        filtered_pack: Dict[str, object],
+        light_graph: Dict[str, object],
+        toolkit_payload: Dict[str, object],
+        limits: Dict[str, int],
+        prompt_mode: str | None,
+    ) -> str:
+        if section_name == "toolkit_output":
+            return self._format_toolkit(toolkit_payload, limits=limits)
+        if section_name == "light_graph":
+            return self._format_light_graph(
+                light_graph,
+                limits=limits,
+                prompt_mode=prompt_mode,
+            )
+        if section_name == "filtered_evidence":
+            return self._format_filtered_pack(
+                filtered_pack,
+                limits=limits,
+                prompt_mode=prompt_mode,
+            )
+        return ""
+
+    def _build_primary_plus_check_sections(
         self,
         *,
-        input_text: str,
         section_order: Sequence[str],
         section_roles: Dict[str, str],
         section_to_sources: Dict[str, List[Dict[str, object]]],
-        route_packet: Dict[str, object] | None,
-        prompt_mode: str | None,
     ) -> List[Dict[str, str]]:
-        _ = input_text
-        packet = dict(route_packet or {})
-        presentation_mode = self._normalize_space(
-            str(packet.get("presentation_mode", "") or packet.get("mode", "") or "evidence-led")
-        )
-        primary_section = ""
-        primary_sources: List[Dict[str, object]] = []
-        cross_sources: List[Tuple[str, Dict[str, object]]] = []
-        conflict_sources: List[Dict[str, object]] = []
-
+        primary_name = ""
         for section_name in section_order:
-            sources = list(section_to_sources.get(section_name, []))
-            role = str(section_roles.get(section_name, "")).strip().lower()
-            if role == "primary" and not primary_section:
-                primary_section = section_name
-                primary_sources = sources
-            else:
-                for source in sources:
-                    cross_sources.append((section_name, source))
-            for source in sources:
-                if str(source.get("bucket", "")).strip().lower() == "conflict":
-                    conflict_sources.append(source)
-
-        if not primary_section and section_order:
-            primary_section = str(section_order[0])
-            primary_sources = list(section_to_sources.get(primary_section, []))
-
-        primary_candidate = (
-            self._strip_source_markup(str(primary_sources[0].get("text", "")))
-            if primary_sources
-            else ""
-        )
-        secondary_candidate = ""
-        if cross_sources:
-            secondary_candidate = self._strip_source_markup(
-                str(cross_sources[0][1].get("text", ""))
-            )
+            if str(section_roles.get(section_name, "")).strip().lower() == "primary":
+                primary_name = section_name
+                break
+        if not primary_name and section_order:
+            primary_name = str(section_order[0])
 
         sections: List[Dict[str, str]] = []
-        candidate_lines = [
-            f"mode={presentation_mode}",
-            f"primary_source={self._source_label(primary_section)}",
+        primary_sources = list(section_to_sources.get(primary_name, []))
+        primary_lines = [
+            self._strip_source_markup(str(source.get("text", "")))
+            for source in primary_sources
         ]
-        if primary_candidate:
-            candidate_lines.append(f"primary_candidate={primary_candidate}")
-        if secondary_candidate:
-            candidate_lines.append(f"secondary_candidate={secondary_candidate}")
-        sections.append(
-            {
-                "section": "candidate_packet",
-                "text": "[Candidate Packet]\n" + "\n".join(candidate_lines),
-            }
-        )
-
-        support_lines: List[str] = []
-        primary_limit = 3 if str(prompt_mode or "").lower() != "expanded" else 6
-        for source in primary_sources[:primary_limit]:
-            text = self._strip_source_markup(str(source.get("text", "")))
-            if text:
-                support_lines.append(f"- primary: {text}")
-        cross_limit = 2 if str(prompt_mode or "").lower() != "expanded" else 3
-        for section_name, source in cross_sources[:cross_limit]:
-            text = self._strip_source_markup(str(source.get("text", "")))
-            if text:
-                support_lines.append(f"- cross_check[{self._source_label(section_name)}]: {text}")
-        if support_lines:
+        primary_lines = [line for line in primary_lines if line]
+        if primary_lines:
             sections.append(
                 {
-                    "section": "support_snippets",
-                    "text": "[Support Snippets]\n" + "\n".join(support_lines),
+                    "section": "primary_evidence",
+                    "text": (
+                        "[Primary Evidence]\n"
+                        f"Source: {self._source_label(primary_name)}\n"
+                        + "\n".join(f"- {line}" for line in primary_lines)
+                    ),
                 }
             )
 
-        conflict_lines: List[str] = []
-        for source in conflict_sources[:2]:
-            text = self._strip_source_markup(str(source.get("text", "")))
-            if text:
-                conflict_lines.append(f"- conflict: {text}")
-        if conflict_lines:
+        cross_lines: List[str] = []
+        cross_limit = 2
+        for section_name in section_order:
+            if section_name == primary_name:
+                continue
+            for source in list(section_to_sources.get(section_name, [])):
+                text = self._strip_source_markup(str(source.get("text", "")))
+                if not text:
+                    continue
+                cross_lines.append(f"- {self._source_label(section_name)}: {text}")
+                if len(cross_lines) >= cross_limit:
+                    break
+            if len(cross_lines) >= cross_limit:
+                break
+        if cross_lines:
             sections.append(
                 {
-                    "section": "conflict_or_missing",
-                    "text": "[Conflict Or Missing]\n" + "\n".join(conflict_lines),
+                    "section": "cross_check",
+                    "text": "[Cross-check]\n" + "\n".join(cross_lines),
                 }
             )
         return sections
@@ -817,8 +862,14 @@ class FinalAnswerComposer:
         _ = claim_result
         section_order = self._section_order(route_packet, prompt_mode=prompt_mode)
         section_roles = self._section_roles(route_packet, prompt_mode=prompt_mode)
+        active_sections = self._effective_section_order(
+            section_order,
+            section_roles,
+            route_packet=route_packet,
+            prompt_mode=prompt_mode,
+        )
         section_to_sources: Dict[str, List[Dict[str, object]]] = {}
-        for section_name in section_order:
+        for section_name in active_sections:
             role_limits = self._limits_for_role(
                 section_name,
                 role=section_roles.get(section_name, "cross_check"),
@@ -834,7 +885,7 @@ class FinalAnswerComposer:
                 limits=role_limits,
             )
         support_sources: List[Dict[str, object]] = []
-        for section_name in section_order:
+        for section_name in active_sections:
             support_sources.extend(list(section_to_sources.get(section_name, [])))
         return support_sources
 
@@ -855,8 +906,14 @@ class FinalAnswerComposer:
 
         section_order = self._section_order(route_packet, prompt_mode=prompt_mode)
         section_roles = self._section_roles(route_packet, prompt_mode=prompt_mode)
+        active_sections = self._effective_section_order(
+            section_order,
+            section_roles,
+            route_packet=route_packet,
+            prompt_mode=prompt_mode,
+        )
         section_to_sources: Dict[str, List[Dict[str, object]]] = {}
-        for section_name in section_order:
+        for section_name in active_sections:
             role_limits = self._limits_for_role(
                 section_name,
                 role=section_roles.get(section_name, "cross_check"),
@@ -871,21 +928,33 @@ class FinalAnswerComposer:
                 prompt_mode=prompt_mode,
                 limits=role_limits,
             )
-
-        sections = self._build_candidate_packet_sections(
-            input_text=input_text,
-            section_order=section_order,
-            section_roles=section_roles,
-            section_to_sources=section_to_sources,
-            route_packet=route_packet,
-            prompt_mode=prompt_mode,
-        )
+        prompt_schema = self._prompt_schema(route_packet)
+        if prompt_schema == "primary-plus-check":
+            sections = self._build_primary_plus_check_sections(
+                section_order=active_sections,
+                section_roles=section_roles,
+                section_to_sources=section_to_sources,
+            )
+        else:
+            section_blocks: List[Dict[str, str]] = []
+            for section_name in active_sections:
+                text = self._format_section_text(
+                    section_name,
+                    filtered_pack=filtered_pack,
+                    light_graph=light_graph,
+                    toolkit_payload=toolkit_payload,
+                    limits=limits,
+                    prompt_mode=prompt_mode,
+                )
+                if text:
+                    section_blocks.append({"section": section_name, "text": text})
+            sections = section_blocks
 
         rules = str(answer_rules_text or "").strip()
         if not rules:
             rules = (
-                "Use the primary candidate unless cross-check support clearly contradicts it.\n"
-                "Do not invent facts outside the candidate packet.\n"
+                "Use the source below as the answer source.\n"
+                "If it is insufficient, answer Not found in retrieved context.\n"
                 "Return only the final answer."
             )
         sections.append({"section": "answer_rules", "text": "[Answer Rules]\n" + rules})

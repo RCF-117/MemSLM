@@ -153,14 +153,20 @@ class TestMemoryManager(unittest.TestCase):
     def test_chat_context_only_fallback(self):
         cfg = self._config()
         cfg["retrieval"]["answering"]["context_only"] = True
+        cfg["retrieval"]["answering"]["final_answer_guard_enabled"] = True
         llm = FakeLLM("unrelated answer not in evidence")
         manager, _ = self._build_manager(cfg=cfg, llm=llm)
         out = manager.chat("where did she move?")
         self.assertEqual(out, "Not found in retrieved context.")
         self.assertGreaterEqual(llm.calls, 1)
 
-    def test_chat_uses_prompt_fallback_for_not_found(self):
-        manager, llm = self._build_manager(llm=FakeLLM("Not found in retrieved context."))
+    def test_chat_guard_keeps_not_found_without_candidate_rescue(self):
+        cfg = self._config()
+        cfg["retrieval"]["answering"]["final_answer_guard_enabled"] = True
+        manager, llm = self._build_manager(
+            cfg=cfg,
+            llm=FakeLLM("Not found in retrieved context."),
+        )
 
         def _prepare_answer_inputs(query, precomputed_context):
             return (
@@ -196,11 +202,57 @@ class TestMemoryManager(unittest.TestCase):
         self.assertEqual(out, "Not found in retrieved context.")
 
     def test_counting_fallback_is_not_forced_without_evidence_support(self):
-        manager, llm = self._build_manager(llm=FakeLLM("unrelated answer"))
+        cfg = self._config()
+        cfg["retrieval"]["answering"]["final_answer_guard_enabled"] = True
+        manager, llm = self._build_manager(cfg=cfg, llm=FakeLLM("unrelated answer"))
         manager.answer_grounding.reasoning_fallback_enabled = True
         out = manager.chat("How many items did I buy?")
         self.assertEqual(out, "Not found in retrieved context.")
         self.assertGreaterEqual(llm.calls, 1)
+
+    def test_chat_defaults_to_single_pass_direct_without_guard(self):
+        manager, llm = self._build_manager(llm=FakeLLM("Boston"))
+        out = manager.chat("where did she move?")
+        self.assertEqual(out, "Boston")
+        self.assertEqual(llm.calls, 1)
+
+    def test_chat_single_pass_direct_does_not_use_candidate_rescue(self):
+        cfg = self._config()
+        cfg["retrieval"]["answering"]["final_answer_guard_enabled"] = False
+        manager, llm = self._build_manager(
+            cfg=cfg,
+            llm=FakeLLM("Not found in retrieved context."),
+        )
+
+        def _prepare_answer_inputs(query, precomputed_context):
+            return (
+                "[Chunk 1]\n(user) I moved the painting to my bedroom.",
+                [],
+                [
+                    {
+                        "chunk_id": 1,
+                        "role": "user",
+                        "text": "(user) I moved the painting to my bedroom.",
+                        "score": 0.93,
+                        "session_id": "s1",
+                        "session_date": "2023/01/01",
+                        "has_answer": 1,
+                    }
+                ],
+                [
+                    {
+                        "text": "I moved the painting to my bedroom.",
+                        "score": 0.93,
+                        "chunk_id": 1,
+                        "session_date": "2023/01/01",
+                    }
+                ],
+            )
+
+        manager._prepare_answer_inputs = _prepare_answer_inputs  # type: ignore[method-assign]
+        out = manager.chat("Where is the painting now?")
+        self.assertEqual(out, "Not found in retrieved context.")
+        self.assertEqual(llm.calls, 1)
 
     def test_chat_always_invokes_llm(self):
         cfg = self._config()
@@ -211,8 +263,11 @@ class TestMemoryManager(unittest.TestCase):
         self.assertGreaterEqual(llm.calls, 1)
 
     def test_second_pass_uses_expanded_prompt_variant(self):
+        cfg = self._config()
+        cfg["retrieval"]["answering"]["final_answer_guard_enabled"] = True
+        cfg["retrieval"]["answering"]["final_answer_second_pass_enabled"] = True
         llm = FakeLLM(["Not found in retrieved context.", "Boston"])
-        manager, _ = self._build_manager(llm=llm)
+        manager, _ = self._build_manager(cfg=cfg, llm=llm)
         manager.last_evidence_graph_bundle = {
             "filtered_pack": {
                 "core_evidence": [

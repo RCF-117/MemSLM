@@ -19,6 +19,12 @@ class AnswerGroundingPipeline:
             self.grounding_cfg.get("reasoning_fallback_enabled", True)
         )
         self.log_decision_details = bool(self.grounding_cfg["log_decision_details"])
+        self.llm_fallback_to_top_candidate = bool(
+            self.grounding_cfg.get("llm_fallback_to_top_candidate", True)
+        )
+        self.fallback_min_score = float(
+            self.grounding_cfg.get("fallback_min_score", 0.55)
+        )
         self.response_evidence_min_token_overlap = float(
             self.grounding_cfg["response_evidence_min_token_overlap"]
         )
@@ -38,6 +44,12 @@ class AnswerGroundingPipeline:
             self.grounding_cfg["not_found_top_evidence_score_threshold"]
         )
         self.second_pass_llm_enabled = bool(self.grounding_cfg["second_pass_llm_enabled"])
+        self.second_pass_use_evidence_candidate = bool(
+            self.grounding_cfg.get("second_pass_use_evidence_candidate", True)
+        )
+        self.not_found_force_evidence_candidate_when_available = bool(
+            self.grounding_cfg.get("not_found_force_evidence_candidate_when_available", True)
+        )
         self.candidate_extractor = EvidenceCandidateExtractor(self.grounding_cfg)
         post_cfg = dict(
             self.grounding_cfg.get(
@@ -58,6 +70,8 @@ class AnswerGroundingPipeline:
         )
         self.response_guard = AnswerResponseGuard(
             answer_context_only=self.answer_context_only,
+            llm_fallback_to_top_candidate=self.llm_fallback_to_top_candidate,
+            fallback_min_score=self.fallback_min_score,
             response_evidence_min_token_overlap=self.response_evidence_min_token_overlap,
             response_evidence_min_shared_tokens=self.response_evidence_min_shared_tokens,
             response_evidence_relaxed_overlap_enabled=self.response_evidence_relaxed_overlap_enabled,
@@ -65,6 +79,8 @@ class AnswerGroundingPipeline:
             response_evidence_relaxed_min_shared_tokens=self.response_evidence_relaxed_min_shared_tokens,
             not_found_top_evidence_score_threshold=self.not_found_top_evidence_score_threshold,
             second_pass_llm_enabled=self.second_pass_llm_enabled,
+            second_pass_use_evidence_candidate=self.second_pass_use_evidence_candidate,
+            not_found_force_evidence_candidate_when_available=self.not_found_force_evidence_candidate_when_available,
             postprocess_enabled=self.postprocess_enabled,
             postprocess_strip_prefixes=self.postprocess_strip_prefixes,
             postprocess_issue_with_pattern_enabled=self.postprocess_issue_with_pattern_enabled,
@@ -176,11 +192,17 @@ class AnswerGroundingPipeline:
         self,
         response: str,
         evidence_sentences: List[Dict[str, object]],
+        candidates: Optional[List[Dict[str, object]]] = None,
+        evidence_candidate: Optional[Dict[str, str]] = None,
+        fallback_answer: Optional[str] = None,
         support_sources: Optional[List[Dict[str, object]]] = None,
     ) -> Dict[str, str]:
         return self.response_guard.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
+            candidates=list(candidates or []),
+            evidence_candidate=evidence_candidate,
+            fallback_answer=fallback_answer,
             support_sources=support_sources,
         )
 
@@ -188,12 +210,18 @@ class AnswerGroundingPipeline:
         self,
         response: str,
         evidence_sentences: List[Dict[str, object]],
+        candidates: Optional[List[Dict[str, object]]] = None,
+        evidence_candidate: Optional[Dict[str, str]] = None,
+        fallback_answer: Optional[str] = None,
         support_sources: Optional[List[Dict[str, object]]] = None,
     ) -> str:
         """Return only the final guarded answer text."""
         result = self.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
+            candidates=candidates,
+            evidence_candidate=evidence_candidate,
+            fallback_answer=fallback_answer,
             support_sources=support_sources,
         )
         return str(result.get("response", ""))
@@ -212,8 +240,10 @@ class AnswerGroundingPipeline:
         self,
         answer: str,
         query: str,
+        evidence_candidate: Optional[Dict[str, str]] = None,
     ) -> str:
         return self.response_guard.normalize_final_answer(
             answer=answer,
             query=query,
+            evidence_candidate=evidence_candidate,
         )

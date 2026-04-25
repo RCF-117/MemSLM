@@ -37,7 +37,7 @@ class TestFinalAnswerComposer(unittest.TestCase):
         self.assertEqual(out[0]["text"], "She moved to Boston in 2023.")
         self.assertEqual(len(out), 3)
 
-    def test_build_prompt_uses_only_structured_sections(self) -> None:
+    def test_build_prompt_uses_legacy_sections_for_update(self) -> None:
         prompt, sections = self.composer.build_prompt(
             input_text="Where did she move?",
             filtered_pack={
@@ -81,18 +81,20 @@ class TestFinalAnswerComposer(unittest.TestCase):
                 }
             },
             route_packet={
+                "answer_type": "update",
                 "compact_sections": ["toolkit_output", "answer_rules"],
                 "expanded_sections": ["filtered_evidence", "answer_rules"],
+                "section_roles": {"toolkit_output": "primary"},
             },
         )
         section_names = [section["section"] for section in sections]
-        self.assertEqual(section_names, ["candidate_packet", "support_snippets", "answer_rules"])
+        self.assertEqual(section_names, ["toolkit_output", "answer_rules"])
         self.assertNotIn("[Query Plan]", prompt)
         self.assertNotIn("[Graph Claims]", prompt)
-        self.assertIn("[Candidate Packet]", prompt)
-        self.assertIn("primary_source=toolkit", prompt)
-        self.assertIn("primary_candidate=Boston", prompt)
+        self.assertIn("[Toolkit Analysis]", prompt)
+        self.assertIn("tool_answer_candidate=Boston", prompt)
         self.assertIn("update_edge_verified", prompt)
+        self.assertNotIn("[Candidate Packet]", prompt)
         self.assertNotIn("[Light Graph]", prompt)
         self.assertNotIn("[Filtered Evidence]", prompt)
 
@@ -175,6 +177,7 @@ class TestFinalAnswerComposer(unittest.TestCase):
             toolkit_payload=toolkit_payload,
             prompt_mode="compact",
             route_packet={
+                "answer_type": "temporal",
                 "compact_sections": ["light_graph", "answer_rules"],
                 "expanded_sections": ["filtered_evidence", "answer_rules"],
             },
@@ -187,19 +190,18 @@ class TestFinalAnswerComposer(unittest.TestCase):
             toolkit_payload=toolkit_payload,
             prompt_mode="expanded",
             route_packet={
+                "answer_type": "temporal",
                 "compact_sections": ["light_graph", "answer_rules"],
                 "expanded_sections": ["filtered_evidence", "answer_rules"],
             },
         )
         self.assertLess(len(compact_prompt), len(expanded_prompt))
         self.assertNotIn("Core evidence one.", compact_prompt)
-        self.assertIn("[Candidate Packet]", compact_prompt)
-        self.assertIn("primary_source=light_graph", compact_prompt)
-        self.assertIn("primary_candidate=update[p]: A | p | 1 -> A | p | 2", compact_prompt)
+        self.assertIn("[Light Graph]", compact_prompt)
+        self.assertIn("update[p]: A | p | 1 -> A | p | 2", compact_prompt)
         self.assertNotIn("[Filtered Evidence]", compact_prompt)
         self.assertNotIn("Core evidence two.", expanded_prompt)
-        self.assertIn("[Candidate Packet]", expanded_prompt)
-        self.assertIn("primary_source=filtered_evidence", expanded_prompt)
+        self.assertIn("[Filtered Evidence]", expanded_prompt)
         self.assertNotIn("[Light Graph]", expanded_prompt)
         self.assertIn("Core evidence three.", expanded_prompt)
         self.assertIn("Core evidence four.", expanded_prompt)
@@ -230,12 +232,91 @@ class TestFinalAnswerComposer(unittest.TestCase):
             toolkit_payload={},
             prompt_mode="compact",
             route_packet={
+                "answer_type": "count",
                 "compact_sections": ["filtered_evidence", "answer_rules"],
                 "expanded_sections": ["filtered_evidence", "answer_rules"],
             },
         )
         self.assertIn("boots from Zara on 2/5", prompt)
-        self.assertIn("More generic advice about notes apps", prompt)
+
+    def test_build_prompt_uses_single_source_sections_for_temporal_query(self) -> None:
+        prompt, sections = self.composer.build_prompt(
+            input_text="Who did I meet first, Mark and Sarah or Tom?",
+            filtered_pack={
+                "core_evidence": [{"text": "I met Mark and Sarah about a month ago."}],
+                "supporting_evidence": [{"text": "I met Tom a few months ago at a work conference."}],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={
+                "nodes": [
+                    {
+                        "id": "a",
+                        "type": "event",
+                        "meta": {"subject": "I", "predicate": "met", "value": "Mark and Sarah"},
+                    },
+                    {
+                        "id": "b",
+                        "type": "event",
+                        "meta": {"subject": "I", "predicate": "met", "value": "Tom"},
+                    },
+                ],
+                "edges": [{"source": "a", "target": "b", "type": "before"}],
+            },
+            toolkit_payload={},
+            route_packet={
+                "answer_type": "temporal_comparison",
+                "prompt_schema": "source-direct",
+                "compact_sections": ["light_graph", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+            },
+        )
+        section_names = [section["section"] for section in sections]
+        self.assertEqual(section_names, ["light_graph", "answer_rules"])
+        self.assertIn("[Light Graph]", prompt)
+        self.assertIn("before", prompt)
+
+    def test_build_prompt_uses_primary_plus_check_sections_for_structured_route(self) -> None:
+        prompt, sections = self.composer.build_prompt(
+            input_text="Did I switch to less water per tablespoon of coffee?",
+            filtered_pack={
+                "core_evidence": [{"text": "I recently switched from 6 ounces of water per tablespoon to 5 ounces."}],
+                "supporting_evidence": [{"text": "The current ratio is 5 ounces of water per tablespoon."}],
+                "conflict_evidence": [],
+            },
+            claim_result={"claims": [], "support_units": []},
+            light_graph={
+                "nodes": [
+                    {"id": "a", "type": "state", "meta": {"subject": "coffee ratio", "predicate": "water", "value": "6 ounces"}},
+                    {"id": "b", "type": "state", "meta": {"subject": "coffee ratio", "predicate": "water", "value": "5 ounces"}},
+                ],
+                "edges": [{"source": "a", "target": "b", "type": "updates", "state_key": "ratio"}],
+            },
+            toolkit_payload={},
+            route_packet={
+                "answer_type": "update",
+                "prompt_schema": "primary-plus-check",
+                "compact_sections": ["filtered_evidence", "light_graph", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "light_graph", "answer_rules"],
+                "section_roles": {
+                    "filtered_evidence": "primary",
+                    "light_graph": "cross_check",
+                },
+            },
+            answer_rules_text=(
+                "Use the Primary Evidence as the main source. "
+                "Use the Cross-check only to resolve latest/current differences. "
+                "Return only the final answer."
+            ),
+        )
+        section_names = [section["section"] for section in sections]
+        self.assertEqual(section_names, ["primary_evidence", "cross_check", "answer_rules"])
+        self.assertIn("[Primary Evidence]", prompt)
+        self.assertIn("Source: filtered_evidence", prompt)
+        self.assertIn("[Cross-check]", prompt)
+        self.assertIn("light_graph:", prompt)
+        self.assertNotIn("[Filtered Evidence]", prompt)
+        self.assertNotIn("[Light Graph]", prompt)
 
     def test_build_prompt_projects_graph_claims_when_no_structural_edges(self) -> None:
         prompt, sections = self.composer.build_prompt(
@@ -282,10 +363,10 @@ class TestFinalAnswerComposer(unittest.TestCase):
             },
         )
         section_names = [section["section"] for section in sections]
-        self.assertIn("candidate_packet", section_names)
-        self.assertIn("[Candidate Packet]", prompt)
-        self.assertIn("primary_source=light_graph", prompt)
+        self.assertIn("light_graph", section_names)
+        self.assertIn("[Light Graph]", prompt)
         self.assertIn("claim[fact]: I | led | market research project | time=2023", prompt)
+        self.assertNotIn("[Candidate Packet]", prompt)
 
     def test_build_support_sources_follow_mode_specific_sections(self) -> None:
         sources = self.composer.build_support_sources(
@@ -382,14 +463,15 @@ class TestFinalAnswerComposer(unittest.TestCase):
             toolkit_payload={},
             route_packet={
                 "mode": "graph-first",
-                "schema_sections": ["light_graph", "filtered_evidence", "answer_rules"],
+                "schema_sections": ["light_graph", "answer_rules"],
+                "compact_sections": ["light_graph", "answer_rules"],
             },
             answer_rules_text="Use the light graph below as the answer source. Return only the final answer.",
         )
         section_names = [section["section"] for section in sections]
-        self.assertEqual(section_names, ["candidate_packet", "support_snippets", "answer_rules"])
-        self.assertIn("primary_source=light_graph", prompt)
-        self.assertIn("cross_check[filtered_evidence]: I moved the painting to my bedroom.", prompt)
+        self.assertEqual(section_names, ["light_graph", "answer_rules"])
+        self.assertIn("[Light Graph]", prompt)
+        self.assertNotIn("[Filtered Evidence]", prompt)
         self.assertIn("Use the light graph below as the answer source.", prompt)
 
     def test_build_support_sources_includes_toolkit_graph_and_filtered(self) -> None:

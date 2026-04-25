@@ -472,6 +472,8 @@ retrieval:
     composer_max_conflict_evidence: 2
     composer_max_graph_lines: 6
     composer_max_tool_lines: 6
+    final_answer_guard_enabled: false
+    final_answer_second_pass_enabled: false
     second_pass_llm_enabled: true
     span_min_tokens: 1
     span_max_tokens: 5

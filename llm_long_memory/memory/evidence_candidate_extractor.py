@@ -58,6 +58,65 @@ class EvidenceCandidateExtractor:
         self.cand_reject_tokens = {
             str(x).strip().lower() for x in list(scoring_cfg["reject_tokens"])
         }
+        self.answer_stopwords = {
+            "a",
+            "an",
+            "the",
+            "and",
+            "or",
+            "to",
+            "of",
+            "in",
+            "on",
+            "for",
+            "with",
+            "at",
+            "by",
+            "from",
+            "into",
+            "about",
+            "what",
+            "which",
+            "who",
+            "where",
+            "when",
+            "why",
+            "how",
+            "did",
+            "do",
+            "does",
+            "is",
+            "are",
+            "was",
+            "were",
+            "have",
+            "has",
+            "had",
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+        }
+        self.number_words = {
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "once",
+            "twice",
+        }
 
     @staticmethod
     def tokenize(text: str) -> List[str]:
@@ -208,6 +267,91 @@ class EvidenceCandidateExtractor:
             return True
         return False
 
+    def _query_content_tokens(self, query: str) -> set[str]:
+        return {
+            tok
+            for tok in self.tokenize(query)
+            if tok and tok not in self.answer_stopwords
+        }
+
+    def _is_clause_like_candidate(self, value: str) -> bool:
+        text = self.normalize_space(value)
+        if not text:
+            return False
+        low = text.lower()
+        if re.match(
+            r"^(?:i|we|you|he|she|they|it)\b\s+(?:am|are|was|were|have|has|had|got|do|did|can|could|should|would|will)\b",
+            low,
+        ):
+            return True
+        if re.match(r"^(?:i|we|you|he|she|they|it)\b", low):
+            return len(self.tokenize(low)) >= 4
+        return False
+
+    def _matches_intent_shape(self, value: str, intent: str) -> bool:
+        text = self.normalize_space(value)
+        if not text:
+            return False
+        low = text.lower()
+        tokens = self.tokenize(low)
+        if not tokens:
+            return False
+        if intent == "number":
+            if re.search(r"\b\d+(?:\.\d+)?\b", low):
+                return True
+            if set(tokens).intersection(self.number_words):
+                return True
+            for pattern in self.intent_number_patterns + self.intent_time_patterns:
+                if pattern.search(text):
+                    return True
+            return False
+        if intent == "time":
+            for pattern in self.intent_time_patterns:
+                if pattern.search(text):
+                    return True
+            return bool(set(tokens).intersection({"today", "yesterday", "tomorrow", "current", "latest"}))
+        if intent == "location":
+            if low.startswith(("in ", "at ", "on ")):
+                return True
+            if re.match(r"^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}$", text):
+                return True
+            return not self._is_clause_like_candidate(text) and len(tokens) <= 5
+        if intent == "name":
+            if re.match(r"^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}$", text):
+                return True
+            return not self._is_clause_like_candidate(text) and len(tokens) <= 5
+        return not self._is_clause_like_candidate(text)
+
+    def _answer_shape_score(self, query: str, value: str, intent: str) -> float:
+        text = self.normalize_space(value)
+        if not text:
+            return -1.0
+        low = text.lower()
+        tokens = self.tokenize(low)
+        if not tokens:
+            return -1.0
+        score = 0.0
+        if self._matches_intent_shape(text, intent):
+            score += 0.30
+        if self._is_clause_like_candidate(text):
+            score -= 0.55
+        token_count = len(tokens)
+        if 1 <= token_count <= self.evidence_candidate_max_tokens:
+            score += 0.08
+        elif token_count > self.evidence_candidate_max_tokens:
+            score -= 0.20
+        query_content = self._query_content_tokens(query)
+        cand_tokens = set(tokens)
+        overlap = len(query_content.intersection(cand_tokens))
+        novelty = len(cand_tokens.difference(query_content).difference(self.answer_stopwords))
+        if query_content and overlap >= max(2, len(query_content) - 1) and novelty <= 1:
+            score -= 0.30
+        if intent == "generic" and novelty >= 1 and token_count <= 6:
+            score += 0.10
+        if intent in {"number", "time"} and not self._matches_intent_shape(text, intent):
+            score -= 0.45
+        return score
+
     def collect_evidence_sentences(
         self, query: str, reranked_chunks: List[Dict[str, object]]
     ) -> List[Dict[str, object]]:
@@ -294,22 +438,41 @@ class EvidenceCandidateExtractor:
             intent_spans = self.extract_intent_candidates(text, intent)
             sentence_score = float(item.get("score", 0.0))
             generated_spans = self.generate_spans(text)
-            scored_spans: List[tuple[float, str, float]] = []
-            for value in intent_spans + generated_spans:
-                if not value:
+            copula_spans = self._extract_copula_spans(text) if intent == "generic" else []
+            scored_spans: List[tuple[float, str, float, str, float]] = []
+            for origin, values in (
+                ("intent", intent_spans),
+                ("copula", copula_spans),
+                ("span", generated_spans),
+            ):
+                for value in values:
+                    if not value:
+                        continue
+                    if value.lower() in self.cand_reject_tokens:
+                        continue
+                    if self.is_noisy_candidate(value):
+                        continue
+                    overlap_score = self.candidate_overlap(query, value)
+                    token_count = len(self.tokenize(value))
+                    length_bonus = min(0.15, float(max(0, token_count - 1)) * 0.03)
+                    answer_shape = self._answer_shape_score(query, value, intent)
+                    origin_bonus = 0.18 if origin == "intent" else 0.12 if origin == "copula" else 0.0
+                    ranked = (0.60 * overlap_score) + length_bonus + answer_shape + origin_bonus
+                    scored_spans.append((ranked, value, overlap_score, origin, answer_shape))
+            dedup_scored: List[tuple[float, str, float, str, float]] = []
+            seen_values: set[str] = set()
+            for ranked, value, overlap_score, origin, answer_shape in sorted(
+                scored_spans,
+                key=lambda x: x[0],
+                reverse=True,
+            ):
+                key = self.normalize_space(value).lower()
+                if key in seen_values:
                     continue
-                if value.lower() in self.cand_reject_tokens:
-                    continue
-                if self.is_noisy_candidate(value):
-                    continue
-                overlap_score = self.candidate_overlap(query, value)
-                token_count = len(self.tokenize(value))
-                length_bonus = min(0.15, float(max(0, token_count - 1)) * 0.03)
-                ranked = (0.75 * overlap_score) + length_bonus
-                scored_spans.append((ranked, value, overlap_score))
-            scored_spans.sort(key=lambda x: x[0], reverse=True)
-            spans = scored_spans[: self.span_top_n_per_sentence]
-            for _, value, overlap_score in spans:
+                seen_values.add(key)
+                dedup_scored.append((ranked, value, overlap_score, origin, answer_shape))
+            spans = dedup_scored[: self.span_top_n_per_sentence]
+            for _, value, overlap_score, origin, answer_shape in spans:
                 if overlap_score <= 0.0 and intent == "generic":
                     continue
                 position_score = 1.0 / float(1 + idx)
@@ -317,21 +480,35 @@ class EvidenceCandidateExtractor:
                 support = 1 if prev is None else int(prev.get("support", 1)) + 1
                 support_score = float(support) / float(evidence_size)
                 total_score = (
-                    (0.55 * overlap_score)
+                    (0.40 * overlap_score)
                     + (0.25 * sentence_score)
                     + (0.15 * support_score)
                     + (0.05 * position_score)
+                    + (0.15 * max(-1.0, min(1.0, answer_shape)))
                 )
                 if total_score < self.cand_min_score:
                     continue
                 if prev is None:
-                    candidates[value] = {"text": value, "score": total_score, "support": support}
+                    candidates[value] = {
+                        "text": value,
+                        "score": total_score,
+                        "support": support,
+                        "origin": origin,
+                        "answer_shape": answer_shape,
+                    }
                 else:
                     prev["score"] = max(float(prev["score"]), total_score)
                     prev["support"] = support
+                    prev["answer_shape"] = max(float(prev.get("answer_shape", 0.0) or 0.0), answer_shape)
+                    if origin in {"intent", "copula"}:
+                        prev["origin"] = origin
         ranked = sorted(
             candidates.values(),
-            key=lambda x: (float(x["score"]), int(x.get("support", 0))),
+            key=lambda x: (
+                float(x["score"]),
+                float(x.get("answer_shape", 0.0) or 0.0),
+                int(x.get("support", 0)),
+            ),
             reverse=True,
         )
         return ranked[: self.candidate_top_n]
@@ -345,20 +522,28 @@ class EvidenceCandidateExtractor:
         """Extract a concise answer directly from evidence before/after LLM response."""
         if not self.evidence_candidate_enabled:
             return None
-        if candidates:
-            top = candidates[0]
-            score = float(top.get("score", 0.0))
-            text = self.normalize_space(str(top.get("text", "")))
-            token_count = len(self.tokenize(text))
-            if (
-                score >= self.evidence_candidate_min_score
-                and token_count > 0
-                and token_count <= self.evidence_candidate_max_tokens
-                and not self.is_noisy_candidate(text)
-            ):
-                return {"answer": text, "source": "candidate_top1", "score": f"{score:.4f}"}
-
         intent = self.infer_answer_intent(query)
+        for cand in candidates:
+            score = float(cand.get("score", 0.0))
+            text = self.normalize_space(str(cand.get("text", "")))
+            token_count = len(self.tokenize(text))
+            answer_shape = float(cand.get("answer_shape", 0.0) or 0.0)
+            if score < self.evidence_candidate_min_score:
+                continue
+            if token_count == 0 or token_count > self.evidence_candidate_max_tokens:
+                continue
+            if self.is_noisy_candidate(text):
+                continue
+            if not self._matches_intent_shape(text, intent):
+                continue
+            if answer_shape < 0.0:
+                continue
+            return {
+                "answer": text,
+                "source": f"candidate_{str(cand.get('origin', 'ranked'))}",
+                "score": f"{score:.4f}",
+            }
+
         for item in evidence_sentences:
             score = float(item.get("score", 0.0))
             if score < self.evidence_candidate_min_score:
@@ -374,6 +559,8 @@ class EvidenceCandidateExtractor:
                     continue
                 if self.is_noisy_candidate(normalized):
                     continue
+                if not self._matches_intent_shape(normalized, intent):
+                    continue
                 return {
                     "answer": normalized,
                     "source": "intent_span",
@@ -386,6 +573,8 @@ class EvidenceCandidateExtractor:
                     if token_count == 0 or token_count > self.evidence_candidate_max_tokens:
                         continue
                     if self.is_noisy_candidate(normalized):
+                        continue
+                    if self._is_clause_like_candidate(normalized):
                         continue
                     return {
                         "answer": normalized,

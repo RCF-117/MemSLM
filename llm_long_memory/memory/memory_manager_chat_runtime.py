@@ -56,14 +56,16 @@ class MemoryManagerChatRuntime:
         toks = set(re.findall(r"[a-z0-9]+", low))
         return bool(number_words.intersection(toks))
 
-    def _plan_slots(self, query_plan: Dict[str, object]) -> set[str]:
-        slots: set[str] = set()
-        for key in ("compare_options", "state_keys", "entities", "focus_phrases", "sub_queries"):
-            for item in list(query_plan.get(key, [])):
-                value = str(item).strip().lower()
-                if value:
-                    slots.update(self._tokenize(value))
-        return slots
+    def _is_not_found_like(self, normalized: str) -> bool:
+        norm = str(normalized or "").strip().lower()
+        if not norm:
+            return False
+        return (
+            norm == "not found"
+            or norm.startswith("not found in retrieved")
+            or norm.startswith("not found in the retrieved")
+            or norm.startswith("not found in context")
+        )
 
     def _score_overlap(self, query: str, sentence: str) -> float:
         q = set(self._tokenize(query))
@@ -945,9 +947,20 @@ class MemoryManagerChatRuntime:
                 response, query
             )
             return ai_response, f"{execution_mode}_direct", ""
+        if not bool(getattr(self.m, "final_answer_guard_enabled", False)):
+            ai_response = self.m.answer_grounding.normalize_final_answer(
+                response,
+                query,
+            )
+            if not ai_response.strip():
+                ai_response = "Not found in retrieved context."
+            return ai_response, "single_pass_direct", ""
         fallback_result = self.m.answer_grounding.evaluate_response_guard(
             response=response,
             evidence_sentences=evidence_sentences,
+            candidates=[],
+            evidence_candidate=None,
+            fallback_answer=None,
             support_sources=self._last_compact_prompt_support_sources,
         )
         ai_response = str(fallback_result.get("response", "")).strip()
@@ -956,12 +969,15 @@ class MemoryManagerChatRuntime:
 
         normalized_ai_response = ai_response.strip().lower()
         should_retry_second_pass = (
-            fallback_path.startswith("retry_due_to_")
+            bool(getattr(self.m, "final_answer_second_pass_enabled", False))
+            and (
+                fallback_path.startswith("retry_due_to_")
             or (
                 self.m.answer_grounding.second_pass_llm_enabled
                 and evidence_sentences
                 and normalized_ai_response == "not found in retrieved context."
                 and fallback_path in {"fallback_to_not_found", "llm_not_found_accepted"}
+            )
             )
         )
 
@@ -989,6 +1005,9 @@ class MemoryManagerChatRuntime:
             second_result = self.m.answer_grounding.evaluate_response_guard(
                 response=second_response,
                 evidence_sentences=evidence_sentences,
+                candidates=[],
+                evidence_candidate=None,
+                fallback_answer=None,
                 support_sources=self._last_expanded_prompt_support_sources,
             )
             second_path = str(second_result.get("fallback_path", "none"))
@@ -1000,6 +1019,7 @@ class MemoryManagerChatRuntime:
             not_found_reason = str(second_result.get("not_found_reason", not_found_reason))
 
         ai_response = self.m.answer_grounding.normalize_final_answer(
-            ai_response, query
+            ai_response,
+            query,
         )
         return ai_response, fallback_path, not_found_reason

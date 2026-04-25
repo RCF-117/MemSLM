@@ -38,6 +38,56 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
             self.assertIn("text", candidates[0])
             self.assertIn("score", candidates[0])
 
+    def test_extract_evidence_candidate_prefers_intent_aligned_number_candidate(self) -> None:
+        evidence = [
+            {
+                "text": "I had been accepted into the exchange program for one week when orientation started.",
+                "score": 0.9,
+                "topic_id": "t1",
+            }
+        ]
+        candidate = self.pipeline.extract_evidence_candidate(
+            "How many weeks had I been accepted into the exchange program?",
+            evidence,
+            [
+                {"text": "exchange program", "score": 0.95, "support": 2, "origin": "span", "answer_shape": -0.2},
+                {"text": "one week", "score": 0.70, "support": 1, "origin": "intent", "answer_shape": 0.5},
+            ],
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate["answer"], "one week")
+
+    def test_extract_evidence_candidate_skips_clause_like_generic_candidate(self) -> None:
+        evidence = [
+            {
+                "text": "The degree was Business Administration.",
+                "score": 0.8,
+                "topic_id": "t1",
+            }
+        ]
+        candidate = self.pipeline.extract_evidence_candidate(
+            "What degree did I graduate with?",
+            evidence,
+            [
+                {
+                    "text": "I graduated with a degree",
+                    "score": 0.92,
+                    "support": 1,
+                    "origin": "span",
+                    "answer_shape": -0.4,
+                },
+                {
+                    "text": "Business Administration",
+                    "score": 0.70,
+                    "support": 1,
+                    "origin": "copula",
+                    "answer_shape": 0.4,
+                },
+            ],
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate["answer"], "Business Administration")
+
     def test_apply_response_guard_to_not_found(self) -> None:
         result = self.pipeline.apply_response_guard(
             response="Completely unrelated answer",
@@ -84,7 +134,7 @@ class TestAnswerGroundingPipeline(unittest.TestCase):
             first_answer="Not found in retrieved context.",
         )
         self.assertIn("[First Answer]", prompt)
-        self.assertIn("[Candidate Evidence Packet]", prompt)
+        self.assertIn("[Evidence Prompt]", prompt)
         self.assertIn("[Adjudication Task]", prompt)
         self.assertNotIn("Graph Claims", prompt)
 

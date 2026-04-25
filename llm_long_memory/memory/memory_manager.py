@@ -132,6 +132,12 @@ class MemoryManager:
         self.answer_grounding = AnswerGroundingPipeline(answer_grounding_cfg)
         self.final_answer_composer = FinalAnswerComposer(answer_grounding_cfg)
         self.final_answer_router = FinalAnswerRouter(answer_grounding_cfg)
+        self.final_answer_guard_enabled = bool(
+            answer_grounding_cfg.get("final_answer_guard_enabled", False)
+        )
+        self.final_answer_second_pass_enabled = bool(
+            answer_grounding_cfg.get("final_answer_second_pass_enabled", False)
+        )
         self.specialist_layer = SpecialistLayer(
             self,
             dict(answer_grounding_cfg.get("specialist_layer", {})),
