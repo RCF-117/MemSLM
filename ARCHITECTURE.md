@@ -98,6 +98,22 @@ It must not use dataset `question_type` at runtime.
 - [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py)
   toolkit orchestration
 
+## Non-Mainline Research Code
+
+Exploratory prototypes should not be mixed into the active runtime path.
+
+Those modules live under:
+- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/future_work/README.md`](/Users/rcf117/毕设/MemSLM/llm_long_memory/future_work/README.md)
+
+Current example:
+- predictive graph cache prototype
+- offline anticipated-query generation
+- offline graph precomputation and strict cache lookup
+
+These modules are preserved for research continuity, but they are not part of
+the active thesis mainline unless they are explicitly promoted back into the
+runtime after validation.
+
 ## Graph Visualization
 
 The light graph is also exportable as a visualization artifact:

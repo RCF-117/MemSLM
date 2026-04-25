@@ -17,6 +17,7 @@ llm_long_memory/data/processed/*.db-wal
 llm_long_memory/data/processed/*.db-shm
 llm_long_memory/data/processed/*.sqlite
 llm_long_memory/data/processed/*.sqlite3
+llm_long_memory/data/processed/predictive_graph_cache/
 llm_long_memory/data/processed/*.json
 llm_long_memory/data/processed/thesis_*/
 llm_long_memory/data/processed/thesis_*/*
