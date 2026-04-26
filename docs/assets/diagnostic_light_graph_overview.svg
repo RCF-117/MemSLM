@@ -8,15 +8,15 @@
 <text x="24" y="28" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#111827">ragdebug10_memslm_light_graph Combined Light Graph</text>
 <text x="24" y="48" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="11" fill="#5b6b7b">All question-scoped light graphs are composed into one publication-style canvas.</text>
 <text x="24" y="65" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#7b8794">graphs=20 | nodes=171 | edges=239 | layout=answer_type_grouped_elliptical_bands</text>
-<circle cx="24.00" cy="86.00" r="4.5" fill="#6f8f69" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<circle cx="24.00" cy="86.00" r="4.5" fill="#587552" stroke="rgba(17,24,39,0.18)" stroke-width="0.6" />
 <text x="34.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Count</text>
-<circle cx="116.00" cy="86.00" r="4.5" fill="#6f8fa6" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<circle cx="116.00" cy="86.00" r="4.5" fill="#587389" stroke="rgba(17,24,39,0.18)" stroke-width="0.6" />
 <text x="126.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Temporal</text>
-<circle cx="208.00" cy="86.00" r="4.5" fill="#b28268" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<circle cx="208.00" cy="86.00" r="4.5" fill="#946851" stroke="rgba(17,24,39,0.18)" stroke-width="0.6" />
 <text x="218.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Update</text>
-<circle cx="300.00" cy="86.00" r="4.5" fill="#6f7f90" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<circle cx="300.00" cy="86.00" r="4.5" fill="#586676" stroke="rgba(17,24,39,0.18)" stroke-width="0.6" />
 <text x="310.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Factoid</text>
-<circle cx="392.00" cy="86.00" r="4.5" fill="#9a84a3" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<circle cx="392.00" cy="86.00" r="4.5" fill="#7d6888" stroke="rgba(17,24,39,0.18)" stroke-width="0.6" />
 <text x="402.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Preference</text>
 <g>
 <title>0a995998 | mentions</title>
@@ -975,710 +975,710 @@
 <line x1="1801.00" y1="1726.00" x2="1866.00" y2="1778.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
 </g>
 <g>
-<circle cx="957.00" cy="864.00" r="113.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="957.00" cy="864.00" r="113.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | How many items of clothing do I need to pick up or return from a store?</title>
-<circle cx="957.00" cy="864.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="957.00" cy="864.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="957.00" y="866.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">0a995998</text>
 </g>
 <g>
 <title>0a995998 | items of clothing | count | 1</title>
-<ellipse cx="1053.00" cy="864.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1053.00" cy="864.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | items of clothing | count | 3</title>
-<ellipse cx="1017.00" cy="939.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1017.00" cy="939.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | new pair of boots | need to pick up | new pair</title>
-<circle cx="936.00" cy="958.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="936.00" cy="958.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | items of clothing | need to pick up or return | items</title>
-<ellipse cx="871.00" cy="906.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="871.00" cy="906.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | items of clothing | need to schedule | seasonal swap</title>
-<rect x="856.00" y="813.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+<rect x="856.00" y="813.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>0a995998 | items of clothing | need to track | items</title>
-<ellipse cx="936.00" cy="770.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="936.00" cy="770.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | I | need | the new pair</title>
-<ellipse cx="1017.00" cy="789.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1017.00" cy="789.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | I</title>
-<circle cx="1123.00" cy="864.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1123.00" cy="864.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="1123.00" y="867.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>0a995998 | items of clothing</title>
-<circle cx="874.00" cy="1008.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="874.00" cy="1008.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>0a995998 | new pair of boots</title>
-<circle cx="874.00" cy="720.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="874.00" cy="720.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="1410.00" cy="477.00" r="113.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="1410.00" cy="477.00" r="113.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | How many weeks have I been accepted into the exchange program when I started attending the pre-departure orientation sessions?</title>
-<circle cx="1410.00" cy="477.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="1410.00" cy="477.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="1410.00" y="479.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_4cd9eba1</text>
 </g>
 <g>
 <title>gpt4_4cd9eba1 | exchange program | count | 3</title>
-<ellipse cx="1506.00" cy="477.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1506.00" cy="477.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | I | acceptance status | accepted into exchange program</title>
-<rect x="1455.00" y="543.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+<rect x="1455.00" y="543.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | pre-departure orientation sessions | attending | every Friday since 3/27</title>
-<rect x="1374.00" y="562.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+<rect x="1374.00" y="562.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | I | acceptance status | accepted into UC Berkeley&#x27;s exchange program</title>
-<circle cx="1324.00" cy="519.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1324.00" cy="519.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | application | submitted | February 10th</title>
-<ellipse cx="1324.00" cy="435.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1324.00" cy="435.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | exchange program | count | 1</title>
-<ellipse cx="1389.00" cy="383.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1389.00" cy="383.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | I</title>
-<circle cx="1470.00" cy="402.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1470.00" cy="402.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="1470.00" y="405.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>gpt4_4cd9eba1 | exchange program</title>
-<circle cx="1576.00" cy="477.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1576.00" cy="477.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_4cd9eba1 | application</title>
-<circle cx="1327.00" cy="621.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1327.00" cy="621.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="1327.00" y="624.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">applicatio...</text>
 </g>
 <g>
 <title>gpt4_4cd9eba1 | pre-departure orientation sessions</title>
-<circle cx="1327.00" cy="333.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1327.00" cy="333.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="1776.00" cy="938.00" r="108.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="1776.00" cy="938.00" r="108.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | How many musical instruments do I currently own?</title>
-<circle cx="1776.00" cy="938.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="1776.00" cy="938.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="1776.00" y="940.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_194be4b3</text>
 </g>
 <g>
 <title>gpt4_194be4b3 | musical instruments | own | list</title>
-<rect x="1857.00" y="929.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+<rect x="1857.00" y="929.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>gpt4_194be4b3 | musical instruments | count | 1</title>
-<ellipse cx="1836.00" cy="1013.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1836.00" cy="1013.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | musical instruments | own | count</title>
-<ellipse cx="1755.00" cy="1032.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1755.00" cy="1032.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | musical instruments | own | eyboards, digital pianos, and synthesizers</title>
-<ellipse cx="1690.00" cy="980.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1690.00" cy="980.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | musical instruments | count | 3</title>
-<ellipse cx="1690.00" cy="896.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1690.00" cy="896.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | I | own | Korg B1</title>
-<ellipse cx="1755.00" cy="844.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1755.00" cy="844.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | I | own | Korg B1</title>
-<ellipse cx="1836.00" cy="863.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1836.00" cy="863.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_194be4b3 | I</title>
-<circle cx="1942.00" cy="938.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1942.00" cy="938.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="1942.00" y="941.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>gpt4_194be4b3 | musical instruments</title>
-<circle cx="1610.00" cy="938.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1610.00" cy="938.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="1166.00" cy="1311.00" r="103.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="1166.00" cy="1311.00" r="103.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>6aeb4375 | How many Korean restaurants have I tried in my city?</title>
-<circle cx="1166.00" cy="1311.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="1166.00" cy="1311.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="1166.00" y="1313.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">6aeb4375</text>
 </g>
 <g>
 <title>6aeb4375 | Korean restaurants | count | 2</title>
-<ellipse cx="1262.00" cy="1311.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1262.00" cy="1311.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6aeb4375 | I | tried | three different Korean restaurants</title>
-<ellipse cx="1226.00" cy="1386.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1226.00" cy="1386.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6aeb4375 | I | tried | four different Korean restaurants</title>
-<ellipse cx="1145.00" cy="1405.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1145.00" cy="1405.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6aeb4375 | I (assistant) | have tried | Korean restaurants</title>
-<rect x="1065.00" y="1344.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+<rect x="1065.00" y="1344.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>6aeb4375 | Korean restaurants | count | 1</title>
-<ellipse cx="1080.00" cy="1269.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="1080.00" cy="1269.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6aeb4375 | Korean restaurants</title>
-<circle cx="1145.00" cy="1217.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1145.00" cy="1217.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6aeb4375 | I</title>
-<circle cx="1226.00" cy="1236.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1226.00" cy="1236.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="1226.00" y="1239.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>6aeb4375 | I (assistant)</title>
-<circle cx="1332.00" cy="1311.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="1332.00" cy="1311.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="306.00" cy="1151.00" r="103.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="306.00" cy="1151.00" r="103.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | How many projects have I led or am currently leading?</title>
-<circle cx="306.00" cy="1151.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="306.00" cy="1151.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="306.00" y="1153.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">6d550036</text>
 </g>
 <g>
 <title>6d550036 | projects | am currently leading | working on</title>
-<ellipse cx="402.00" cy="1151.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="402.00" cy="1151.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | projects | count | number</title>
-<ellipse cx="366.00" cy="1226.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="366.00" cy="1226.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | Marketing Research class project | led | data analysis team</title>
-<circle cx="285.00" cy="1245.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="285.00" cy="1245.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | projects | led | own</title>
-<circle cx="220.00" cy="1193.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="220.00" cy="1193.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | projects | count | 2</title>
-<ellipse cx="220.00" cy="1109.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="220.00" cy="1109.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | projects | count | 1</title>
-<ellipse cx="285.00" cy="1057.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="285.00" cy="1057.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | Marketing Research class project</title>
-<circle cx="366.00" cy="1076.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="366.00" cy="1076.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6d550036 | projects</title>
-<circle cx="472.00" cy="1151.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="472.00" cy="1151.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="472.00" y="1154.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">projects</text>
 </g>
 <g>
-<circle cx="170.00" cy="717.00" r="98.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="170.00" cy="717.00" r="98.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>a9f6b44c | How many bikes did I service or plan to service in March?</title>
-<circle cx="170.00" cy="717.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="170.00" cy="717.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="170.00" y="719.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">a9f6b44c</text>
 </g>
 <g>
 <title>a9f6b44c | bikes | count | 1</title>
-<ellipse cx="266.00" cy="717.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="266.00" cy="717.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>a9f6b44c | bike chain | cleaned and lubricated | bike chain</title>
-<ellipse cx="230.00" cy="792.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="230.00" cy="792.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>a9f6b44c | bikes | count | 2</title>
-<ellipse cx="149.00" cy="811.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="149.00" cy="811.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>a9f6b44c | road bike | serviced | Pedal Power</title>
-<circle cx="84.00" cy="759.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="84.00" cy="759.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>a9f6b44c | road bike</title>
-<circle cx="84.00" cy="675.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="84.00" cy="675.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="84.00" y="678.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">road bike</text>
 </g>
 <g>
 <title>a9f6b44c | bike chain</title>
-<circle cx="149.00" cy="623.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="149.00" cy="623.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="149.00" y="626.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">bike chain</text>
 </g>
 <g>
 <title>a9f6b44c | bikes</title>
-<circle cx="230.00" cy="642.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="230.00" cy="642.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="230.00" y="645.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">bikes</text>
 </g>
 <g>
-<circle cx="622.00" cy="441.00" r="78.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+<circle cx="622.00" cy="441.00" r="78.00" fill="rgba(111, 143, 105, 0.115)" stroke="rgba(111, 143, 105, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>6b168ec8 | How many bikes do I own?</title>
-<circle cx="622.00" cy="441.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<circle cx="622.00" cy="441.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.88)" stroke-width="0.9" />
 <text x="622.00" y="443.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">6b168ec8</text>
 </g>
 <g>
 <title>6b168ec8 | bikes | count | 3</title>
-<ellipse cx="718.00" cy="441.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="718.00" cy="441.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6b168ec8 | bikes | count | three</title>
-<ellipse cx="574.00" cy="524.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<ellipse cx="574.00" cy="524.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6b168ec8 | bikes</title>
-<circle cx="574.00" cy="358.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<circle cx="574.00" cy="358.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.76)" stroke-width="0.9" />
 <text x="574.00" y="361.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">bikes</text>
 </g>
 <g>
-<circle cx="2057.00" cy="224.00" r="98.00" fill="rgba(111, 143, 166, 0.065)" stroke="rgba(111, 143, 166, 0.14)" stroke-width="0.9" />
+<circle cx="2057.00" cy="224.00" r="98.00" fill="rgba(111, 143, 166, 0.115)" stroke="rgba(111, 143, 166, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>8ebdbe50 | What certification did I complete last month?</title>
-<circle cx="2057.00" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.7)" stroke-width="0.9" />
+<circle cx="2057.00" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.88)" stroke-width="0.9" />
 <text x="2057.00" y="226.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">8ebdbe50</text>
 </g>
 <g>
 <title>8ebdbe50 | I | completed | my latest certification in Data Science</title>
-<circle cx="2153.00" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2153.00" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8ebdbe50 | certification | completed | Data Science</title>
-<circle cx="2117.00" cy="299.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2117.00" cy="299.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8ebdbe50 | certification | completed | last month</title>
-<rect x="2021.00" y="309.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.8" />
+<rect x="2021.00" y="309.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>8ebdbe50 | I | need to add | my latest certification in Data Science</title>
-<rect x="1956.00" y="257.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.8" />
+<rect x="1956.00" y="257.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>8ebdbe50 | I | completed | last month</title>
-<ellipse cx="1971.00" cy="182.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<ellipse cx="1971.00" cy="182.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8ebdbe50 | I</title>
-<circle cx="2036.00" cy="130.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2036.00" cy="130.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 <text x="2036.00" y="133.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>8ebdbe50 | certification</title>
-<circle cx="2117.00" cy="149.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2117.00" cy="149.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 <text x="2117.00" y="152.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">certification</text>
 </g>
 <g>
-<circle cx="2667.00" cy="224.00" r="83.00" fill="rgba(111, 143, 166, 0.065)" stroke="rgba(111, 143, 166, 0.14)" stroke-width="0.9" />
+<circle cx="2667.00" cy="224.00" r="83.00" fill="rgba(111, 143, 166, 0.115)" stroke="rgba(111, 143, 166, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_2655b836 | What was the first issue I had with my new car after its first service?</title>
-<circle cx="2667.00" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.7)" stroke-width="0.9" />
+<circle cx="2667.00" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.88)" stroke-width="0.9" />
 <text x="2667.00" y="226.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_2655b836</text>
 </g>
 <g>
 <title>gpt4_2655b836 | my car&#x27;s GPS system | had an issue | issue</title>
-<circle cx="2763.00" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2763.00" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_2655b836 | my car | got serviced | service</title>
-<circle cx="2667.00" cy="320.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2667.00" cy="320.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_2655b836 | my car&#x27;s GPS system</title>
-<circle cx="2571.00" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2571.00" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_2655b836 | my car</title>
-<circle cx="2667.00" cy="128.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="2667.00" cy="128.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 <text x="2667.00" y="131.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">my car</text>
 </g>
 <g>
-<circle cx="1447.00" cy="224.00" r="78.00" fill="rgba(111, 143, 166, 0.065)" stroke="rgba(111, 143, 166, 0.14)" stroke-width="0.9" />
+<circle cx="1447.00" cy="224.00" r="78.00" fill="rgba(111, 143, 166, 0.115)" stroke="rgba(111, 143, 166, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_88806d6e | Who did I meet first, Mark and Sarah or Tom?</title>
-<circle cx="1447.00" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.7)" stroke-width="0.9" />
+<circle cx="1447.00" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.88)" stroke-width="0.9" />
 <text x="1447.00" y="226.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_88806d6e</text>
 </g>
 <g>
 <title>gpt4_88806d6e | I | met | Tom</title>
-<rect x="1528.00" y="215.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.8" />
+<rect x="1528.00" y="215.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>gpt4_88806d6e | I | met | Mark and Sarah</title>
-<ellipse cx="1399.00" cy="307.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<ellipse cx="1399.00" cy="307.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>gpt4_88806d6e | I</title>
-<circle cx="1399.00" cy="141.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<circle cx="1399.00" cy="141.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.76)" stroke-width="0.9" />
 <text x="1399.00" y="144.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
-<circle cx="1357.00" cy="1604.00" r="88.00" fill="rgba(178, 130, 104, 0.065)" stroke="rgba(178, 130, 104, 0.14)" stroke-width="0.9" />
+<circle cx="1357.00" cy="1604.00" r="88.00" fill="rgba(178, 130, 104, 0.115)" stroke="rgba(178, 130, 104, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>6071bd76 | For the coffee-to-water ratio in my French press, did I switch to more water per tablespoon of coffee, or less?</title>
-<circle cx="1357.00" cy="1604.00" r="11.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.7)" stroke-width="0.9" />
+<circle cx="1357.00" cy="1604.00" r="11.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.88)" stroke-width="0.9" />
 <text x="1357.00" y="1606.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">6071bd76</text>
 </g>
 <g>
 <title>6071bd76 | French press ratio | coffee-to-water ratio | 5 ounces of water per 1 tablespoon of coffee</title>
-<ellipse cx="1453.00" cy="1604.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<ellipse cx="1453.00" cy="1604.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6071bd76 | coffee-to-water ratio in my French press | ratio | 1 tablespoon of coffee for every 6 ounces of water</title>
-<ellipse cx="1387.00" cy="1695.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<ellipse cx="1387.00" cy="1695.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6071bd76 | French press ratio | coffee-to-water ratio | 6 ounces of water per 1 tablespoon of coffee</title>
-<ellipse cx="1279.00" cy="1660.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<ellipse cx="1279.00" cy="1660.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6071bd76 | French press ratio</title>
-<circle cx="1279.00" cy="1548.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<circle cx="1279.00" cy="1548.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6071bd76 | coffee-to-water ratio in my French press</title>
-<circle cx="1387.00" cy="1513.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<circle cx="1387.00" cy="1513.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="1357.00" cy="1946.00" r="83.00" fill="rgba(178, 130, 104, 0.065)" stroke="rgba(178, 130, 104, 0.14)" stroke-width="0.9" />
+<circle cx="1357.00" cy="1946.00" r="83.00" fill="rgba(178, 130, 104, 0.115)" stroke="rgba(178, 130, 104, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>e493bb7c | Where is the painting &#x27;Ethereal Dreams&#x27; by Emma Taylor currently hanging?</title>
-<circle cx="1357.00" cy="1946.00" r="11.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.7)" stroke-width="0.9" />
+<circle cx="1357.00" cy="1946.00" r="11.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.88)" stroke-width="0.9" />
 <text x="1357.00" y="1948.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">e493bb7c</text>
 </g>
 <g>
 <title>e493bb7c | Ethereal Dreams | location | above my bed</title>
-<rect x="1438.00" y="1937.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.8" />
+<rect x="1438.00" y="1937.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>e493bb7c | Ethereal Dreams | location | bedroom</title>
-<rect x="1342.00" y="2033.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.8" />
+<rect x="1342.00" y="2033.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>e493bb7c | Ethereal Dreams | location | my bedroom</title>
-<rect x="1246.00" y="1937.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.8" />
+<rect x="1246.00" y="1937.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>e493bb7c | Ethereal Dreams</title>
-<circle cx="1357.00" cy="1850.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<circle cx="1357.00" cy="1850.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.76)" stroke-width="0.9" />
 <text x="1357.00" y="1853.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">Ethereal Dream...</text>
 </g>
 <g>
-<circle cx="3257.00" cy="974.00" r="98.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+<circle cx="3257.00" cy="974.00" r="98.00" fill="rgba(111, 127, 144, 0.115)" stroke="rgba(111, 127, 144, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>6a1eabeb | What was my personal best time in the charity 5K run?</title>
-<circle cx="3257.00" cy="974.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<circle cx="3257.00" cy="974.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.88)" stroke-width="0.9" />
 <text x="3257.00" y="976.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">6a1eabeb</text>
 </g>
 <g>
 <title>6a1eabeb | personal best time charity 5k | time | 27:12</title>
-<rect x="3338.00" y="965.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="3338.00" y="965.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>6a1eabeb | I | hope | beat my personal best time</title>
-<ellipse cx="3317.00" cy="1049.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<ellipse cx="3317.00" cy="1049.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6a1eabeb | personal best time | time | 25:50</title>
-<ellipse cx="3236.00" cy="1068.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<ellipse cx="3236.00" cy="1068.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6a1eabeb | personal best time | time | 25:50</title>
-<rect x="3156.00" y="1007.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="3156.00" y="1007.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>6a1eabeb | I</title>
-<circle cx="3171.00" cy="932.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3171.00" cy="932.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 <text x="3171.00" y="935.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>6a1eabeb | personal best time charity 5k</title>
-<circle cx="3236.00" cy="880.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3236.00" cy="880.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>6a1eabeb | personal best time</title>
-<circle cx="3317.00" cy="899.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3317.00" cy="899.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="3688.00" cy="732.00" r="93.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+<circle cx="3688.00" cy="732.00" r="93.00" fill="rgba(111, 127, 144, 0.115)" stroke="rgba(111, 127, 144, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>e47becba | What degree did I graduate with?</title>
-<circle cx="3688.00" cy="732.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<circle cx="3688.00" cy="732.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.88)" stroke-width="0.9" />
 <text x="3688.00" y="734.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">e47becba</text>
 </g>
 <g>
 <title>e47becba | I | graduated with | degree in Business Administration</title>
-<rect x="3769.00" y="723.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="3769.00" y="723.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>e47becba | you | congratulated on | degree in Business Administration</title>
-<rect x="3721.00" y="806.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="3721.00" y="806.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>e47becba | I | graduated with | a degree in Business Administration</title>
-<circle cx="3640.00" cy="815.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3640.00" cy="815.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>e47becba | I | graduated with | degree in Business Administration</title>
-<rect x="3577.00" y="723.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="3577.00" y="723.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>e47becba | I</title>
-<circle cx="3640.00" cy="649.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3640.00" cy="649.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 <text x="3640.00" y="652.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
 </g>
 <g>
 <title>e47becba | you</title>
-<circle cx="3736.00" cy="649.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3736.00" cy="649.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 <text x="3736.00" y="652.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">you</text>
 </g>
 <g>
-<circle cx="3688.00" cy="1216.00" r="83.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+<circle cx="3688.00" cy="1216.00" r="83.00" fill="rgba(111, 127, 144, 0.115)" stroke="rgba(111, 127, 144, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>58470ed2 | I was going through our previous conversation about The Library of Babel, and I wanted to confirm - what did Borges say about the center and circumference of the Library?</title>
-<circle cx="3688.00" cy="1216.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<circle cx="3688.00" cy="1216.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.88)" stroke-width="0.9" />
 <text x="3688.00" y="1218.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">58470ed2</text>
 </g>
 <g>
 <title>58470ed2 | The Library | description | indefinite, perhaps infinite number of hexagonal galleries</title>
-<ellipse cx="3784.00" cy="1216.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<ellipse cx="3784.00" cy="1216.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>58470ed2 | The Library | description | sphere with center as any hexagon and inaccessible circumference</title>
-<ellipse cx="3688.00" cy="1312.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<ellipse cx="3688.00" cy="1312.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>58470ed2 | The library | is | a remarkable creation, a seemingly infinite collection of books containing every possible combination of letters and symbols</title>
-<rect x="3577.00" y="1207.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="3577.00" y="1207.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>58470ed2 | The Library</title>
-<circle cx="3688.00" cy="1120.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="3688.00" cy="1120.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 <text x="3688.00" y="1123.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">The Library</text>
 </g>
 <g>
-<circle cx="2826.00" cy="1216.00" r="78.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+<circle cx="2826.00" cy="1216.00" r="78.00" fill="rgba(111, 127, 144, 0.115)" stroke="rgba(111, 127, 144, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>7161e7e2 | I&#x27;m checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?</title>
-<circle cx="2826.00" cy="1216.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<circle cx="2826.00" cy="1216.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.88)" stroke-width="0.9" />
 <text x="2826.00" y="1218.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">7161e7e2</text>
 </g>
 <g>
 <title>7161e7e2 | Shift Rotation Sheet for GM Social Media Agents | Shift Rotation | Sunday</title>
-<rect x="2907.00" y="1207.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="2907.00" y="1207.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>7161e7e2 | Shift Rotation Sheet for GM Social Media Agents | Shift Rotation | Sunday</title>
-<rect x="2763.00" y="1290.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+<rect x="2763.00" y="1290.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>7161e7e2 | Shift Rotation Sheet for GM Social Media Agents</title>
-<circle cx="2778.00" cy="1133.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="2778.00" cy="1133.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="2826.00" cy="732.00" r="78.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+<circle cx="2826.00" cy="732.00" r="78.00" fill="rgba(111, 127, 144, 0.115)" stroke="rgba(111, 127, 144, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>8cf51dda | I&#x27;m going back to our previous conversation about the grant aim page on molecular subtypes and endometrial cancer. Can you remind me what were the three objectives we outlined for the project?</title>
-<circle cx="2826.00" cy="732.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<circle cx="2826.00" cy="732.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.88)" stroke-width="0.9" />
 <text x="2826.00" y="734.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">8cf51dda</text>
 </g>
 <g>
 <title>8cf51dda | the project | objective | validate the identified subtypes using an independent cohort of endometrial cancer samples and investigate their clinical and biological significance using a combination of functional and bioinformatic approaches</title>
-<ellipse cx="2922.00" cy="732.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<ellipse cx="2922.00" cy="732.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8cf51dda | the project | objective | identify molecular subtypes of endometrial cancer using a combination of genomic and transcriptomic approaches</title>
-<ellipse cx="2778.00" cy="815.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<ellipse cx="2778.00" cy="815.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8cf51dda | the project</title>
-<circle cx="2778.00" cy="649.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<circle cx="2778.00" cy="649.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.76)" stroke-width="0.9" />
 <text x="2778.00" y="652.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">the project</text>
 </g>
 <g>
-<circle cx="2637.00" cy="1684.00" r="118.00" fill="rgba(154, 132, 163, 0.065)" stroke="rgba(154, 132, 163, 0.14)" stroke-width="0.9" />
+<circle cx="2637.00" cy="1684.00" r="118.00" fill="rgba(154, 132, 163, 0.115)" stroke="rgba(154, 132, 163, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | What should I serve for dinner this weekend with my homegrown ingredients?</title>
-<circle cx="2637.00" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.7)" stroke-width="0.9" />
+<circle cx="2637.00" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.88)" stroke-width="0.9" />
 <text x="2637.00" y="1686.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">06f04340</text>
 </g>
 <g>
 <title>06f04340 | Recipes that Combine Basil and Mint | recipe | Herby Lemonade</title>
-<ellipse cx="2733.00" cy="1684.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="2733.00" cy="1684.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | dinner this weekend with my homegrown ingredients | preferred_direction | Herby Lemonade; Use it as a dip for snacks or as a sauce for grilled meats or vegetables; end basil with garlic, pine nuts, Parmesan, and olive oil to create a vibrant pesto sauce. Grounding: (assistant) I&#x27;m trying to find some new recipe ideas that use fresh basil and mint; sauce to serve with grilled meats or as a dip</title>
-<rect x="2682.00" y="1750.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+<rect x="2682.00" y="1750.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>06f04340 | Basil and mint | flavor | bright, herbaceous</title>
-<ellipse cx="2616.00" cy="1778.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="2616.00" cy="1778.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | dinner this weekend with my homegrown ingredients | supported_reason | (assistant) I&#x27;m trying to find some new recipe ideas that use fresh basil and mint; sauce to serve with grilled meats or as a dip</title>
-<ellipse cx="2551.00" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="2551.00" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | cooling twist | use | dip for snacks or sauce for grilled meats or vegetables</title>
-<ellipse cx="2551.00" cy="1642.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="2551.00" cy="1642.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | Basil, mint, and cherry tomatoes | combination | match made in heaven</title>
-<ellipse cx="2616.00" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="2616.00" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | cooling twist</title>
-<circle cx="2697.00" cy="1609.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="2697.00" cy="1609.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | Basil, mint, and cherry tomatoes</title>
-<circle cx="2803.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="2803.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | Recipes that Combine Basil and Mint</title>
-<circle cx="2637.00" cy="1850.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="2637.00" cy="1850.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | Basil and mint</title>
-<circle cx="2471.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="2471.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>06f04340 | dinner this weekend with my homegrown ingredients</title>
-<circle cx="2637.00" cy="1518.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="2637.00" cy="1518.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
-<circle cx="3387.00" cy="1684.00" r="113.00" fill="rgba(154, 132, 163, 0.065)" stroke="rgba(154, 132, 163, 0.14)" stroke-width="0.9" />
+<circle cx="3387.00" cy="1684.00" r="113.00" fill="rgba(154, 132, 163, 0.115)" stroke="rgba(154, 132, 163, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | I&#x27;ve been thinking about ways to stay connected with my colleagues. Any suggestions?</title>
-<circle cx="3387.00" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.7)" stroke-width="0.9" />
+<circle cx="3387.00" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.88)" stroke-width="0.9" />
 <text x="3387.00" y="1686.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">54026fce</text>
 </g>
 <g>
 <title>54026fce | ways to stay connected with my colleagues | supported_reason | (assistant) When introducing a new idea, it&#x27;s essential to frame it in a way that encourages collaboration and buy-in from your team; &quot;What if we,&quot; or &quot;Has anyone considered&quot; to make it sound like a collaborative suggestion</title>
-<ellipse cx="3483.00" cy="1684.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="3483.00" cy="1684.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | team | stay connected | have fun</title>
-<rect x="3432.00" y="1750.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+<rect x="3432.00" y="1750.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>54026fce | team | stay connected | build team culture</title>
-<ellipse cx="3366.00" cy="1778.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="3366.00" cy="1778.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | way | description | great way to stay connected and have some fun together</title>
-<ellipse cx="3301.00" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="3301.00" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | ways to stay connected with my colleagues | preferred_direction | team stay connected have fun; way description It could be a great way to stay connected and have some fun together; way description great way to stay connected and have some fun together. Grounding: (assistant) When introducing a new idea, it&#x27;s essential to frame it in a way that encourages collaboration and buy-in from your team; &quot;What if we,&quot; or &quot;Has anyone considered&quot; to make it sound like a collaborative suggestion</title>
-<rect x="3286.00" y="1633.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+<rect x="3286.00" y="1633.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>54026fce | team | stay connected | virtual coffee breaks</title>
-<ellipse cx="3366.00" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="3366.00" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | way | description | It could be a great way to stay connected and have some fun together</title>
-<ellipse cx="3447.00" cy="1609.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="3447.00" cy="1609.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | ways to stay connected with my colleagues</title>
-<circle cx="3553.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="3553.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>54026fce | team</title>
-<circle cx="3304.00" cy="1828.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="3304.00" cy="1828.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 <text x="3304.00" y="1831.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">team</text>
 </g>
 <g>
 <title>54026fce | way</title>
-<circle cx="3304.00" cy="1540.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="3304.00" cy="1540.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 <text x="3304.00" y="1543.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">way</text>
 </g>
 <g>
-<circle cx="1887.00" cy="1684.00" r="108.00" fill="rgba(154, 132, 163, 0.065)" stroke="rgba(154, 132, 163, 0.14)" stroke-width="0.9" />
+<circle cx="1887.00" cy="1684.00" r="108.00" fill="rgba(154, 132, 163, 0.115)" stroke="rgba(154, 132, 163, 0.24)" stroke-width="0.9" />
 </g>
 <g>
 <title>8a2466db | Can you recommend some resources where I can learn more about video editing?</title>
-<circle cx="1887.00" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.7)" stroke-width="0.9" />
+<circle cx="1887.00" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.88)" stroke-width="0.9" />
 <text x="1887.00" y="1686.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">8a2466db</text>
 </g>
 <g>
 <title>8a2466db | resource | recommend | resource</title>
-<rect x="1968.00" y="1675.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+<rect x="1968.00" y="1675.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>8a2466db | Adobe Premiere Pro | is | powerful video editing software</title>
-<ellipse cx="1947.00" cy="1759.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="1947.00" cy="1759.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8a2466db | video editing | supported_reason | (assistant) To dive deeper into these topics, I recommend the following resources; (assistant) I&#x27;m trying to learn more about some advanced settings for video editing with Adobe Premiere Pro, which I enjoy to use</title>
-<ellipse cx="1866.00" cy="1778.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="1866.00" cy="1778.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8a2466db | video editing | preferred_direction | YouTube channels like Premiere Bro, Video Copilot, and Adobe Creative Cloud; Adobe Premiere Pro&#x27;s official documentation and tutorials; powerful video editing software. Grounding: (assistant) To dive deeper into these topics, I recommend the following resources; (assistant) I&#x27;m trying to learn more about some advanced settings for video editing with Adobe Premiere Pro, which I enjoy to use</title>
-<rect x="1786.00" y="1717.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+<rect x="1786.00" y="1717.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.8" />
 </g>
 <g>
 <title>8a2466db | Timeline Panel | is | heart of Premiere Pro</title>
-<ellipse cx="1801.00" cy="1642.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<ellipse cx="1801.00" cy="1642.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8a2466db | Timeline Panel</title>
-<circle cx="1866.00" cy="1590.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="1866.00" cy="1590.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8a2466db | Adobe Premiere Pro</title>
-<circle cx="1947.00" cy="1609.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="1947.00" cy="1609.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 <g>
 <title>8a2466db | resource</title>
-<circle cx="2053.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="2053.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 <text x="2053.00" y="1687.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">resource</text>
 </g>
 <g>
 <title>8a2466db | video editing</title>
-<circle cx="1721.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<circle cx="1721.00" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.76)" stroke-width="0.9" />
 </g>
 </svg>
