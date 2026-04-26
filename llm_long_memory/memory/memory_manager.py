@@ -257,7 +257,7 @@ class MemoryManager:
         self.evidence_light_graph = EvidenceLightGraph(self.evidence_graph_cfg)
 
         self.chat_runtime = MemoryManagerChatRuntime(self)
-        self.last_prompt_eval_chunks: List[Dict[str, str]] = []
+        self.last_prompt_trace_sections: List[Dict[str, str]] = []
         self.last_query_plan: Dict[str, object] = {}
         self.last_evidence_graph_bundle: Dict[str, object] = {}
         self.last_stage_latency_sec: Dict[str, float] = {}
@@ -1203,7 +1203,7 @@ class MemoryManager:
     ) -> str:
         """Handle one user message with retrieval, LLM call, and memory updates."""
         chat_started = time.perf_counter()
-        self.last_prompt_eval_chunks = []
+        self.last_prompt_trace_sections = []
         self.last_stage_latency_sec = {}
         logger.info(f"MemoryManager.chat: user input='{input_text}'")
         query = retrieval_query if retrieval_query is not None else input_text
@@ -1251,12 +1251,12 @@ class MemoryManager:
             precomputed_context=precomputed_context,
         )
 
-    def _set_prompt_eval_chunks(
+    def _set_prompt_trace_sections(
         self, generation_context: List[Dict[str, str]] | str
     ) -> None:
         if isinstance(generation_context, str):
             text = str(generation_context).strip()
-            self.last_prompt_eval_chunks = [{"section": "prompt", "text": text}] if text else []
+            self.last_prompt_trace_sections = [{"section": "prompt", "text": text}] if text else []
             return
         sections: List[Dict[str, str]] = []
         for item in generation_context:
@@ -1268,7 +1268,11 @@ class MemoryManager:
             if section:
                 payload["section"] = section
             sections.append(payload)
-        self.last_prompt_eval_chunks = sections
+        self.last_prompt_trace_sections = sections
+
+    def _set_prompt_eval_chunks(self, generation_context: List[Dict[str, str]] | str) -> None:
+        """Backward-compatible alias for prompt-trace recording."""
+        self._set_prompt_trace_sections(generation_context)
 
     def _build_generation_prompt(
         self,
@@ -1285,20 +1289,6 @@ class MemoryManager:
             chunks=chunks,
         )
 
-    def offline_build_long_graph_from_chunks(
-        self,
-        chunks: List[Dict[str, object]],
-        query: Optional[str] = None,
-    ) -> int:
-        """Deprecated compatibility hook.
-
-        The active pipeline builds only question-scoped evidence graphs, so this
-        method intentionally does nothing and returns 0.
-        """
-        _ = chunks
-        _ = query
-        return 0
-
     def _generate_final_answer(
         self,
         *,
@@ -1314,15 +1304,19 @@ class MemoryManager:
             evidence_sentences=evidence_sentences,
         )
 
-    def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
-        """Return prompt-grounded chunks used by the most recent chat call."""
+    def get_last_prompt_trace_sections(self) -> List[Dict[str, str]]:
+        """Return prompt-trace sections sent to the model in the last chat call."""
         return [
             {
                 "section": str(item.get("section", "")),
                 "text": str(item.get("text", "")),
             }
-            for item in self.last_prompt_eval_chunks
+            for item in self.last_prompt_trace_sections
         ]
+
+    def get_last_prompt_eval_chunks(self) -> List[Dict[str, str]]:
+        """Backward-compatible alias for prompt-trace access."""
+        return self.get_last_prompt_trace_sections()
 
     def close(self) -> None:
         """Close owned resources."""

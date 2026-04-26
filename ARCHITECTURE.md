@@ -131,6 +131,7 @@ The repository tracks quality at multiple layers:
 - `light_graph`
 - `toolkit`
 - `final_answer`
+- `prompt_trace`
 
 For analysis and plotting, metrics should be read in two views:
 - overall
@@ -149,3 +150,17 @@ The intended research value comes from:
 - making stage failure inspectable
 - preserving reproducibility under local 8B constraints
 - keeping one active runtime code path clean and inspectable
+
+## Prompt Trace Semantics
+
+Evaluation metrics such as answer density and noise density are computed over
+the final prompt trace sent to the answer model, not over raw retrieved
+evidence alone.
+
+This distinction is intentional:
+
+- `retrieved evidence` describes what the retrieval and filtering pipeline kept
+- `prompt trace` describes what the final answer model actually received
+
+Keeping those two views separate makes failure analysis more honest and easier
+to maintain.

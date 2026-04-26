@@ -848,7 +848,7 @@ class MemoryManagerChatRuntime:
             self._last_expanded_prompt_text = compact_prompt
             self._last_compact_prompt_support_sources = []
             self._last_expanded_prompt_support_sources = []
-            self.m._set_prompt_eval_chunks(prompt_sections)
+            self.m._set_prompt_trace_sections(prompt_sections)
             return compact_prompt
 
         if execution_mode == "naive_rag":
@@ -876,7 +876,7 @@ class MemoryManagerChatRuntime:
             self._last_expanded_prompt_text = ""
             self._last_compact_prompt_support_sources = []
             self._last_expanded_prompt_support_sources = []
-            self.m._set_prompt_eval_chunks(prompt_sections)
+            self.m._set_prompt_trace_sections(prompt_sections)
             return compact_prompt
         if execution_mode == "filter_only":
             route_packet = {
@@ -919,7 +919,7 @@ class MemoryManagerChatRuntime:
             self._last_expanded_prompt_support_sources = compact_support_sources
             self._last_compact_route_packet = dict(route_packet)
             self._last_expanded_route_packet = dict(route_packet)
-            self.m._set_prompt_eval_chunks(prompt_sections)
+            self.m._set_prompt_trace_sections(prompt_sections)
             return compact_prompt
 
         stage_started = time.perf_counter()
@@ -970,7 +970,7 @@ class MemoryManagerChatRuntime:
         self._last_expanded_prompt_support_sources = []
         self._last_compact_route_packet = dict(route_packet or {})
         self._last_expanded_route_packet = dict(route_packet or {})
-        self.m._set_prompt_eval_chunks(prompt_sections)
+        self.m._set_prompt_trace_sections(prompt_sections)
         return compact_prompt
 
     def _build_expanded_generation_prompt(

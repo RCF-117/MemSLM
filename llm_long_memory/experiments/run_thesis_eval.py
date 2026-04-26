@@ -3,39 +3,16 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-from typing import List
 
-from llm_long_memory.baselines.run_baseline import run_one_dataset
-from llm_long_memory.experiments.build_eval_subset import build_subset
-from llm_long_memory.experiments.export_eval_report import export_report
-from llm_long_memory.utils.helpers import (
-    dataset_display_name,
-    load_config,
-    resolve_project_path,
-    sanitize_filename_part,
+from llm_long_memory.experiments.cli_utils import (
+    load_runtime_config,
+    parse_csv,
+    prepare_eval_dataset,
+    register_mode_run,
 )
-
-
-def _parse_csv(value: str | None) -> List[str]:
-    if not value:
-        return []
-    return [item.strip() for item in str(value).split(",") if item.strip()]
-
-
-def _resolve_dataset_path(config: dict, dataset: str | None, split: str | None) -> str:
-    if dataset:
-        return str(resolve_project_path(dataset))
-    dataset_cfg = config["dataset"]
-    split_map = dataset_cfg.get("eval_splits", {})
-    if split:
-        key = split.strip().lower()
-    else:
-        key = str(dataset_cfg.get("default_eval_split", "")).strip().lower()
-    if not key or key not in split_map:
-        known = ", ".join(sorted(str(k) for k in split_map.keys()))
-        raise ValueError(f"Unknown dataset split '{key}'. Available: {known}")
-    return str(resolve_project_path(str(split_map[key])))
+from llm_long_memory.experiments.eval_launcher import run_one_dataset
+from llm_long_memory.experiments.export_eval_report import export_report
+from llm_long_memory.utils.helpers import sanitize_filename_part
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,9 +83,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    config = load_config(args.config)
+    config = load_runtime_config(args.config)
     default_model = str(config["llm"]["default_model"])
-    source_dataset = _resolve_dataset_path(config, args.dataset.strip() or None, args.split.strip() or None)
+    prepared = prepare_eval_dataset(
+        config=config,
+        dataset=(args.dataset.strip() or None),
+        split=(args.split.strip() or None),
+        max_total=int(args.max_total),
+        per_type=int(args.per_type),
+        seed=int(args.seed),
+        keep_types=(parse_csv(args.keep_types) or parse_csv(args.include_types)),
+        drop_types=parse_csv(args.drop_types),
+        subset_output=args.subset_output.strip() or None,
+    )
     swap_roles = bool(args.swap_roles)
     report_dir = args.report_dir.strip() or str(
         config["evaluation"].get("thesis_report_dir", "data/processed/thesis_reports_debug_analysis")
@@ -116,47 +103,11 @@ def main() -> None:
     graph_output_dir = args.graph_output_dir.strip() or str(
         config["evaluation"].get("thesis_graph_dir", "data/graphs_thesis_debug_analysis")
     )
-
-    subset_path = source_dataset
-    keep_types = _parse_csv(args.keep_types) or _parse_csv(args.include_types)
-    drop_types = _parse_csv(args.drop_types)
-    needs_subset = int(args.max_total) > 0 or int(args.per_type) > 0 or bool(keep_types) or bool(drop_types)
-    if needs_subset:
-        if args.subset_output.strip():
-            subset_path = str(resolve_project_path(args.subset_output))
-        else:
-            subset_dir = resolve_project_path(
-                str(config["evaluation"].get("thesis_subset_dir", "data/raw/LongMemEval/thesis_subsets"))
-            )
-            subset_dir.mkdir(parents=True, exist_ok=True)
-            source_stem = sanitize_filename_part(Path(source_dataset).stem)
-            keep_tag = (
-                f"__keep-{sanitize_filename_part('-'.join(sorted(keep_types)))}"
-                if keep_types
-                else ""
-            )
-            drop_tag = (
-                f"__drop-{sanitize_filename_part('-'.join(sorted(drop_types)))}"
-                if drop_types
-                else ""
-            )
-            subset_name = (
-                f"{source_stem}__max{int(args.max_total)}__per{int(args.per_type)}"
-                f"__seed{int(args.seed)}{keep_tag}{drop_tag}.json"
-            )
-            subset_path = str(subset_dir / subset_name)
-        build_subset(
-            source_path=source_dataset,
-            output_path=subset_path,
-            max_total=int(args.max_total),
-            per_type=int(args.per_type),
-            seed=int(args.seed),
-            keep_types=keep_types,
-            drop_types=drop_types,
-        )
-        print(f"subset_dataset: {subset_path}")
-    else:
-        print(f"subset_dataset: {source_dataset} (no extra subset built)")
+    print(
+        f"subset_dataset: {prepared.effective_dataset}"
+        if prepared.subset_built
+        else f"dataset: {prepared.source_dataset} (no extra subset built)"
+    )
 
     model_override = args.model.strip() or default_model
     judge_override = args.judge_model.strip() or default_model
@@ -165,13 +116,13 @@ def main() -> None:
 
     run_id = run_one_dataset(
         args.config,
-        subset_path,
+        prepared.effective_dataset,
         int(args.max_total) if int(args.max_total) > 0 else 0,
         model_name=model_override,
         resume_run_id=(args.resume_run_id.strip() or None),
     )
-    dataset_name = dataset_display_name(source_dataset)
-    dataset_artifact_name = Path(source_dataset).name
+    dataset_name = prepared.dataset_name
+    dataset_artifact_name = prepared.source_dataset.rsplit("/", 1)[-1]
     artifact_prefix = "__".join(
         [
             sanitize_filename_part(run_id),
@@ -195,29 +146,15 @@ def main() -> None:
         node_graph_json_path=(node_graph_json_path or None),
         judge_enabled=bool(args.judge),
     )
-    # Register the latest memslm run so report builders can resolve it without rerunning eval.
     try:
-        from llm_long_memory.evaluation.eval_store import EvalStore
-        import sqlite3
-
-        db_file = resolve_project_path(report_db_path)
-        conn = sqlite3.connect(str(db_file))
-        conn.row_factory = sqlite3.Row
-        try:
-            store = EvalStore(conn=conn, eval_cfg=dict(config["evaluation"]))
-            store.create_tables()
-            store.ensure_schema_compat()
-            if run_id:
-                store.log_thesis_mode_run(
-                    dataset_name=dataset_name,
-                    mode="memslm",
-                    run_id=run_id,
-                    model_name=model_override,
-                    judge_model=judge_override,
-                    commit=True,
-                )
-        finally:
-            conn.close()
+        register_mode_run(
+            config=config,
+            dataset_name=dataset_name,
+            mode="memslm",
+            run_id=run_id,
+            model_name=model_override,
+            judge_model=judge_override,
+        )
     except Exception as exc:  # pragma: no cover - best effort registration
         print(f"[warn] failed to register memslm mode metadata: {exc}")
 

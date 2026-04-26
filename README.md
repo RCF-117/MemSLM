@@ -13,6 +13,7 @@ This repository is organized as a research-grade engineering codebase:
 - reproducible evaluation runners
 - stage-wise audit and visualization support
 - exploratory ideas isolated under `future_work/`
+- shared experiment launch helpers and stable CLI entrypoints
 
 ## Highlights
 
@@ -149,6 +150,7 @@ Design principles:
 More detail:
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md)
 
 ## Core Visualizations
 
@@ -226,6 +228,20 @@ Mainline experiments assume local Ollama-compatible models such as:
 Runtime configuration:
 
 - [config.yaml](llm_long_memory/config/config.yaml)
+
+## Maintenance Shortcuts
+
+For everyday repository maintenance:
+
+```bash
+make compile
+make test
+make eval-memslm SPLIT=ragdebug10
+```
+
+The complete paper-facing reproduction protocol is documented in:
+
+- [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md)
 
 ## Running the Main Experiments
 

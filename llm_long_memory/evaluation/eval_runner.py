@@ -198,7 +198,7 @@ def run_eval(
                 precomputed_context=precomputed_context,
             )
             latency_sec = time.perf_counter() - started
-            prompt_chunks = manager.get_last_prompt_eval_chunks()
+            prompt_chunks = manager.get_last_prompt_trace_sections()
             answer_token_density = compute_answer_token_density(expected, prompt_chunks, eval_cfg)
             noise_density = compute_noise_density(expected, prompt_chunks, eval_cfg)
             if compute_answer_span_hit_enabled:

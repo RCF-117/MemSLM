@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-from typing import Tuple
 
-from llm_long_memory.experiments.build_eval_subset import build_subset
-from llm_long_memory.experiments.run_thesis_eval import _parse_csv, _resolve_dataset_path
-from llm_long_memory.experiments.direct_eval_runner import build_model_only_prompt, run_direct_mode_eval
-from llm_long_memory.utils.helpers import (
-    dataset_display_name,
-    load_config,
-    resolve_project_path,
-    sanitize_filename_part,
+from llm_long_memory.experiments.cli_utils import (
+    load_runtime_config,
+    parse_csv,
+    prepare_eval_dataset,
 )
+from llm_long_memory.experiments.direct_eval_runner import build_model_only_prompt, run_direct_mode_eval
 
 
 MODE_NAME = "model-only"
@@ -37,54 +32,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _prepare_dataset(args: argparse.Namespace, config: dict) -> Tuple[str, str]:
-    source_dataset = _resolve_dataset_path(config, args.dataset.strip() or None, args.split.strip() or None)
-    source_name = dataset_display_name(source_dataset)
-    keep_types = _parse_csv(args.keep_types) or _parse_csv(args.include_types)
-    drop_types = _parse_csv(args.drop_types)
-    needs_subset = int(args.max_total) > 0 or int(args.per_type) > 0 or bool(keep_types) or bool(drop_types)
-    if not needs_subset:
-        print(f"dataset: {source_dataset} (no extra subset built)")
-        return source_name, source_dataset
-
-    if args.subset_output.strip():
-        subset_path = str(resolve_project_path(args.subset_output))
-    else:
-        subset_dir = resolve_project_path(
-            str(config["evaluation"].get("thesis_subset_dir", "data/raw/LongMemEval/thesis_subsets"))
-        )
-        subset_dir.mkdir(parents=True, exist_ok=True)
-        source_stem = sanitize_filename_part(Path(source_dataset).stem)
-        keep_tag = f"__keep-{sanitize_filename_part('-'.join(sorted(keep_types)))}" if keep_types else ""
-        drop_tag = f"__drop-{sanitize_filename_part('-'.join(sorted(drop_types)))}" if drop_types else ""
-        subset_name = (
-            f"{source_stem}__max{int(args.max_total)}__per{int(args.per_type)}"
-            f"__seed{int(args.seed)}{keep_tag}{drop_tag}.json"
-        )
-        subset_path = str(subset_dir / subset_name)
-    build_subset(
-        source_path=source_dataset,
-        output_path=subset_path,
+def main() -> None:
+    args = parse_args()
+    config = load_runtime_config(args.config)
+    prepared = prepare_eval_dataset(
+        config=config,
+        dataset=(args.dataset.strip() or None),
+        split=(args.split.strip() or None),
         max_total=int(args.max_total),
         per_type=int(args.per_type),
         seed=int(args.seed),
-        keep_types=keep_types,
-        drop_types=drop_types,
+        keep_types=(parse_csv(args.keep_types) or parse_csv(args.include_types)),
+        drop_types=parse_csv(args.drop_types),
+        subset_output=args.subset_output.strip() or None,
     )
-    print(f"subset_dataset: {subset_path}")
-    return source_name, subset_path
-
-
-def main() -> None:
-    args = parse_args()
-    config = load_config(args.config)
-    dataset_name, dataset_path = _prepare_dataset(args, config)
+    print(
+        f"subset_dataset: {prepared.effective_dataset}"
+        if prepared.subset_built
+        else f"dataset: {prepared.source_dataset} (no extra subset built)"
+    )
     model_name = args.model.strip() or str(config["llm"]["default_model"])
     run_id = run_direct_mode_eval(
         mode_name=MODE_NAME,
         config=config,
-        dataset_path=dataset_path,
-        dataset_name=dataset_name,
+        dataset_path=prepared.effective_dataset,
+        dataset_name=prepared.dataset_name,
         model_name=model_name,
         prompt_builder=lambda instance, _cfg: build_model_only_prompt(instance),
         resume_run_id=(args.resume_run_id.strip() or None),

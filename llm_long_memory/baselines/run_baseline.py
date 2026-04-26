@@ -1,19 +1,26 @@
-"""Run frozen Mid-RAG baseline evaluations with fixed protocol."""
+"""Compatibility wrapper for legacy baseline batch entrypoints.
+
+The repository's active evaluation surfaces now live under
+``llm_long_memory.experiments``. This module is kept as a thin wrapper so old
+commands do not break abruptly, while all shared implementation stays in the
+main experiment launcher.
+"""
 
 from __future__ import annotations
 
 import argparse
-import copy
 from pathlib import Path
 
-from llm_long_memory.evaluation.eval_runner import run_eval
-from llm_long_memory.llm.ollama_client import LLM
-from llm_long_memory.memory.memory_manager import MemoryManager
-from llm_long_memory.utils.helpers import load_config
+from llm_long_memory.experiments.eval_launcher import (
+    run_one_dataset,
+    run_one_dataset_with_config,
+)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run frozen baseline evaluations.")
+    parser = argparse.ArgumentParser(
+        description="Run the legacy two-dataset baseline batch using the active launcher."
+    )
     parser.add_argument(
         "--config",
         type=str,
@@ -47,45 +54,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_one_dataset(
-    config_path: str,
-    dataset_path: str,
-    sample_limit: int,
-    model_name: str | None = None,
-    resume_run_id: str | None = None,
-) -> str:
-    config = load_config(config_path)
-    config["dataset"]["eval_max_instances"] = sample_limit
-    return run_one_dataset_with_config(
-        config=config,
-        dataset_path=dataset_path,
-        sample_limit=sample_limit,
-        model_name=model_name,
-        resume_run_id=resume_run_id,
-    )
-
-
-def run_one_dataset_with_config(
-    *,
-    config: dict,
-    dataset_path: str,
-    sample_limit: int,
-    model_name: str | None = None,
-    resume_run_id: str | None = None,
-) -> str:
-    config = copy.deepcopy(config)
-    config["dataset"]["eval_max_instances"] = sample_limit
-
-    llm_cfg = config["llm"]
-    selected_model = (model_name or str(llm_cfg["default_model"])).strip() or str(llm_cfg["default_model"])
-    llm = LLM(model_name=selected_model, host=str(llm_cfg["host"]))
-    manager = MemoryManager(llm=llm, config=config)
-    try:
-        return run_eval(manager, dataset_path, config, resume_run_id=resume_run_id)
-    finally:
-        manager.close()
-
-
 def main() -> None:
     args = parse_args()
     sample20 = str(Path(args.sample20_path))
@@ -97,6 +65,9 @@ def main() -> None:
 
     print(f"[Baseline] oracle: {oracle}")
     run_one_dataset(args.config, oracle, args.sample_limit, model_name=model_override)
+
+
+__all__ = ["run_one_dataset", "run_one_dataset_with_config"]
 
 
 if __name__ == "__main__":

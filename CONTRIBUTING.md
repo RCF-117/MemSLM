@@ -1,6 +1,6 @@
 # Contributing Guide
 
-This repository is a research-grade engineering project. Contributions should improve clarity, reproducibility, or experimental control without weakening the frozen baseline.
+This repository is a research-grade engineering project. Contributions should improve clarity, reproducibility, or experimental control without weakening the reproducibility contract of the active mainline.
 
 ## Working Principles
 
@@ -13,7 +13,6 @@ This repository is a research-grade engineering project. Contributions should im
 ## Branch Discipline
 
 - `main`: active development and thesis experiments
-- `baseline/midrag_v1`: frozen mid-memory baseline for controlled comparison
 
 Recommended commit style:
 - one concern per commit
@@ -22,10 +21,11 @@ Recommended commit style:
 
 ## Testing
 
-Before merging or pushing a meaningful change, run the relevant tests:
+Before merging or pushing a meaningful change, run the relevant checks:
 
 ```bash
-pytest -q llm_long_memory/tests
+make compile
+make test
 ```
 
 If the change touches evaluation or experiment runners, also verify the help output and a minimal dry run when possible.

@@ -43,6 +43,10 @@ The active experiment workflow is centered on:
 
 - `direct_eval_runner.py`
   - shared direct-baseline runner for `model-only` and `naive rag`
+- `cli_utils.py`
+  - shared dataset resolution, subset materialization, and mode registration helpers
+- `eval_launcher.py`
+  - shared `MemoryManager`-backed dataset launcher for mainline and ablation runners
 - `report_audit_utils.py`
   - shared source-audit summary loader for reports
 
@@ -57,6 +61,14 @@ The active experiment workflow is centered on:
 4. refresh fixed baselines only when needed
 5. export the per-run report
 6. export the consolidated comparison report
+
+Shortcut commands are also exposed at the repository root:
+
+- `make eval-memslm`
+- `make eval-model-only`
+- `make eval-naive-rag`
+- `make eval-ablation`
+- `make compare`
 
 ## Graph Utility
 
