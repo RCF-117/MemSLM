@@ -68,6 +68,30 @@ Detailed reports:
 - [Held-out comparison report](llm_long_memory/data/processed/thesis_reports_debug_analysis/LongMemEval_Held-Out_Matched_Split__model-qwen3_8b__judge-deepseek-r1_8b__memslm-centered_comparison.md)
 - [Extended results index](docs/RESULTS.md)
 
+### Per-Type Accuracy Snapshot
+
+#### LongMemEval Diagnostic Split
+
+| Question Type | model-only | naive rag | memslm | filter-only ablation |
+| --- | ---: | ---: | ---: | ---: |
+| `knowledge-update` | `0.0000` | `0.0000` | `0.7500` | `0.7500` |
+| `multi-session` | `0.0000` | `0.0000` | `0.0000` | `0.0000` |
+| `single-session-assistant` | `0.3333` | `0.3333` | `0.3333` | `0.0000` |
+| `single-session-preference` | `0.0000` | `0.0000` | `0.3333` | `0.0000` |
+| `single-session-user` | `0.6667` | `0.6667` | `1.0000` | `1.0000` |
+| `temporal-reasoning` | `0.0000` | `0.0000` | `0.6667` | `0.6667` |
+
+#### LongMemEval Held-Out Matched Split
+
+| Question Type | model-only | naive rag | memslm | filter-only ablation |
+| --- | ---: | ---: | ---: | ---: |
+| `knowledge-update` | `0.0000` | `0.2500` | `0.2500` | `0.2500` |
+| `multi-session` | `0.0000` | `0.0000` | `0.5000` | `0.2500` |
+| `single-session-assistant` | `0.0000` | `0.6667` | `0.6667` | `0.6667` |
+| `single-session-preference` | `0.0000` | `0.0000` | `0.3333` | `0.3333` |
+| `single-session-user` | `0.0000` | `0.3333` | `0.6667` | `0.6667` |
+| `temporal-reasoning` | `0.0000` | `0.0000` | `0.0000` | `0.0000` |
+
 ## Extension Generalization Checks
 
 These runs are not part of the core two-split, four-way comparison grid above. They are intended as external-validity checks for robustness under changed evaluation conditions.
@@ -154,17 +178,20 @@ More detail:
 
 ## Core Visualizations
 
-### Stage-Wise Answerability
+### Stage-Wise Analysis
 
 #### Diagnostic Split
 
 ![Diagnostic stage-wise answerability by type](docs/assets/diagnostic_stage_answerability_by_type.svg)
 
-#### Held-Out Matched Split
+#### Diagnostic Split Latency by Type
 
-![Held-out stage-wise answerability by type](docs/assets/heldout_stage_answerability_by_type.svg)
+![Diagnostic stage-wise latency by type](docs/assets/diagnostic_stage_latency_by_type.svg)
 
-These figures are the most useful stage-wise diagnostics in the current thesis workflow because they show where answer-bearing signal survives and where it collapses.
+These figures are the most useful stage-wise diagnostics in the current thesis workflow because they show both:
+
+- where answer-bearing signal survives across stages
+- where the runtime cost concentrates across question types
 
 ### Light-Graph Overview
 

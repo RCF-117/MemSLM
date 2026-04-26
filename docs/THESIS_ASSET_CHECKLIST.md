@@ -77,19 +77,20 @@ Raw source:
 
 - [stage_answerability_by_type.svg](llm_long_memory/data/processed/thesis_visuals/diagnostic_split_audit__stage_answerability_by_type.svg)
 
-### Figure 2. Stage-Wise Answerability on Held-Out Split
+### Figure 2. Stage-Wise Latency on Diagnostic Split
 
 Use:
 
-- held-out structural robustness figure
+- companion figure to stage-wise answerability
+- shows where runtime cost concentrates across question types
 
 Preferred asset:
 
-- [heldout_stage_answerability_by_type.svg](docs/assets/heldout_stage_answerability_by_type.svg)
+- [diagnostic_stage_latency_by_type.svg](docs/assets/diagnostic_stage_latency_by_type.svg)
 
 Raw source:
 
-- [stage_answerability_by_type.svg](llm_long_memory/data/processed/thesis_visuals/heldout_split_audit__stage_answerability_by_type.svg)
+- [stage_latency_by_type.svg](llm_long_memory/data/processed/thesis_visuals/diagnostic_split_audit__stage_latency_by_type.svg)
 
 ### Figure 3. Combined Light Graph Overview on Diagnostic Split
 
