@@ -53,9 +53,11 @@ The active experiment workflow is centered on:
 ## Recommended Workflow
 
 1. build or select a debug split
-   Note: in paper-facing text, the main `ragdebug10` split is referred to as the `LongMemEval Diagnostic Split`.
-   The matched held-out evaluation subset is exposed as `diagnostic_heldout20`, with paper-facing name `LongMemEval Held-Out Matched Split`.
-   A lightweight LoCoMo generalization subset is exposed as `locomo_matched20`, with paper-facing name `LoCoMo Matched-Distribution 20-QA Subset`.
+   Recommended public split keys:
+   - `longmemeval_diagnostic` -> `LongMemEval Diagnostic Split`
+   - `longmemeval_heldout_matched` -> `LongMemEval Held-Out Matched Split`
+   - `locomo_matched_distribution_20qa` -> `LoCoMo Matched-Distribution 20-QA Subset`
+   Legacy aliases such as `ragdebug10`, `diagnostic_heldout20`, and `locomo_matched20` are still accepted for backward compatibility.
 2. run source audit to inspect stage-wise evidence quality
 3. refresh `memslm`
 4. refresh fixed baselines only when needed

@@ -236,7 +236,7 @@ For everyday repository maintenance:
 ```bash
 make compile
 make test
-make eval-memslm SPLIT=ragdebug10
+make eval-memslm SPLIT=longmemeval_diagnostic
 ```
 
 The complete paper-facing reproduction protocol is documented in:
@@ -250,7 +250,7 @@ The complete paper-facing reproduction protocol is documented in:
 ```bash
 python3 -m llm_long_memory.experiments.run_thesis_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b \
   --judge \
   --judge-model deepseek-r1:8b
@@ -261,7 +261,7 @@ python3 -m llm_long_memory.experiments.run_thesis_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_model_only_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b
 ```
 
@@ -270,7 +270,7 @@ python3 -m llm_long_memory.experiments.run_model_only_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_naive_rag_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b
 ```
 
@@ -279,7 +279,7 @@ python3 -m llm_long_memory.experiments.run_naive_rag_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_ablation_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b
 ```
 
@@ -288,7 +288,7 @@ python3 -m llm_long_memory.experiments.run_ablation_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_thesis_compare \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --judge \
   --judge-model deepseek-r1:8b \
   --model-only-run-id <run_id> \
@@ -304,7 +304,7 @@ PYTHONPATH=. python3 llm_long_memory/scripts/run_answer_source_audit.py \
   --config llm_long_memory/config/config.yaml \
   --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json \
   --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis \
-  --output-prefix answer_source_audit_ragdebug10_memslm \
+  --output-prefix answer_source_audit_longmemeval_diagnostic_memslm \
   --enable-evidence-filter \
   --enable-evidence-claims \
   --enable-evidence-light-graph
@@ -312,7 +312,7 @@ PYTHONPATH=. python3 llm_long_memory/scripts/run_answer_source_audit.py \
 python3 -m llm_long_memory.experiments.export_graph \
   --audit-json <audit_json_path> \
   --output-dir llm_long_memory/data/graphs_thesis_debug_analysis \
-  --artifact-prefix ragdebug10_memslm_light_graph
+  --artifact-prefix longmemeval_diagnostic_memslm_light_graph
 ```
 
 More experiment entry points:

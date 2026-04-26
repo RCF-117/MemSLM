@@ -16,12 +16,15 @@ _DATASET_DISPLAY_NAMES = {
     "oracle": "LongMemEval Oracle Split",
     "longmemeval_oracle": "LongMemEval Oracle Split",
     "ragdebug10": "LongMemEval Diagnostic Split",
+    "longmemeval_diagnostic": "LongMemEval Diagnostic Split",
     "longmemeval_ragdebug10_rebuilt": "LongMemEval Diagnostic Split",
     "diagnostic_heldout20": "LongMemEval Held-Out Matched Split",
+    "longmemeval_heldout_matched": "LongMemEval Held-Out Matched Split",
     "longmemeval_eval_subset_matched_to_diagnostic_split": "LongMemEval Held-Out Matched Split",
     "quick5": "LongMemEval Diagnostic Mini Split",
     "locomo10": "LoCoMo Evaluation Subset",
     "locomo_matched20": "LoCoMo Matched-Distribution 20-QA Subset",
+    "locomo_matched_distribution_20qa": "LoCoMo Matched-Distribution 20-QA Subset",
     "locomo20_matched_distribution": "LoCoMo Matched-Distribution 20-QA Subset",
     "locomo": "LoCoMo Evaluation Set",
 }
@@ -90,9 +93,13 @@ def dataset_display_name(value: str | None) -> str:
     joined = " ".join(sorted(aliases))
     if "ragdebug" in joined and "quick5" in joined:
         return "LongMemEval Diagnostic Mini Split"
-    if "diagnostic_heldout20" in joined or "matched_to_diagnostic_split" in joined:
+    if (
+        "diagnostic_heldout20" in joined
+        or "longmemeval_heldout_matched" in joined
+        or "matched_to_diagnostic_split" in joined
+    ):
         return "LongMemEval Held-Out Matched Split"
-    if "ragdebug" in joined:
+    if "longmemeval_diagnostic" in joined or "ragdebug" in joined:
         return "LongMemEval Diagnostic Split"
     if "sample20" in joined or "sample_20" in joined:
         return "LongMemEval Sample-20 Split"
@@ -100,7 +107,11 @@ def dataset_display_name(value: str | None) -> str:
         return "LongMemEval Oracle Split"
     if "locomo10" in joined:
         return "LoCoMo Evaluation Subset"
-    if "locomo_matched20" in joined or "locomo20_matched_distribution" in joined:
+    if (
+        "locomo_matched20" in joined
+        or "locomo_matched_distribution_20qa" in joined
+        or "locomo20_matched_distribution" in joined
+    ):
         return "LoCoMo Matched-Distribution 20-QA Subset"
     if "locomo" in joined:
         return "LoCoMo Evaluation Set"

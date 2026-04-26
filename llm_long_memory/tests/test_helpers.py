@@ -7,7 +7,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from llm_long_memory.utils.helpers import load_config
+from llm_long_memory.utils.helpers import dataset_display_name, load_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
@@ -101,6 +101,20 @@ class TestHelpers(unittest.TestCase):
             config_path.write_text(content + "\n", encoding="utf-8")
             cfg = load_config(str(config_path))
             self.assertEqual(cfg["embedding"]["dim"], 8)
+
+    def test_dataset_display_name_accepts_public_split_aliases(self) -> None:
+        self.assertEqual(
+            dataset_display_name("longmemeval_diagnostic"),
+            "LongMemEval Diagnostic Split",
+        )
+        self.assertEqual(
+            dataset_display_name("longmemeval_heldout_matched"),
+            "LongMemEval Held-Out Matched Split",
+        )
+        self.assertEqual(
+            dataset_display_name("locomo_matched_distribution_20qa"),
+            "LoCoMo Matched-Distribution 20-QA Subset",
+        )
 
 
 if __name__ == "__main__":

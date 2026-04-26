@@ -2,7 +2,7 @@ PYTHON ?= python3
 CONFIG ?= llm_long_memory/config/config.yaml
 MODEL ?= qwen3:8b
 JUDGE ?= deepseek-r1:8b
-SPLIT ?= ragdebug10
+SPLIT ?= longmemeval_diagnostic
 
 .PHONY: help test compile lint format eval-memslm eval-model-only eval-naive-rag eval-ablation compare
 
@@ -18,6 +18,11 @@ help:
 	@echo "  make eval-naive-rag   Run the naive RAG baseline"
 	@echo "  make eval-ablation    Run the filter-only ablation"
 	@echo "  make compare          Export the consolidated thesis comparison report"
+	@echo ""
+	@echo "Recommended public split keys:"
+	@echo "  longmemeval_diagnostic"
+	@echo "  longmemeval_heldout_matched"
+	@echo "  locomo_matched_distribution_20qa"
 
 test:
 	$(PYTHON) -m unittest discover -s llm_long_memory/tests -v

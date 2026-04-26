@@ -30,9 +30,9 @@ make test
 
 ### Main datasets
 
-- `ragdebug10`
+- `longmemeval_diagnostic`
   - paper-facing name: `LongMemEval Diagnostic Split`
-- `diagnostic_heldout20`
+- `longmemeval_heldout_matched`
   - paper-facing name: `LongMemEval Held-Out Matched Split`
 
 ### Main methods
@@ -54,7 +54,7 @@ make test
 ```bash
 python3 -m llm_long_memory.experiments.run_thesis_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b \
   --judge \
   --judge-model deepseek-r1:8b
@@ -65,7 +65,7 @@ python3 -m llm_long_memory.experiments.run_thesis_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_model_only_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b
 ```
 
@@ -74,7 +74,7 @@ python3 -m llm_long_memory.experiments.run_model_only_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_naive_rag_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b
 ```
 
@@ -83,7 +83,7 @@ python3 -m llm_long_memory.experiments.run_naive_rag_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_ablation_eval \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b
 ```
 
@@ -92,7 +92,7 @@ python3 -m llm_long_memory.experiments.run_ablation_eval \
 ```bash
 python3 -m llm_long_memory.experiments.run_thesis_compare \
   --config llm_long_memory/config/config.yaml \
-  --split ragdebug10 \
+  --split longmemeval_diagnostic \
   --model qwen3:8b \
   --judge-model deepseek-r1:8b
 ```
