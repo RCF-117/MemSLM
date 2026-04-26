@@ -75,27 +75,27 @@ It must not use dataset `question_type` at runtime.
 
 ## Active Module Map
 
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager.py)
+- [`llm_long_memory/memory/memory_manager.py`](llm_long_memory/memory/memory_manager.py)
   top-level orchestrator
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager_chat_runtime.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/memory_manager_chat_runtime.py)
+- [`llm_long_memory/memory/memory_manager_chat_runtime.py`](llm_long_memory/memory/memory_manager_chat_runtime.py)
   chat path and final prompt composition
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_candidate_extractor.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_candidate_extractor.py)
+- [`llm_long_memory/memory/evidence_candidate_extractor.py`](llm_long_memory/memory/evidence_candidate_extractor.py)
   sentence-level evidence ranking and extractive candidate helpers
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_grounding_pipeline.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_grounding_pipeline.py)
+- [`llm_long_memory/memory/answer_grounding_pipeline.py`](llm_long_memory/memory/answer_grounding_pipeline.py)
   answer-grounding orchestration over evidence extraction and guard logic
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_response_guard.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/answer_response_guard.py)
+- [`llm_long_memory/memory/answer_response_guard.py`](llm_long_memory/memory/answer_response_guard.py)
   final prompt building, answer guard checks, and answer normalization
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_filter.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_filter.py)
+- [`llm_long_memory/memory/evidence_filter.py`](llm_long_memory/memory/evidence_filter.py)
   filtering and conservative preservation
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_graph_extractor.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_graph_extractor.py)
+- [`llm_long_memory/memory/evidence_graph_extractor.py`](llm_long_memory/memory/evidence_graph_extractor.py)
   support units + claims
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_light_graph.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/evidence_light_graph.py)
+- [`llm_long_memory/memory/evidence_light_graph.py`](llm_long_memory/memory/evidence_light_graph.py)
   deterministic graph construction
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/temporal_query_utils.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/temporal_query_utils.py)
+- [`llm_long_memory/memory/temporal_query_utils.py`](llm_long_memory/memory/temporal_query_utils.py)
   shared choice/temporal parsing helpers for retrieval and graph reasoning
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/graph_reasoning_toolkit.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/graph_reasoning_toolkit.py)
+- [`llm_long_memory/memory/graph_reasoning_toolkit.py`](llm_long_memory/memory/graph_reasoning_toolkit.py)
   graph-only toolkit reasoning
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/memory/specialist_layer.py)
+- [`llm_long_memory/memory/specialist_layer.py`](llm_long_memory/memory/specialist_layer.py)
   toolkit orchestration
 
 ## Non-Mainline Research Code
@@ -103,7 +103,7 @@ It must not use dataset `question_type` at runtime.
 Exploratory prototypes should not be mixed into the active runtime path.
 
 Those modules live under:
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/future_work/README.md`](/Users/rcf117/毕设/MemSLM/llm_long_memory/future_work/README.md)
+- [`llm_long_memory/future_work/README.md`](llm_long_memory/future_work/README.md)
 
 Current example:
 - predictive graph cache prototype
@@ -120,7 +120,7 @@ The light graph is also exportable as a visualization artifact:
 - combined HTML/JSON overview canvas across multiple questions
 
 Exporter:
-- [`/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/export_graph.py`](/Users/rcf117/毕设/MemSLM/llm_long_memory/experiments/export_graph.py)
+- [`llm_long_memory/experiments/export_graph.py`](llm_long_memory/experiments/export_graph.py)
 
 ## Evaluation Semantics
 
