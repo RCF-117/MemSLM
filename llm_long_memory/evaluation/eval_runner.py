@@ -10,6 +10,8 @@ from typing import Any, Dict, List
 from llm_long_memory.evaluation.dataset_loader import iter_history_messages, load_stream
 from llm_long_memory.evaluation.metrics_runtime import (
     compute_answer_span_hit,
+    compute_answer_token_density,
+    compute_noise_density,
     compute_support_sentence_hit,
     eval_group_key,
     evaluate_match,
@@ -197,6 +199,8 @@ def run_eval(
             )
             latency_sec = time.perf_counter() - started
             prompt_chunks = manager.get_last_prompt_eval_chunks()
+            answer_token_density = compute_answer_token_density(expected, prompt_chunks, eval_cfg)
+            noise_density = compute_noise_density(expected, prompt_chunks, eval_cfg)
             if compute_answer_span_hit_enabled:
                 answer_span_hit = compute_answer_span_hit(expected, prompt_chunks, eval_cfg)
                 counters.retrieval_span_hits += int(bool(answer_span_hit))
@@ -225,6 +229,8 @@ def run_eval(
                 support_sentence_hit=support_sentence_hit,
                 graph_answer_span_hit=graph_answer_span_hit,
                 graph_support_sentence_hit=graph_support_sentence_hit,
+                answer_token_density=answer_token_density,
+                noise_density=noise_density,
                 latency_sec=latency_sec,
                 retrieved_session_ids=retrieved_session_ids,
                 commit=True,
@@ -236,6 +242,7 @@ def run_eval(
                 f"Score: em={match_result['em']:.2f}, f1={match_result['f1']:.2f}, "
                 f"substring={match_result['substring']:.0f}, numeric={match_result['numeric']:.0f}\n"
                 f"Latency: {latency_sec:.3f}s\n"
+                f"Prompt Density: answer={answer_token_density:.4f}, noise={noise_density:.4f}\n"
                 "Retrieval Quality: "
                 f"support_sentence_hit={support_sentence_hit}, answer_span_hit={answer_span_hit}\n"
                 "Graph Quality: "

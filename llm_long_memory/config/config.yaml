@@ -705,10 +705,20 @@ dataset:
   eval_max_instances: 0
   eval_print_prediction_chars: 160
   eval_splits:
+    # Internal split keys are kept short for CLI ergonomics.
+    # Paper/report display names are resolved separately:
+    # sample20 -> LongMemEval Sample-20 Split
+    # oracle -> LongMemEval Oracle Split
+    # ragdebug10 -> LongMemEval Diagnostic Split
+    # diagnostic_heldout20 -> LongMemEval Held-Out Matched Split
+    # locomo10 -> LoCoMo Evaluation Subset
+    # locomo_matched20 -> LoCoMo Matched-Distribution 20-QA Subset
     sample20: data/raw/LongMemEval/longmemeval_s_sample_20.json
     oracle: data/raw/LongMemEval/longmemeval_oracle.json
     ragdebug10: data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json
+    diagnostic_heldout20: data/raw/LongMemEval/thesis_subsets/longmemeval_eval_subset_matched_to_diagnostic_split.json
     locomo10: data/raw/LoCoMo/locomo10.json
+    locomo_matched20: data/raw/LoCoMo/locomo20_matched_distribution.json
   default_eval_split: sample20
 
 evaluation:

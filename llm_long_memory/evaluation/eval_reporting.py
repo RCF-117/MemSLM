@@ -59,6 +59,8 @@ def finalize_eval_run(
     retrieval_evidence_rate = _avg("evidence_hit")
     graph_span_rate = _avg("graph_answer_span_hit")
     graph_support_rate = _avg("graph_support_sentence_hit")
+    answer_density_rate = _avg("answer_token_density")
+    noise_density_rate = _avg("noise_density")
     avg_latency_sec = _avg("latency_sec")
 
     grouped_from_db: Dict[str, Dict[str, int]] = {}
@@ -78,8 +80,28 @@ def finalize_eval_run(
                 for row in bucket
                 if row.get("latency_sec") is not None
             ]
+            answer_density_vals = [
+                float(row.get("answer_token_density"))
+                for row in bucket
+                if row.get("answer_token_density") is not None
+            ]
+            noise_density_vals = [
+                float(row.get("noise_density"))
+                for row in bucket
+                if row.get("noise_density") is not None
+            ]
             grouped_latency[key] = (
                 (sum(latency_vals) / float(len(latency_vals))) if latency_vals else 0.0
+            )
+            grouped_from_db[key]["type_answer_token_density"] = (
+                (sum(answer_density_vals) / float(len(answer_density_vals)))
+                if answer_density_vals
+                else 0.0
+            )
+            grouped_from_db[key]["type_noise_density"] = (
+                (sum(noise_density_vals) / float(len(noise_density_vals)))
+                if noise_density_vals
+                else 0.0
             )
 
     ingest_total = int(counters.graph_ingest_selected)
@@ -101,6 +123,11 @@ def finalize_eval_run(
         f"graph_support_sentence_hit_rate={graph_support_rate:.4f}"
     )
     print(
+        "Prompt density summary: "
+        f"answer_token_density={answer_density_rate:.4f}, "
+        f"noise_density={noise_density_rate:.4f}"
+    )
+    print(
         "Graph ingest summary: "
         f"accepted={ingest_accepted}, total={ingest_total}, "
         f"graph_ingest_accept_rate={graph_ingest_accept_rate:.4f}"
@@ -117,9 +144,21 @@ def finalize_eval_run(
             manager.mid_memory.eval_store.log_eval_group_result(
                 run_id, key, g_total, g_matched, g_acc, commit=False
             )
+            manager.mid_memory.eval_store.log_thesis_type_metric(
+                run_id,
+                key,
+                type_answer_acc=g_acc,
+                type_answer_token_density=float(grouped_from_db[key].get("type_answer_token_density", 0.0)),
+                type_noise_density=float(grouped_from_db[key].get("type_noise_density", 0.0)),
+                type_latency_sec=float(grouped_latency.get(key, 0.0)),
+                commit=False,
+            )
             print(
                 f"- {key}: total={g_total}, matched={g_matched}, "
-                f"accuracy={g_acc:.4f}, type_latency_sec={float(grouped_latency.get(key, 0.0)):.4f}"
+                f"accuracy={g_acc:.4f}, "
+                f"type_answer_token_density={float(grouped_from_db[key].get('type_answer_token_density', 0.0)):.4f}, "
+                f"type_noise_density={float(grouped_from_db[key].get('type_noise_density', 0.0)):.4f}, "
+                f"type_latency_sec={float(grouped_latency.get(key, 0.0)):.4f}"
             )
 
     manager.mid_memory.eval_store.log_eval_run_finish(
@@ -133,6 +172,21 @@ def finalize_eval_run(
         graph_answer_span_hit_rate=graph_span_rate,
         graph_support_sentence_hit_rate=graph_support_rate,
         graph_ingest_accept_rate=graph_ingest_accept_rate,
+        avg_answer_token_density=answer_density_rate,
+        avg_noise_density=noise_density_rate,
+        avg_latency_sec=avg_latency_sec,
+        commit=False,
+    )
+    manager.mid_memory.eval_store.log_thesis_run_metrics(
+        run_id,
+        final_answer_acc=float(accuracy),
+        retrieval_answer_span_hit_rate=retrieval_span_rate,
+        retrieval_support_sentence_hit_rate=retrieval_support_rate,
+        graph_answer_span_hit_rate=graph_span_rate,
+        graph_support_sentence_hit_rate=graph_support_rate,
+        graph_ingest_accept_rate=graph_ingest_accept_rate,
+        avg_answer_token_density=answer_density_rate,
+        avg_noise_density=noise_density_rate,
         avg_latency_sec=avg_latency_sec,
         commit=False,
     )

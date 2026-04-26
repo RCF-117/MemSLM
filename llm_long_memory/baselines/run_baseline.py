@@ -17,8 +17,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=str,
-        default="llm_long_memory/baselines/baseline_midrag_v1.yaml",
-        help="Baseline config file.",
+        default="llm_long_memory/config/config.yaml",
+        help="Config file.",
     )
     parser.add_argument(
         "--sample_limit",

@@ -242,6 +242,69 @@ def compute_support_sentence_hit(
     return False
 
 
+def compute_answer_token_density_from_texts(
+    expected: str,
+    texts: List[str],
+    eval_cfg: Dict[str, Any],
+) -> float:
+    """Estimate how much of the provided text mass is occupied by answer tokens.
+
+    This is an evaluation-only proxy for prompt noise. A higher value means the
+    answer-bearing tokens occupy a larger share of the prompt; a lower value
+    means the prompt is dominated by non-answer text.
+    """
+    match_cfg = eval_cfg["matching"]
+    references = split_expected_answers(expected, match_cfg)
+    context_tokens: List[str] = []
+    for text in texts:
+        norm = normalize_text_for_match(text, match_cfg)
+        if norm:
+            context_tokens.extend([tok for tok in norm.split() if tok])
+    if not context_tokens or not references:
+        return 0.0
+
+    best_density = 0.0
+    for ref in references:
+        ref_norm = normalize_text_for_match(ref, match_cfg)
+        ref_tokens = {tok for tok in ref_norm.split() if tok}
+        if not ref_tokens:
+            continue
+        overlap = sum(1 for tok in context_tokens if tok in ref_tokens)
+        density = float(overlap) / float(len(context_tokens))
+        if density > best_density:
+            best_density = density
+    return max(0.0, min(1.0, best_density))
+
+
+def compute_noise_density_from_texts(
+    expected: str,
+    texts: List[str],
+    eval_cfg: Dict[str, Any],
+) -> float:
+    """Complement of answer token density."""
+    return max(0.0, 1.0 - compute_answer_token_density_from_texts(expected, texts, eval_cfg))
+
+
+def compute_answer_token_density(
+    expected: str,
+    chunks: List[Dict[str, Any]],
+    eval_cfg: Dict[str, Any],
+) -> float:
+    """Estimate answer token density over chunk-like payloads."""
+    texts = [str(chunk.get("text", "")).strip() for chunk in chunks if str(chunk.get("text", "")).strip()]
+    return compute_answer_token_density_from_texts(expected, texts, eval_cfg)
+
+
+def compute_noise_density(
+    expected: str,
+    chunks: List[Dict[str, Any]],
+    eval_cfg: Dict[str, Any],
+) -> float:
+    """Estimate noise density over chunk-like payloads."""
+    texts = [str(chunk.get("text", "")).strip() for chunk in chunks if str(chunk.get("text", "")).strip()]
+    return compute_noise_density_from_texts(expected, texts, eval_cfg)
+
+
 def eval_group_key(question_id: str, question_type: str, eval_cfg: Dict[str, Any]) -> str:
     """Build grouped eval key, including abstention split when configured."""
     key = question_type or "unknown"

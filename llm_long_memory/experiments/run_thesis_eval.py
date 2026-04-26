@@ -9,7 +9,12 @@ from typing import List
 from llm_long_memory.baselines.run_baseline import run_one_dataset
 from llm_long_memory.experiments.build_eval_subset import build_subset
 from llm_long_memory.experiments.export_eval_report import export_report
-from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
+from llm_long_memory.utils.helpers import (
+    dataset_display_name,
+    load_config,
+    resolve_project_path,
+    sanitize_filename_part,
+)
 
 
 def _parse_csv(value: str | None) -> List[str]:
@@ -165,11 +170,12 @@ def main() -> None:
         model_name=model_override,
         resume_run_id=(args.resume_run_id.strip() or None),
     )
-    dataset_name = Path(source_dataset).name
+    dataset_name = dataset_display_name(source_dataset)
+    dataset_artifact_name = Path(source_dataset).name
     artifact_prefix = "__".join(
         [
             sanitize_filename_part(run_id),
-            sanitize_filename_part(Path(dataset_name).stem),
+            sanitize_filename_part(Path(dataset_artifact_name).stem),
             f"model-{sanitize_filename_part(model_override)}",
             f"judge-{sanitize_filename_part(judge_override)}",
         ]

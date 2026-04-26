@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Set
 
+from llm_long_memory.utils.helpers import dataset_display_name, dataset_name_aliases
+
 
 AUDIT_SUMMARY_KEYS = [
     "quality_high",
@@ -22,11 +24,10 @@ AUDIT_SUMMARY_KEYS = [
 
 
 def _dataset_aliases(dataset_name: str | None) -> Set[str]:
-    raw = str(dataset_name or "").strip()
-    if not raw:
-        return set()
-    path = Path(raw)
-    return {x for x in {raw.lower(), path.name.lower(), path.stem.lower()} if x}
+    aliases = set(dataset_name_aliases(dataset_name))
+    display = dataset_display_name(dataset_name)
+    aliases.update(dataset_name_aliases(display))
+    return aliases
 
 
 def _payload_dataset_aliases(payload: Dict[str, Any]) -> Set[str]:
@@ -39,6 +40,7 @@ def _payload_dataset_aliases(payload: Dict[str, Any]) -> Set[str]:
             continue
         path = Path(value)
         aliases.update({value.lower(), path.name.lower(), path.stem.lower()})
+        aliases.update(dataset_name_aliases(dataset_display_name(value)))
     return {x for x in aliases if x}
 
 

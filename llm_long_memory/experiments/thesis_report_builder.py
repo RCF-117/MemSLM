@@ -14,10 +14,21 @@ from llm_long_memory.experiments.report_audit_utils import (
     load_latest_source_audit_summary,
 )
 from llm_long_memory.experiments.local_llm_judge import LocalLLMJudge
-from llm_long_memory.utils.helpers import resolve_project_path, sanitize_filename_part
+from llm_long_memory.utils.helpers import (
+    dataset_display_name,
+    dataset_name_aliases,
+    resolve_project_path,
+    sanitize_filename_part,
+)
 
 
 MODE_ORDER = ["model-only", "naive rag", "memslm", "ablation"]
+MODE_DISPLAY_LABELS = {
+    "model-only": "model-only",
+    "naive rag": "naive rag",
+    "memslm": "memslm",
+    "ablation": "filter-only ablation",
+}
 
 
 def _safe_float(value: Any) -> float | None:
@@ -54,6 +65,8 @@ def _collect_type_metrics(payload: Dict[str, Any]) -> Dict[str, Dict[str, float]
             continue
         result[qtype] = {
             "type_answer_acc": float(row.get("type_answer_acc") or 0.0),
+            "type_answer_token_density": float(row.get("type_answer_token_density") or 0.0),
+            "type_noise_density": float(row.get("type_noise_density") or 0.0),
             "type_latency_sec": float(row.get("type_latency_sec") or 0.0),
         }
     return result
@@ -61,13 +74,18 @@ def _collect_type_metrics(payload: Dict[str, Any]) -> Dict[str, Dict[str, float]
 
 def _latest_compare_report(report_dir: Path, dataset_name: str | None = None) -> Dict[str, str]:
     candidates = sorted(report_dir.glob("*_comparison.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    wanted_aliases = dataset_name_aliases(dataset_name)
+    wanted_aliases.update(dataset_name_aliases(dataset_display_name(dataset_name)))
     for path in candidates:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if dataset_name and str(payload.get("dataset", "")).strip() != str(dataset_name).strip():
-            continue
+        if wanted_aliases:
+            payload_aliases = dataset_name_aliases(payload.get("dataset", ""))
+            payload_aliases.update(dataset_name_aliases(dataset_display_name(payload.get("dataset", ""))))
+            if not (wanted_aliases & payload_aliases):
+                continue
         mapping: Dict[str, str] = {}
         for row in list(payload.get("modes", [])):
             mode = str(row.get("mode", "")).strip().lower()
@@ -196,6 +214,16 @@ def _load_mode_payload(
                 else None
             )
             latency_vals = [float(row["latency_sec"]) for row in bucket if row.get("latency_sec") is not None]
+            answer_density_vals = [
+                float(row.get("answer_token_density"))
+                for row in bucket
+                if row.get("answer_token_density") is not None
+            ]
+            noise_density_vals = [
+                float(row.get("noise_density"))
+                for row in bucket
+                if row.get("noise_density") is not None
+            ]
             type_metrics.append(
                 {
                     "question_type": key,
@@ -205,6 +233,16 @@ def _load_mode_payload(
                         (judge_bucket / total_bucket)
                         if (judge_enabled and total_bucket)
                         else ((matched_bucket / total_bucket) if total_bucket else None)
+                    ),
+                    "type_answer_token_density": (
+                        (sum(answer_density_vals) / float(len(answer_density_vals)))
+                        if answer_density_vals
+                        else None
+                    ),
+                    "type_noise_density": (
+                        (sum(noise_density_vals) / float(len(noise_density_vals)))
+                        if noise_density_vals
+                        else None
                     ),
                     "type_latency_sec": (
                         (sum(latency_vals) / float(len(latency_vals))) if latency_vals else None
@@ -236,15 +274,20 @@ def _write_comparison_report(
         }
     )
     type_answer_rows: List[Dict[str, Any]] = []
+    type_density_rows: List[Dict[str, Any]] = []
     type_latency_rows: List[Dict[str, Any]] = []
     for qtype in all_types:
         answer_row = {"question_type": qtype}
+        density_row = {"question_type": qtype}
         latency_row = {"question_type": qtype}
         for mode in MODE_ORDER:
             metrics = _collect_type_metrics(mode_payloads.get(mode, {})).get(qtype, {})
             answer_row[mode] = metrics.get("type_answer_acc", None)
+            density_row[f"{mode}_answer_density"] = metrics.get("type_answer_token_density", None)
+            density_row[f"{mode}_noise_density"] = metrics.get("type_noise_density", None)
             latency_row[mode] = metrics.get("type_latency_sec", None)
         type_answer_rows.append(answer_row)
+        type_density_rows.append(density_row)
         type_latency_rows.append(latency_row)
 
     summary_rows: List[Dict[str, Any]] = []
@@ -261,6 +304,8 @@ def _write_comparison_report(
                 "graph_answer_span_hit_rate": float(summary.get("graph_answer_span_hit_rate") or 0.0),
                 "graph_support_sentence_hit_rate": float(summary.get("graph_support_sentence_hit_rate") or 0.0),
                 "graph_ingest_accept_rate": float(summary.get("graph_ingest_accept_rate") or 0.0),
+                "avg_answer_token_density": float(summary.get("avg_answer_token_density") or 0.0),
+                "avg_noise_density": float(summary.get("avg_noise_density") or 0.0),
             }
         )
 
@@ -271,6 +316,7 @@ def _write_comparison_report(
         "primary_mode": "memslm",
         "modes": summary_rows,
         "type_answer_acc": type_answer_rows,
+        "type_prompt_density": type_density_rows,
         "type_latency_sec": type_latency_rows,
     }
     if source_audit_summary:
@@ -294,6 +340,8 @@ def _write_comparison_report(
                 "graph_answer_span_hit_rate",
                 "graph_support_sentence_hit_rate",
                 "graph_ingest_accept_rate",
+                "avg_answer_token_density",
+                "avg_noise_density",
             ],
         )
         writer.writeheader()
@@ -306,6 +354,7 @@ def _write_comparison_report(
         f"- model: `{model_name}`",
         f"- judge_model: `{judge_model}`",
         "- primary_mode: `memslm`",
+        "- ablation_definition: `filter-only ablation (retrieval -> evidence filter -> final 8B)`",
         "- note: this report is a single consolidated comparison; no per-mode reports are emitted.",
         "",
     ]
@@ -315,15 +364,14 @@ def _write_comparison_report(
         [
             "## Run Summary",
             "",
-            "| mode | run_id | final_answer_acc | avg_latency_sec | retrieval_answer_span_hit_rate | retrieval_support_sentence_hit_rate | graph_answer_span_hit_rate | graph_support_sentence_hit_rate | graph_ingest_accept_rate |",
-            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| mode | run_id | final_answer_acc | avg_latency_sec | retrieval_answer_span_hit_rate | retrieval_support_sentence_hit_rate | graph_answer_span_hit_rate | graph_support_sentence_hit_rate | graph_ingest_accept_rate | avg_answer_token_density | avg_noise_density |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in summary_rows:
+        label = MODE_DISPLAY_LABELS.get(str(row.get("mode", "")), str(row.get("mode", "")))
         md_lines.append(
-            "| {mode} | {run_id} | {final_answer_acc:.4f} | {avg_latency_sec:.4f} | {retrieval_answer_span_hit_rate:.4f} | {retrieval_support_sentence_hit_rate:.4f} | {graph_answer_span_hit_rate:.4f} | {graph_support_sentence_hit_rate:.4f} | {graph_ingest_accept_rate:.4f} |".format(
-                **row
-            )
+            f"| {label} | {row['run_id']} | {float(row['final_answer_acc']):.4f} | {float(row['avg_latency_sec']):.4f} | {float(row['retrieval_answer_span_hit_rate']):.4f} | {float(row['retrieval_support_sentence_hit_rate']):.4f} | {float(row['graph_answer_span_hit_rate']):.4f} | {float(row['graph_support_sentence_hit_rate']):.4f} | {float(row['graph_ingest_accept_rate']):.4f} | {float(row['avg_answer_token_density']):.4f} | {float(row['avg_noise_density']):.4f} |"
         )
 
     md_lines.extend(
@@ -355,6 +403,30 @@ def _write_comparison_report(
         + " | ".join(f"{float(row['final_answer_acc']):.4f}" for row in summary_rows)
         + f" | {sum(overall_answer_values) / float(len(overall_answer_values)):.4f} |"
     )
+
+    md_lines.extend(
+        [
+            "",
+            "## Type Prompt Density",
+            "",
+            "| question_type | model-only answer | model-only noise | naive rag answer | naive rag noise | memslm answer | memslm noise | ablation answer | ablation noise |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in type_density_rows:
+        md_lines.append(
+            "| {question_type} | {mo_ad} | {mo_nd} | {nr_ad} | {nr_nd} | {ms_ad} | {ms_nd} | {ab_ad} | {ab_nd} |".format(
+                question_type=row["question_type"],
+                mo_ad=("" if row.get("model-only_answer_density") is None else f"{float(row.get('model-only_answer_density')):.4f}"),
+                mo_nd=("" if row.get("model-only_noise_density") is None else f"{float(row.get('model-only_noise_density')):.4f}"),
+                nr_ad=("" if row.get("naive rag_answer_density") is None else f"{float(row.get('naive rag_answer_density')):.4f}"),
+                nr_nd=("" if row.get("naive rag_noise_density") is None else f"{float(row.get('naive rag_noise_density')):.4f}"),
+                ms_ad=("" if row.get("memslm_answer_density") is None else f"{float(row.get('memslm_answer_density')):.4f}"),
+                ms_nd=("" if row.get("memslm_noise_density") is None else f"{float(row.get('memslm_noise_density')):.4f}"),
+                ab_ad=("" if row.get("ablation_answer_density") is None else f"{float(row.get('ablation_answer_density')):.4f}"),
+                ab_nd=("" if row.get("ablation_noise_density") is None else f"{float(row.get('ablation_noise_density')):.4f}"),
+            )
+        )
 
     md_lines.extend(
         [
@@ -449,7 +521,8 @@ def build_consolidated_report(
                     break
         if not resolved_dataset_name:
             resolved_dataset_name = "unknown"
-        source_audit_summary = load_latest_source_audit_summary(report_root, resolved_dataset_name)
+        resolved_dataset_display_name = dataset_display_name(resolved_dataset_name)
+        source_audit_summary = load_latest_source_audit_summary(report_root, resolved_dataset_display_name)
 
         artifact_prefix = "__".join(
             [
@@ -462,7 +535,7 @@ def build_consolidated_report(
         return _write_comparison_report(
             output_dir=output_dir,
             artifact_prefix=artifact_prefix,
-            dataset_name=resolved_dataset_name,
+            dataset_name=resolved_dataset_display_name,
             model_name=model_name,
             judge_model=judge_model,
             mode_payloads=mode_payloads,

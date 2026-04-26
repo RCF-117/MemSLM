@@ -734,6 +734,35 @@ class MemoryManagerChatRuntime:
             evidence_sentences: List[Dict[str, object]] = []
             self._last_specialist_payload = {}
             stage_latency_sec["rag"] = time.perf_counter() - rag_started
+        elif self.m.retrieval_execution_mode == "filter_only":
+            raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(query, chunks)
+            self._last_evidence_pack = self._build_evidence_pack(
+                query=query,
+                evidence_sentences=raw_evidence_sentences,
+                chunks=chunks,
+            )
+            graph_bundle: Dict[str, object] = self.m.build_evidence_graph_bundle(
+                query,
+                precomputed_context=(context_text, topics, chunks),
+                evidence_sentences=raw_evidence_sentences,
+                evidence_pack=self._last_evidence_pack,
+                enable_filter=True,
+                enable_claims=False,
+                enable_light_graph=False,
+            )
+            stage_latency_sec["rag"] = time.perf_counter() - rag_started
+            graph_stage_latency = dict(graph_bundle.get("stage_latency_sec", {}) or {})
+            stage_latency_sec["filter"] = float(graph_stage_latency.get("filter", 0.0) or 0.0)
+            stage_latency_sec["claims"] = 0.0
+            stage_latency_sec["light_graph"] = 0.0
+            stage_latency_sec["toolkit"] = 0.0
+            evidence_sentences = self.m.final_answer_composer.bundle_to_evidence_sentences(
+                graph_bundle,
+                raw_fallback=raw_evidence_sentences,
+            )
+            if not evidence_sentences:
+                evidence_sentences = list(raw_evidence_sentences[:8])
+            self._last_specialist_payload = {}
         else:
             raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(query, chunks)
             self._last_evidence_pack = self._build_evidence_pack(
@@ -849,6 +878,49 @@ class MemoryManagerChatRuntime:
             self._last_expanded_prompt_support_sources = []
             self.m._set_prompt_eval_chunks(prompt_sections)
             return compact_prompt
+        if execution_mode == "filter_only":
+            route_packet = {
+                "mode": "evidence-heavy",
+                "primary_source": "filtered_evidence",
+                "prompt_schema": "source-direct",
+                "compact_sections": ["filtered_evidence", "answer_rules"],
+                "expanded_sections": ["filtered_evidence", "answer_rules"],
+                "section_roles": {"filtered_evidence": "primary"},
+                "expanded_section_roles": {"filtered_evidence": "primary"},
+                "answer_type": str(filtered_pack.get("answer_type", "")),
+                "abstention_policy": "standard",
+            }
+            rules = (
+                "Use only the filtered evidence below. "
+                "If it is insufficient, answer Not found in retrieved context. "
+                "Return only the final answer."
+            )
+            compact_prompt, prompt_sections = self.m.final_answer_composer.build_prompt(
+                input_text=input_text,
+                filtered_pack=filtered_pack,
+                claim_result={},
+                light_graph={},
+                toolkit_payload={},
+                prompt_mode="compact",
+                route_packet=route_packet,
+                answer_rules_text=rules,
+            )
+            compact_support_sources = self.m.final_answer_composer.build_support_sources(
+                filtered_pack=filtered_pack,
+                claim_result={},
+                light_graph={},
+                toolkit_payload={},
+                prompt_mode="compact",
+                route_packet=route_packet,
+            )
+            self._last_compact_prompt_text = compact_prompt
+            self._last_expanded_prompt_text = compact_prompt
+            self._last_compact_prompt_support_sources = compact_support_sources
+            self._last_expanded_prompt_support_sources = compact_support_sources
+            self._last_compact_route_packet = dict(route_packet)
+            self._last_expanded_route_packet = dict(route_packet)
+            self.m._set_prompt_eval_chunks(prompt_sections)
+            return compact_prompt
 
         stage_started = time.perf_counter()
         router = getattr(self.m, "final_answer_router", None)
@@ -920,6 +992,13 @@ class MemoryManagerChatRuntime:
             self._last_expanded_prompt_text = prompt_text
             self._last_expanded_prompt_support_sources = []
             return prompt_text, []
+        if execution_mode == "filter_only":
+            if self._last_expanded_prompt_text:
+                return (
+                    self._last_expanded_prompt_text,
+                    list(self._last_expanded_prompt_support_sources),
+                )
+            return self._last_compact_prompt_text, list(self._last_compact_prompt_support_sources)
 
         retrieved_context_text = str(retrieved_context_text or "").strip()
         _ = evidence_sentences, chunks
@@ -993,10 +1072,12 @@ class MemoryManagerChatRuntime:
         stage_started = time.perf_counter()
         response = self.m.llm.chat(prompt_messages)
         self.m.last_stage_latency_sec["final_generation"] = time.perf_counter() - stage_started
-        if execution_mode in {"model_only", "naive_rag"}:
+        if execution_mode in {"model_only", "naive_rag", "filter_only"}:
             ai_response = self.m.answer_grounding.normalize_final_answer(
                 response, query
             )
+            if not ai_response.strip():
+                ai_response = "Not found in retrieved context."
             return ai_response, f"{execution_mode}_direct", ""
         if not bool(getattr(self.m, "final_answer_guard_enabled", False)):
             ai_response = self.m.answer_grounding.normalize_final_answer(

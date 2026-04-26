@@ -7,11 +7,13 @@ from pathlib import Path
 
 from llm_long_memory.experiments.run_thesis_eval import _resolve_dataset_path
 from llm_long_memory.experiments.thesis_report_builder import build_consolidated_report
-from llm_long_memory.utils.helpers import load_config
+from llm_long_memory.utils.helpers import dataset_display_name, load_config
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a consolidated thesis report.")
+    parser = argparse.ArgumentParser(
+        description="Build a consolidated thesis report, including the filter-only ablation."
+    )
     parser.add_argument("--config", default="llm_long_memory/config/config.yaml", help="Main config path.")
     parser.add_argument("--dataset", default="", help="Optional dataset path used to infer the dataset name.")
     parser.add_argument("--split", default="", help="Configured dataset split name.")
@@ -53,9 +55,9 @@ def main() -> None:
     )
     dataset_name = args.dataset_name.strip()
     if not dataset_name and (args.dataset.strip() or args.split.strip()):
-        dataset_name = Path(
+        dataset_name = dataset_display_name(
             _resolve_dataset_path(config, args.dataset.strip() or None, args.split.strip() or None)
-        ).name
+        )
     model_name = args.model_name.strip() or str(config["llm"]["default_model"])
     judge_model = args.judge_model.strip() or str(config["llm"]["default_model"])
     mode_run_ids = {

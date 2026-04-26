@@ -279,6 +279,76 @@ class TestMemoryManager(unittest.TestCase):
         self.assertEqual(path, "toolkit_direct:count_verified_by_latest_supported_state")
         self.assertEqual(llm.calls, 0)
 
+    def test_filter_only_prepare_inputs_runs_filter_without_claims_or_graph(self):
+        cfg = self._config()
+        cfg["retrieval"]["execution_mode"] = "filter_only"
+        manager, _ = self._build_manager(cfg=cfg)
+        captured = {}
+
+        def _build_bundle(query, precomputed_context=None, evidence_sentences=None, evidence_pack=None, enable_filter=None, enable_claims=None, enable_light_graph=None):
+            captured["enable_filter"] = enable_filter
+            captured["enable_claims"] = enable_claims
+            captured["enable_light_graph"] = enable_light_graph
+            bundle = {
+                "filtered_pack": {
+                    "answer_type": "factoid",
+                    "core_evidence": [{"text": "She moved to Boston in 2023.", "score": 0.9}],
+                    "supporting_evidence": [],
+                    "conflict_evidence": [],
+                },
+                "claim_result": {"claims": [], "support_units": []},
+                "light_graph": {"nodes": [], "edges": []},
+                "stage_latency_sec": {"filter": 0.12, "claims": 0.0, "light_graph": 0.0},
+            }
+            manager.last_evidence_graph_bundle = bundle
+            return bundle
+
+        manager.build_evidence_graph_bundle = _build_bundle  # type: ignore[method-assign]
+        _context_text, _topics, _chunks, evidence = manager._prepare_answer_inputs("where did she move?", None)
+        self.assertTrue(captured["enable_filter"])
+        self.assertFalse(captured["enable_claims"])
+        self.assertFalse(captured["enable_light_graph"])
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0]["text"], "She moved to Boston in 2023.")
+        self.assertAlmostEqual(manager.last_stage_latency_sec["filter"], 0.12)
+        self.assertEqual(manager.last_stage_latency_sec["claims"], 0.0)
+        self.assertEqual(manager.last_stage_latency_sec["light_graph"], 0.0)
+        self.assertEqual(manager.last_stage_latency_sec["toolkit"], 0.0)
+
+    def test_filter_only_prompt_and_generation_use_filtered_evidence_only(self):
+        cfg = self._config()
+        cfg["retrieval"]["execution_mode"] = "filter_only"
+        manager, llm = self._build_manager(cfg=cfg, llm=FakeLLM("Boston"))
+        manager.last_evidence_graph_bundle = {
+            "filtered_pack": {
+                "answer_type": "factoid",
+                "core_evidence": [{"text": "She moved to Boston in 2023.", "score": 0.9}],
+                "supporting_evidence": [{"text": "The move happened after graduation.", "score": 0.5}],
+                "conflict_evidence": [],
+            },
+            "claim_result": {"claims": [], "support_units": []},
+            "light_graph": {"nodes": [], "edges": []},
+        }
+        prompt_text = manager._build_generation_prompt(
+            input_text="Where did she move?",
+            retrieved_context_text="",
+            evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.9}],
+            chunks=[],
+        )
+        self.assertIn("[Filtered Evidence]", prompt_text)
+        self.assertIn("[Answer Rules]", prompt_text)
+        self.assertNotIn("[Light Graph]", prompt_text)
+        self.assertNotIn("[Toolkit Analysis]", prompt_text)
+        answer, path, _ = manager._generate_final_answer(
+            input_text="Where did she move?",
+            query="Where did she move?",
+            prompt_text=prompt_text,
+            evidence_sentences=[{"text": "She moved to Boston in 2023.", "score": 0.9}],
+        )
+        self.assertEqual(answer, "Boston")
+        self.assertEqual(path, "filter_only_direct")
+        self.assertEqual(llm.calls, 1)
+
     def test_chat_always_invokes_llm(self):
         cfg = self._config()
         llm = FakeLLM("this should not be used")

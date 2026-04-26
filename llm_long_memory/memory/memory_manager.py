@@ -169,6 +169,7 @@ class MemoryManager:
         self.classic_rag_enabled = bool(
             self.config["retrieval"].get("classic_rag_enabled", False)
         ) or self.retrieval_execution_mode == "naive_rag"
+        self.filter_only_enabled = self.retrieval_execution_mode == "filter_only"
         specialist_cfg = dict(answer_grounding_cfg.get("specialist_layer", {}))
         specialist_enabled = bool(specialist_cfg.get("enabled", False))
         graph_toolkit_enabled = bool(specialist_cfg.get("graph_toolkit_enabled", True))

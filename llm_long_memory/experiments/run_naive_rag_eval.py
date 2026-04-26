@@ -9,7 +9,12 @@ from typing import Tuple
 from llm_long_memory.experiments.build_eval_subset import build_subset
 from llm_long_memory.experiments.run_thesis_eval import _parse_csv, _resolve_dataset_path
 from llm_long_memory.experiments.direct_eval_runner import build_naive_rag_prompt, run_direct_mode_eval
-from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
+from llm_long_memory.utils.helpers import (
+    dataset_display_name,
+    load_config,
+    resolve_project_path,
+    sanitize_filename_part,
+)
 
 
 MODE_NAME = "naive rag"
@@ -34,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 def _prepare_dataset(args: argparse.Namespace, config: dict) -> Tuple[str, str]:
     source_dataset = _resolve_dataset_path(config, args.dataset.strip() or None, args.split.strip() or None)
-    source_name = Path(source_dataset).name
+    source_name = dataset_display_name(source_dataset)
     keep_types = _parse_csv(args.keep_types) or _parse_csv(args.include_types)
     drop_types = _parse_csv(args.drop_types)
     needs_subset = int(args.max_total) > 0 or int(args.per_type) > 0 or bool(keep_types) or bool(drop_types)

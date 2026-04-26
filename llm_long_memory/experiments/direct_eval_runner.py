@@ -16,6 +16,8 @@ from llm_long_memory.evaluation.eval_reporting import EvalCounters, finalize_eva
 from llm_long_memory.evaluation.eval_store import EvalStore
 from llm_long_memory.evaluation.metrics_runtime import (
     compute_answer_span_hit,
+    compute_answer_token_density,
+    compute_noise_density,
     compute_support_sentence_hit,
     eval_group_key,
     evaluate_match,
@@ -305,6 +307,8 @@ def run_direct_mode_eval(
             prediction = llm.chat(prompt_text)
             latency_sec = time.perf_counter() - started
             preview = prediction[:preview_chars].replace("\n", " ")
+            answer_token_density = compute_answer_token_density(expected, prompt_chunks, eval_cfg)
+            noise_density = compute_noise_density(expected, prompt_chunks, eval_cfg)
 
             answer_span_hit = (
                 compute_answer_span_hit(expected, prompt_chunks, eval_cfg)
@@ -345,6 +349,8 @@ def run_direct_mode_eval(
                 support_sentence_hit=support_sentence_hit,
                 graph_answer_span_hit=None,
                 graph_support_sentence_hit=None,
+                answer_token_density=answer_token_density,
+                noise_density=noise_density,
                 latency_sec=latency_sec,
                 retrieved_session_ids=retrieved_session_ids,
                 commit=True,
@@ -356,6 +362,7 @@ def run_direct_mode_eval(
                 f"Score: em={match_result['em']:.2f}, f1={match_result['f1']:.2f}, "
                 f"substring={match_result['substring']:.0f}, numeric={match_result['numeric']:.0f}\n"
                 f"Latency: {latency_sec:.3f}s\n"
+                f"Prompt Density: answer={answer_token_density:.4f}, noise={noise_density:.4f}\n"
                 f"Prompt chunks: {len(prompt_chunks)}\n"
                 f"Q: {question}\n"
                 f"Gold: {expected}\n"

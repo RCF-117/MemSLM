@@ -1,0 +1,1695 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3875" height="1950" viewBox="0 0 3875 1950">
+<defs>
+<marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+<path d="M 0 0 L 8 3 L 0 6 z" fill="#7b8794" />
+</marker>
+</defs>
+<rect x="0" y="0" width="3875" height="1950" fill="#fbfcfe" />
+<text x="24" y="28" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#111827">diagnostic_heldout20_memslm_light_graph Combined Light Graph</text>
+<text x="24" y="48" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="11" fill="#5b6b7b">All question-scoped light graphs are composed into one publication-style canvas.</text>
+<text x="24" y="65" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#7b8794">graphs=20 | nodes=173 | edges=235 | layout=answer_type_grouped_elliptical_bands</text>
+<circle cx="24.00" cy="86.00" r="4.5" fill="#6f8f69" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<text x="34.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Count</text>
+<circle cx="116.00" cy="86.00" r="4.5" fill="#6f8fa6" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<text x="126.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Temporal</text>
+<circle cx="208.00" cy="86.00" r="4.5" fill="#b28268" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<text x="218.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Update</text>
+<circle cx="300.00" cy="86.00" r="4.5" fill="#6f7f90" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<text x="310.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Factoid</text>
+<circle cx="392.00" cy="86.00" r="4.5" fill="#9a84a3" stroke="rgba(17,24,39,0.12)" stroke-width="0.6" />
+<text x="402.00" y="89.20" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="#5b6b7b">Preference</text>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="1126.50" y1="864.00" x2="939.50" y2="958.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.48)</title>
+<line x1="939.50" y1="958.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="1011.50" y1="1022.00" x2="874.50" y2="906.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.64)</title>
+<line x1="874.50" y1="906.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="1126.50" y1="864.00" x2="1020.50" y2="939.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.48)</title>
+<line x1="1020.50" y1="939.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="826.50" y1="962.00" x2="1056.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.85)</title>
+<line x1="1056.50" y1="864.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="1011.50" y1="706.00" x2="939.50" y2="770.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.27)</title>
+<line x1="939.50" y1="770.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="826.50" y1="766.00" x2="874.50" y2="822.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.50)</title>
+<line x1="874.50" y1="822.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | mentions</title>
+<line x1="1011.50" y1="1022.00" x2="1020.50" y2="789.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | supports_query (0.73)</title>
+<line x1="1020.50" y1="789.00" x2="960.50" y2="864.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | same_subject</title>
+<line x1="939.50" y1="958.00" x2="1020.50" y2="939.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>bcbe585f | same_subject</title>
+<line x1="874.50" y1="906.00" x2="1020.50" y2="789.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1279.50" y1="379.00" x2="1392.50" y2="383.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query (0.88)</title>
+<line x1="1392.50" y1="383.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1464.50" y1="635.00" x2="1509.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query (0.43)</title>
+<line x1="1509.50" y1="477.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1279.50" y1="575.00" x2="1473.50" y2="402.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query (0.44)</title>
+<line x1="1473.50" y1="402.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1579.50" y1="477.00" x2="1473.50" y2="552.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query (0.68)</title>
+<line x1="1473.50" y1="552.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1579.50" y1="477.00" x2="1327.50" y2="519.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query (0.68)</title>
+<line x1="1327.50" y1="519.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1464.50" y1="319.00" x2="1392.50" y2="571.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query</title>
+<line x1="1392.50" y1="571.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | mentions</title>
+<line x1="1279.50" y1="575.00" x2="1327.50" y2="435.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | supports_query (0.44)</title>
+<line x1="1327.50" y1="435.00" x2="1413.50" y2="477.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | same_subject</title>
+<line x1="1473.50" y1="402.00" x2="1327.50" y2="435.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | same_subject</title>
+<line x1="1473.50" y1="552.00" x2="1327.50" y2="519.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="1082.00" x2="1839.50" y2="863.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.28)</title>
+<line x1="1839.50" y1="863.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="1082.00" x2="1758.50" y2="1032.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.58)</title>
+<line x1="1758.50" y1="1032.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="794.00" x2="1839.50" y2="1013.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.86)</title>
+<line x1="1839.50" y1="1013.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="1082.00" x2="1693.50" y2="980.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.58)</title>
+<line x1="1693.50" y1="980.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="794.00" x2="1693.50" y2="896.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.86)</title>
+<line x1="1693.50" y1="896.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="794.00" x2="1875.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.85)</title>
+<line x1="1875.50" y1="938.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="794.00" x2="1758.50" y2="844.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.85)</title>
+<line x1="1758.50" y1="844.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | mentions</title>
+<line x1="1696.50" y1="794.00" x2="1945.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | supports_query (0.85)</title>
+<line x1="1945.50" y1="938.00" x2="1779.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1839.50" y1="863.00" x2="1758.50" y2="1032.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1839.50" y1="863.00" x2="1693.50" y2="980.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | updates</title>
+<line x1="1839.50" y1="863.00" x2="1693.50" y2="980.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1758.50" y1="1032.00" x2="1693.50" y2="980.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1839.50" y1="1013.00" x2="1693.50" y2="896.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1839.50" y1="1013.00" x2="1875.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1839.50" y1="1013.00" x2="1758.50" y2="844.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1839.50" y1="1013.00" x2="1945.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1693.50" y1="896.00" x2="1875.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1693.50" y1="896.00" x2="1758.50" y2="844.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1693.50" y1="896.00" x2="1945.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1875.50" y1="938.00" x2="1758.50" y2="844.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1875.50" y1="938.00" x2="1945.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>b6019101 | same_subject</title>
+<line x1="1758.50" y1="844.00" x2="1945.50" y2="938.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1335.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.41)</title>
+<line x1="1335.50" y1="1311.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1229.50" y2="1386.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.41)</title>
+<line x1="1229.50" y1="1386.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1148.50" y2="1217.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.32)</title>
+<line x1="1148.50" y1="1217.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1148.50" y2="1405.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.32)</title>
+<line x1="1148.50" y1="1405.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1083.50" y2="1353.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.32)</title>
+<line x1="1083.50" y1="1353.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1083.50" y2="1269.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.32)</title>
+<line x1="1083.50" y1="1269.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.32)</title>
+<line x1="1229.50" y1="1236.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | mentions</title>
+<line x1="1003.50" y1="1311.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | supports_query (0.32)</title>
+<line x1="1265.50" y1="1311.00" x2="1169.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1229.50" y2="1386.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1148.50" y2="1217.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1148.50" y2="1405.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1083.50" y2="1353.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1083.50" y2="1269.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1335.50" y1="1311.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1386.00" x2="1148.50" y2="1217.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1386.00" x2="1148.50" y2="1405.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1386.00" x2="1083.50" y2="1353.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1386.00" x2="1083.50" y2="1269.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1386.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1386.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1217.00" x2="1148.50" y2="1405.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1217.00" x2="1083.50" y2="1353.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1217.00" x2="1083.50" y2="1269.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1217.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1217.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1405.00" x2="1083.50" y2="1353.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1405.00" x2="1083.50" y2="1269.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1405.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1148.50" y1="1405.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1083.50" y1="1353.00" x2="1083.50" y2="1269.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1083.50" y1="1353.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1083.50" y1="1353.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1083.50" y1="1269.00" x2="1229.50" y2="1236.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1083.50" y1="1269.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>af8d2e46 | same_subject</title>
+<line x1="1229.50" y1="1236.00" x2="1265.50" y2="1311.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | mentions</title>
+<line x1="288.50" y1="1057.00" x2="223.50" y2="1109.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | supports_query (0.27)</title>
+<line x1="223.50" y1="1109.00" x2="309.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | mentions</title>
+<line x1="475.50" y1="1151.00" x2="223.50" y2="1193.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | supports_query (0.73)</title>
+<line x1="223.50" y1="1193.00" x2="309.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | mentions</title>
+<line x1="369.50" y1="1076.00" x2="405.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | supports_query (0.18)</title>
+<line x1="405.50" y1="1151.00" x2="309.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | mentions</title>
+<line x1="369.50" y1="1076.00" x2="288.50" y2="1245.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | supports_query (0.18)</title>
+<line x1="288.50" y1="1245.00" x2="309.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | mentions</title>
+<line x1="475.50" y1="1151.00" x2="369.50" y2="1226.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | supports_query (0.64)</title>
+<line x1="369.50" y1="1226.00" x2="309.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | same_subject</title>
+<line x1="223.50" y1="1193.00" x2="369.50" y2="1226.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | same_subject</title>
+<line x1="405.50" y1="1151.00" x2="288.50" y2="1245.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | before</title>
+<line x1="405.50" y1="1151.00" x2="288.50" y2="1245.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_b0863698 | after</title>
+<line x1="288.50" y1="1245.00" x2="405.50" y2="1151.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | mentions</title>
+<line x1="152.50" y1="623.00" x2="87.50" y2="675.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | supports_query</title>
+<line x1="87.50" y1="675.00" x2="173.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | mentions</title>
+<line x1="152.50" y1="623.00" x2="233.50" y2="792.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | supports_query</title>
+<line x1="233.50" y1="792.00" x2="173.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | mentions</title>
+<line x1="233.50" y1="642.00" x2="152.50" y2="811.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | supports_query (0.64)</title>
+<line x1="152.50" y1="811.00" x2="173.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | mentions</title>
+<line x1="233.50" y1="642.00" x2="269.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | supports_query (0.90)</title>
+<line x1="269.50" y1="717.00" x2="173.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | mentions</title>
+<line x1="233.50" y1="642.00" x2="87.50" y2="759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | supports_query (0.64)</title>
+<line x1="87.50" y1="759.00" x2="173.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | same_subject</title>
+<line x1="87.50" y1="675.00" x2="233.50" y2="792.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | same_subject</title>
+<line x1="152.50" y1="811.00" x2="269.50" y2="717.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | same_subject</title>
+<line x1="152.50" y1="811.00" x2="87.50" y2="759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>60159905 | same_subject</title>
+<line x1="269.50" y1="717.00" x2="87.50" y2="759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>7024f17c | mentions</title>
+<line x1="529.50" y1="441.00" x2="721.50" y2="441.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>7024f17c | supports_query (0.59)</title>
+<line x1="721.50" y1="441.00" x2="625.50" y2="441.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>7024f17c | mentions</title>
+<line x1="625.50" y1="345.00" x2="625.50" y2="537.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>7024f17c | supports_query (0.69)</title>
+<line x1="625.50" y1="537.00" x2="625.50" y2="441.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | mentions</title>
+<line x1="541.50" y1="1693.00" x2="637.50" y2="1789.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | supports_query (0.32)</title>
+<line x1="637.50" y1="1789.00" x2="637.50" y2="1693.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | mentions</title>
+<line x1="637.50" y1="1597.00" x2="733.50" y2="1693.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | supports_query (0.32)</title>
+<line x1="733.50" y1="1693.00" x2="637.50" y2="1693.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>c5e8278d | mentions</title>
+<line x1="2060.50" y1="128.00" x2="2156.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>c5e8278d | supports_query (0.65)</title>
+<line x1="2156.50" y1="224.00" x2="2060.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>c5e8278d | mentions</title>
+<line x1="1964.50" y1="224.00" x2="2060.50" y2="320.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>c5e8278d | supports_query (0.50)</title>
+<line x1="2060.50" y1="320.00" x2="2060.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0977f2af | mentions</title>
+<line x1="2574.50" y1="224.00" x2="2766.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0977f2af | supports_query (0.80)</title>
+<line x1="2766.50" y1="224.00" x2="2670.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>65240037 | mentions</title>
+<line x1="1354.50" y1="224.00" x2="1546.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>65240037 | supports_query (0.92)</title>
+<line x1="1546.50" y1="224.00" x2="1450.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>65240037 | mentions</title>
+<line x1="1354.50" y1="224.00" x2="1546.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>65240037 | supports_query (0.82)</title>
+<line x1="1546.50" y1="224.00" x2="1450.50" y2="224.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0e4e4c46 | mentions</title>
+<line x1="1312.50" y1="1521.00" x2="1456.50" y2="1604.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0e4e4c46 | supports_query (1.00)</title>
+<line x1="1456.50" y1="1604.00" x2="1360.50" y2="1604.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0e4e4c46 | mentions</title>
+<line x1="1312.50" y1="1521.00" x2="1312.50" y2="1687.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0e4e4c46 | supports_query (1.00)</title>
+<line x1="1312.50" y1="1687.00" x2="1360.50" y2="1604.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>0e4e4c46 | same_subject</title>
+<line x1="1456.50" y1="1604.00" x2="1312.50" y2="1687.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | mentions</title>
+<line x1="3212.50" y1="891.00" x2="3212.50" y2="1057.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | supports_query (0.09)</title>
+<line x1="3212.50" y1="1057.00" x2="3260.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | mentions</title>
+<line x1="3212.50" y1="891.00" x2="3308.50" y2="1057.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | supports_query (0.22)</title>
+<line x1="3308.50" y1="1057.00" x2="3260.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | mentions</title>
+<line x1="3212.50" y1="891.00" x2="3356.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | supports_query (0.31)</title>
+<line x1="3356.50" y1="974.00" x2="3260.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | mentions</title>
+<line x1="3308.50" y1="891.00" x2="3164.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | supports_query</title>
+<line x1="3164.50" y1="974.00" x2="3260.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | same_subject</title>
+<line x1="3212.50" y1="1057.00" x2="3308.50" y2="1057.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | same_subject</title>
+<line x1="3212.50" y1="1057.00" x2="3356.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>e6041065 | same_subject</title>
+<line x1="3308.50" y1="1057.00" x2="3356.50" y2="974.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | mentions</title>
+<line x1="3613.50" y1="676.00" x2="3787.50" y2="732.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | supports_query (0.58)</title>
+<line x1="3787.50" y1="732.00" x2="3691.50" y2="732.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | mentions</title>
+<line x1="3613.50" y1="676.00" x2="3613.50" y2="788.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | supports_query (0.67)</title>
+<line x1="3613.50" y1="788.00" x2="3691.50" y2="732.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | mentions</title>
+<line x1="3721.50" y1="641.00" x2="3721.50" y2="823.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | supports_query (0.32)</title>
+<line x1="3721.50" y1="823.00" x2="3691.50" y2="732.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>41275add | same_subject</title>
+<line x1="3787.50" y1="732.00" x2="3613.50" y2="788.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>eaca4986 | mentions</title>
+<line x1="3691.50" y1="1120.00" x2="3691.50" y2="1312.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>eaca4986 | supports_query (0.72)</title>
+<line x1="3691.50" y1="1312.00" x2="3691.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>eaca4986 | mentions</title>
+<line x1="3595.50" y1="1216.00" x2="3787.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>eaca4986 | supports_query (0.49)</title>
+<line x1="3787.50" y1="1216.00" x2="3691.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>eaca4986 | mentions</title>
+<line x1="3595.50" y1="1216.00" x2="3787.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07741c44 | mentions</title>
+<line x1="2781.50" y1="1133.00" x2="2781.50" y2="1299.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07741c44 | supports_query (0.59)</title>
+<line x1="2781.50" y1="1299.00" x2="2829.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07741c44 | mentions</title>
+<line x1="2781.50" y1="1133.00" x2="2925.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07741c44 | supports_query (0.46)</title>
+<line x1="2925.50" y1="1216.00" x2="2829.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07741c44 | same_subject</title>
+<line x1="2781.50" y1="1299.00" x2="2925.50" y2="1216.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>c19f7a0b | mentions</title>
+<line x1="2733.50" y1="732.00" x2="2925.50" y2="732.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>c19f7a0b | supports_query (0.26)</title>
+<line x1="2925.50" y1="732.00" x2="2829.50" y2="732.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2723.50" y1="1540.00" x2="2619.50" y2="1778.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query (0.45)</title>
+<line x1="2619.50" y1="1778.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2723.50" y1="1540.00" x2="2554.50" y2="1726.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query (0.45)</title>
+<line x1="2554.50" y1="1726.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2474.50" y1="1684.00" x2="2554.50" y2="1642.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query (0.27)</title>
+<line x1="2554.50" y1="1642.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2557.50" y1="1828.00" x2="2736.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query (0.18)</title>
+<line x1="2736.50" y1="1684.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2557.50" y1="1540.00" x2="2619.50" y2="1590.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query (0.09)</title>
+<line x1="2619.50" y1="1590.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2557.50" y1="1540.00" x2="2700.50" y2="1759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query (0.09)</title>
+<line x1="2700.50" y1="1759.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2557.50" y1="1828.00" x2="2806.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query</title>
+<line x1="2806.50" y1="1684.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | mentions</title>
+<line x1="2723.50" y1="1828.00" x2="2700.50" y2="1609.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | supports_query</title>
+<line x1="2700.50" y1="1609.00" x2="2640.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | same_subject</title>
+<line x1="2619.50" y1="1778.00" x2="2554.50" y2="1726.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | same_subject</title>
+<line x1="2736.50" y1="1684.00" x2="2806.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>195a1a1b | same_subject</title>
+<line x1="2619.50" y1="1590.00" x2="2700.50" y2="1759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3256.50" y1="1586.00" x2="3369.50" y2="1778.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query (0.68)</title>
+<line x1="3369.50" y1="1778.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3256.50" y1="1586.00" x2="3304.50" y2="1726.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query (0.64)</title>
+<line x1="3304.50" y1="1726.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3441.50" y1="1842.00" x2="3304.50" y2="1642.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query (0.18)</title>
+<line x1="3304.50" y1="1642.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3256.50" y1="1782.00" x2="3450.50" y2="1609.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query (0.23)</title>
+<line x1="3450.50" y1="1609.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3441.50" y1="1526.00" x2="3450.50" y2="1759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query</title>
+<line x1="3450.50" y1="1759.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3556.50" y1="1684.00" x2="3486.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query</title>
+<line x1="3486.50" y1="1684.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | mentions</title>
+<line x1="3441.50" y1="1526.00" x2="3369.50" y2="1590.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | supports_query</title>
+<line x1="3369.50" y1="1590.00" x2="3390.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | same_subject</title>
+<line x1="3369.50" y1="1778.00" x2="3304.50" y2="1726.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>32260d93 | same_subject</title>
+<line x1="3450.50" y1="1759.00" x2="3369.50" y2="1590.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | mentions</title>
+<line x1="1890.50" y1="1850.00" x2="1986.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | supports_query (0.41)</title>
+<line x1="1986.50" y1="1684.00" x2="1890.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | mentions</title>
+<line x1="1890.50" y1="1850.00" x2="1869.50" y2="1590.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | supports_query (0.41)</title>
+<line x1="1869.50" y1="1590.00" x2="1890.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | mentions</title>
+<line x1="1890.50" y1="1518.00" x2="1804.50" y2="1642.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | supports_query (0.23)</title>
+<line x1="1804.50" y1="1642.00" x2="1890.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | mentions</title>
+<line x1="1724.50" y1="1684.00" x2="1950.50" y2="1759.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | supports_query</title>
+<line x1="1950.50" y1="1759.00" x2="1890.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | mentions</title>
+<line x1="1950.50" y1="1609.00" x2="1869.50" y2="1778.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | supports_query</title>
+<line x1="1869.50" y1="1778.00" x2="1890.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | mentions</title>
+<line x1="2056.50" y1="1684.00" x2="1804.50" y2="1726.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | supports_query</title>
+<line x1="1804.50" y1="1726.00" x2="1890.50" y2="1684.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<title>07b6f563 | same_subject</title>
+<line x1="1986.50" y1="1684.00" x2="1869.50" y2="1590.00" stroke="rgba(105, 122, 138, 0.30)" stroke-width="1.05" marker-end="url(#arrowhead)" />
+</g>
+<g>
+<circle cx="960.50" cy="864.00" r="123.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | How many weeks ago did I attend a bird watching workshop at the local Audubon society?</title>
+<circle cx="960.50" cy="864.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="960.50" y="866.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">bcbe585f</text>
+</g>
+<g>
+<title>bcbe585f | bird watching workshop | attended | Audubon society</title>
+<circle cx="1056.50" cy="864.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | I | attended | bird watching workshop at the Audubon society</title>
+<ellipse cx="1020.50" cy="939.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | I | attended | bird watching workshop at the local Audubon society</title>
+<ellipse cx="939.50" cy="958.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | weeks ago | count | 1</title>
+<ellipse cx="874.50" cy="906.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | workshop | type | bird watching</title>
+<ellipse cx="874.50" cy="822.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | trip | duration | weeks</title>
+<rect x="924.50" y="761.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>bcbe585f | weeks ago | count | 3</title>
+<ellipse cx="1020.50" cy="789.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | I</title>
+<circle cx="1126.50" cy="864.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1126.50" y="867.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>bcbe585f | weeks ago</title>
+<circle cx="1011.50" cy="1022.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1011.50" y="1025.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">weeks ago</text>
+</g>
+<g>
+<title>bcbe585f | bird watching workshop</title>
+<circle cx="826.50" cy="962.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>bcbe585f | workshop</title>
+<circle cx="826.50" cy="766.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="826.50" y="769.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">workshop</text>
+</g>
+<g>
+<title>bcbe585f | trip</title>
+<circle cx="1011.50" cy="706.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1011.50" y="709.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">trip</text>
+</g>
+<g>
+<circle cx="1413.50" cy="477.00" r="123.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | How many weeks in total do I spent on reading &#x27;The Nightingale&#x27; and listening to &#x27;Sapiens: A Brief History of Humankind&#x27; and &#x27;The Power&#x27;?</title>
+<circle cx="1413.50" cy="477.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="1413.50" y="479.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_a1b77f9c</text>
+</g>
+<g>
+<title>gpt4_a1b77f9c | The Power | started listening | today</title>
+<circle cx="1509.50" cy="477.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | I | started listening to | &#x27;Sapiens: A Brief History of Humankind&#x27; by Yuval Noah Harari</title>
+<ellipse cx="1473.50" cy="552.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | non-fiction books | recommendation | popular non-fiction books on psychology or sociology</title>
+<rect x="1377.50" y="562.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | I | finished listening to | &#x27;Sapiens: A Brief History of Humankind&#x27; by Yuval Noah Harari</title>
+<ellipse cx="1327.50" cy="519.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | The Nightingale | count | 1</title>
+<ellipse cx="1327.50" cy="435.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | Sapiens: A Brief History of Humankind | finished listening | today</title>
+<circle cx="1392.50" cy="383.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | The Nightingale | count | 2</title>
+<ellipse cx="1473.50" cy="402.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | I</title>
+<circle cx="1579.50" cy="477.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1579.50" y="480.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>gpt4_a1b77f9c | The Power</title>
+<circle cx="1464.50" cy="635.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1464.50" y="638.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">The Power</text>
+</g>
+<g>
+<title>gpt4_a1b77f9c | The Nightingale</title>
+<circle cx="1279.50" cy="575.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | Sapiens: A Brief History of Humankind</title>
+<circle cx="1279.50" cy="379.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_a1b77f9c | non-fiction books</title>
+<circle cx="1464.50" cy="319.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<circle cx="1779.50" cy="938.00" r="113.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | How many MCU films did I watch in the last 3 months?</title>
+<circle cx="1779.50" cy="938.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="1779.50" y="940.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">b6019101</text>
+</g>
+<g>
+<title>b6019101 | MCU films | watched | 12</title>
+<ellipse cx="1875.50" cy="938.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | MCU films | count | 2</title>
+<ellipse cx="1839.50" cy="1013.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | I | watched | 5 MCU films</title>
+<ellipse cx="1758.50" cy="1032.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | I | watched | 4 MCU films</title>
+<rect x="1678.50" y="971.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>b6019101 | MCU films | count | 3</title>
+<ellipse cx="1693.50" cy="896.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | MCU films | watched | 5</title>
+<ellipse cx="1758.50" cy="844.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | I | watched | 12 films</title>
+<rect x="1824.50" y="854.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>b6019101 | MCU films | count | 12</title>
+<ellipse cx="1945.50" cy="938.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>b6019101 | I</title>
+<circle cx="1696.50" cy="1082.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1696.50" y="1085.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>b6019101 | MCU films</title>
+<circle cx="1696.50" cy="794.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1696.50" y="797.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">MCU films</text>
+</g>
+<g>
+<circle cx="1169.50" cy="1311.00" r="108.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | How many shirts did I pack for my 5-day trip to Costa Rica?</title>
+<circle cx="1169.50" cy="1311.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="1169.50" y="1313.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">af8d2e46</text>
+</g>
+<g>
+<title>af8d2e46 | shirts | count | 2</title>
+<ellipse cx="1265.50" cy="1311.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | count | 1</title>
+<ellipse cx="1229.50" cy="1386.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | quantity worn | 3</title>
+<ellipse cx="1148.50" cy="1405.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | recommended quantity | 1-2</title>
+<ellipse cx="1083.50" cy="1353.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | count | 3</title>
+<ellipse cx="1083.50" cy="1269.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | quantity | 7</title>
+<ellipse cx="1148.50" cy="1217.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | quantity | 2-3</title>
+<ellipse cx="1229.50" cy="1236.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts | quantity | 1-2</title>
+<ellipse cx="1335.50" cy="1311.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>af8d2e46 | shirts</title>
+<circle cx="1003.50" cy="1311.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="1003.50" y="1314.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">shirts</text>
+</g>
+<g>
+<circle cx="309.50" cy="1151.00" r="103.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_b0863698 | How many days ago did I participate in the 5K charity run?</title>
+<circle cx="309.50" cy="1151.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="309.50" y="1153.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_b0863698</text>
+</g>
+<g>
+<title>gpt4_b0863698 | Event | Name | Run for Hope: Charity 5K Run/Walk</title>
+<circle cx="405.50" cy="1151.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_b0863698 | days ago | count | 2</title>
+<ellipse cx="369.50" cy="1226.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_b0863698 | Event | Type | charity 5K run/walk</title>
+<circle cx="288.50" cy="1245.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_b0863698 | days ago | count | 1</title>
+<ellipse cx="223.50" cy="1193.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_b0863698 | I | participated in | 5K charity run</title>
+<ellipse cx="223.50" cy="1109.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_b0863698 | I</title>
+<circle cx="288.50" cy="1057.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="288.50" y="1060.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>gpt4_b0863698 | Event</title>
+<circle cx="369.50" cy="1076.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="369.50" y="1079.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">Event</text>
+</g>
+<g>
+<title>gpt4_b0863698 | days ago</title>
+<circle cx="475.50" cy="1151.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="475.50" y="1154.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">days ago</text>
+</g>
+<g>
+<circle cx="173.50" cy="717.00" r="98.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>60159905 | How many dinner parties have I attended in the past month?</title>
+<circle cx="173.50" cy="717.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="173.50" y="719.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">60159905</text>
+</g>
+<g>
+<title>60159905 | dinner parties | attended | past month</title>
+<rect x="254.50" y="708.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>60159905 | I | had | a lovely experience at Sarah&#x27;s place</title>
+<ellipse cx="233.50" cy="792.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>60159905 | dinner parties | count | 10</title>
+<ellipse cx="152.50" cy="811.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>60159905 | dinner parties | count | 1</title>
+<ellipse cx="87.50" cy="759.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>60159905 | I | watched | 10 hours of Crash Course videos</title>
+<ellipse cx="87.50" cy="675.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>60159905 | I</title>
+<circle cx="152.50" cy="623.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="152.50" y="626.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>60159905 | dinner parties</title>
+<circle cx="233.50" cy="642.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="233.50" y="645.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">dinner parties</text>
+</g>
+<g>
+<circle cx="625.50" cy="441.00" r="83.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>7024f17c | How many hours of jogging and yoga did I do last week?</title>
+<circle cx="625.50" cy="441.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="625.50" y="443.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">7024f17c</text>
+</g>
+<g>
+<title>7024f17c | yoga | practice | three times a week, each time for 2 hours</title>
+<ellipse cx="721.50" cy="441.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>7024f17c | hours of jogging and yoga | count | 2</title>
+<ellipse cx="625.50" cy="537.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>7024f17c | yoga</title>
+<circle cx="529.50" cy="441.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="529.50" y="444.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">yoga</text>
+</g>
+<g>
+<title>7024f17c | hours of jogging and yoga</title>
+<circle cx="625.50" cy="345.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<circle cx="637.50" cy="1693.00" r="83.00" fill="rgba(111, 143, 105, 0.065)" stroke="rgba(111, 143, 105, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | How many years in total did I spend in formal education from high school to the completion of my Master&#x27;s degree?</title>
+<circle cx="637.50" cy="1693.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.7)" stroke-width="0.9" />
+<text x="637.50" y="1695.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">gpt4_372c3eed_abs</text>
+</g>
+<g>
+<title>gpt4_372c3eed_abs | Master | count | 2010</title>
+<ellipse cx="733.50" cy="1693.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | education | duration | 4 years</title>
+<ellipse cx="637.50" cy="1789.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>gpt4_372c3eed_abs | education</title>
+<circle cx="541.50" cy="1693.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="541.50" y="1696.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">education</text>
+</g>
+<g>
+<title>gpt4_372c3eed_abs | Master</title>
+<circle cx="637.50" cy="1597.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 105, 0.58)" stroke-width="0.9" />
+<text x="637.50" y="1600.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">Master</text>
+</g>
+<g>
+<circle cx="2060.50" cy="224.00" r="83.00" fill="rgba(111, 143, 166, 0.065)" stroke="rgba(111, 143, 166, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>c5e8278d | What was my last name before I changed it?</title>
+<circle cx="2060.50" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.7)" stroke-width="0.9" />
+<text x="2060.50" y="226.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">c5e8278d</text>
+</g>
+<g>
+<title>c5e8278d | my last name | was | Johnson</title>
+<ellipse cx="2156.50" cy="224.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>c5e8278d | my name | old name | Johnson</title>
+<ellipse cx="2060.50" cy="320.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>c5e8278d | my name</title>
+<circle cx="1964.50" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<text x="1964.50" y="227.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">my name</text>
+</g>
+<g>
+<title>c5e8278d | my last name</title>
+<circle cx="2060.50" cy="128.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<text x="2060.50" y="131.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">my last name</text>
+</g>
+<g>
+<circle cx="2670.50" cy="224.00" r="73.00" fill="rgba(111, 143, 166, 0.065)" stroke="rgba(111, 143, 166, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>0977f2af | What new kitchen gadget did I invest in before getting the Air Fryer?</title>
+<circle cx="2670.50" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.7)" stroke-width="0.9" />
+<text x="2670.50" y="226.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">0977f2af</text>
+</g>
+<g>
+<title>0977f2af | Air Fryer | acquired | yesterday</title>
+<circle cx="2766.50" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>0977f2af | Air Fryer</title>
+<circle cx="2574.50" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<text x="2574.50" y="227.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">Air Fryer</text>
+</g>
+<g>
+<circle cx="1450.50" cy="224.00" r="73.00" fill="rgba(111, 143, 166, 0.065)" stroke="rgba(111, 143, 166, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>65240037 | I remember you told me to dilute tea tree oil with a carrier oil before applying it to my skin. Can you remind me what the recommended ratio is?</title>
+<circle cx="1450.50" cy="224.00" r="11.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.7)" stroke-width="0.9" />
+<text x="1450.50" y="226.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">65240037</text>
+</g>
+<g>
+<title>65240037 | tea tree oil | dilute | carrier oil</title>
+<rect x="1531.50" y="215.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>65240037 | tea tree oil</title>
+<circle cx="1354.50" cy="224.00" r="10.00" fill="#ffffff" stroke="rgba(111, 143, 166, 0.58)" stroke-width="0.9" />
+<text x="1354.50" y="227.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">tea tree oil</text>
+</g>
+<g>
+<circle cx="1360.50" cy="1604.00" r="78.00" fill="rgba(178, 130, 104, 0.065)" stroke="rgba(178, 130, 104, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>0e4e4c46 | What is my current highest score in Ticket to Ride?</title>
+<circle cx="1360.50" cy="1604.00" r="11.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.7)" stroke-width="0.9" />
+<text x="1360.50" y="1606.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">0e4e4c46</text>
+</g>
+<g>
+<title>0e4e4c46 | Ticket to Ride | highest score | 124 points</title>
+<ellipse cx="1456.50" cy="1604.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>0e4e4c46 | Ticket to Ride | highest score | 132 points</title>
+<ellipse cx="1312.50" cy="1687.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>0e4e4c46 | Ticket to Ride</title>
+<circle cx="1312.50" cy="1521.00" r="10.00" fill="#ffffff" stroke="rgba(178, 130, 104, 0.58)" stroke-width="0.9" />
+<text x="1312.50" y="1524.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">Ticket to Ride</text>
+</g>
+<g>
+<circle cx="3260.50" cy="974.00" r="93.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>e6041065 | What percentage of packed shoes did I wear on my last trip?</title>
+<circle cx="3260.50" cy="974.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<text x="3260.50" y="976.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">e6041065</text>
+</g>
+<g>
+<title>e6041065 | I | packed | a lot of shoes</title>
+<ellipse cx="3356.50" cy="974.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>e6041065 | I | packed | shoes</title>
+<ellipse cx="3308.50" cy="1057.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>e6041065 | I | wore | two shoes</title>
+<ellipse cx="3212.50" cy="1057.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>e6041065 | skincare products and hair care products | used | half</title>
+<ellipse cx="3164.50" cy="974.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>e6041065 | I</title>
+<circle cx="3212.50" cy="891.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<text x="3212.50" y="894.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>e6041065 | skincare products and hair care products</title>
+<circle cx="3308.50" cy="891.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<circle cx="3691.50" cy="732.00" r="88.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>41275add | I wanted to follow up on our previous conversation about YouTube videos for workplace posture. Can you remind me of the Mayo Clinic video you recommended?</title>
+<circle cx="3691.50" cy="732.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<text x="3691.50" y="734.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">41275add</text>
+</g>
+<g>
+<title>41275add | YouTube video | title | How to Sit Properly at a Desk to Avoid Back Pain</title>
+<ellipse cx="3787.50" cy="732.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>41275add | video | title | 10 Easy Ways to Improve Your Posture at Work</title>
+<ellipse cx="3721.50" cy="823.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>41275add | YouTube video | title | 5 Tips for Better Posture at Your Desk</title>
+<ellipse cx="3613.50" cy="788.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>41275add | YouTube video</title>
+<circle cx="3613.50" cy="676.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<text x="3613.50" y="679.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">YouTube video</text>
+</g>
+<g>
+<title>41275add | video</title>
+<circle cx="3721.50" cy="641.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<text x="3721.50" y="644.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">video</text>
+</g>
+<g>
+<circle cx="3691.50" cy="1216.00" r="83.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>eaca4986 | I&#x27;m looking back at our previous conversation where you created two sad songs for me. Can you remind me what was the chord progression for the chorus in the second song?</title>
+<circle cx="3691.50" cy="1216.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<text x="3691.50" y="1218.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">eaca4986</text>
+</g>
+<g>
+<title>eaca4986 | chorus | chord progression | C D E F G A B A G F E D C</title>
+<rect x="3772.50" y="1207.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>eaca4986 | chorus in the second song | chord progression | C D E F G A B A G F E D C</title>
+<ellipse cx="3691.50" cy="1312.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>eaca4986 | chorus</title>
+<circle cx="3595.50" cy="1216.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<text x="3595.50" y="1219.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">chorus</text>
+</g>
+<g>
+<title>eaca4986 | chorus in the second song</title>
+<circle cx="3691.50" cy="1120.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<circle cx="2829.50" cy="1216.00" r="78.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>07741c44 | Where do I initially keep my old sneakers?</title>
+<circle cx="2829.50" cy="1216.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<text x="2829.50" y="1218.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">07741c44</text>
+</g>
+<g>
+<title>07741c44 | old sneakers | store | shoe rack</title>
+<ellipse cx="2925.50" cy="1216.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>07741c44 | old sneakers | keep | under my bed</title>
+<ellipse cx="2781.50" cy="1299.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>07741c44 | old sneakers</title>
+<circle cx="2781.50" cy="1133.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<text x="2781.50" y="1136.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">old sneakers</text>
+</g>
+<g>
+<circle cx="2829.50" cy="732.00" r="73.00" fill="rgba(111, 127, 144, 0.065)" stroke="rgba(111, 127, 144, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>c19f7a0b | What time do I usually get home from work on weeknights?</title>
+<circle cx="2829.50" cy="732.00" r="11.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.7)" stroke-width="0.9" />
+<text x="2829.50" y="734.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">c19f7a0b</text>
+</g>
+<g>
+<title>c19f7a0b | I | get home from work | around 6:30 pm</title>
+<ellipse cx="2925.50" cy="732.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>c19f7a0b | I</title>
+<circle cx="2733.50" cy="732.00" r="10.00" fill="#ffffff" stroke="rgba(111, 127, 144, 0.58)" stroke-width="0.9" />
+<text x="2733.50" y="735.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<circle cx="2640.50" cy="1684.00" r="128.00" fill="rgba(154, 132, 163, 0.065)" stroke="rgba(154, 132, 163, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>195a1a1b | Can you suggest some activities that I can do in the evening?</title>
+<circle cx="2640.50" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.7)" stroke-width="0.9" />
+<text x="2640.50" y="1686.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">195a1a1b</text>
+</g>
+<g>
+<title>195a1a1b | assistant | interest | trying out some of these places</title>
+<rect x="2721.50" y="1675.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>195a1a1b | visit | time | evening</title>
+<rect x="2685.50" y="1750.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>195a1a1b | evening | preferred_direction | create setting evening; visit time evening; assistant interest trying out some of these places. Grounding: uming tasks you need to accomplish regularly?; You could create different scenes or schedules to match your daily routines, like a cozy evening setting or a bright morning boost</title>
+<rect x="2604.50" y="1769.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>195a1a1b | evening | supported_reason | uming tasks you need to accomplish regularly?; You could create different scenes or schedules to match your daily routines, like a cozy evening setting or a bright morning boost</title>
+<ellipse cx="2554.50" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>195a1a1b | create | setting | evening</title>
+<rect x="2539.50" y="1633.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>195a1a1b | visit | time | later in the evening</title>
+<ellipse cx="2619.50" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>195a1a1b | I | have | 7-8 hours</title>
+<rect x="2685.50" y="1600.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>195a1a1b | assistant | love | surfing</title>
+<ellipse cx="2806.50" cy="1684.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>195a1a1b | I</title>
+<circle cx="2723.50" cy="1828.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="2723.50" y="1831.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>195a1a1b | assistant</title>
+<circle cx="2557.50" cy="1828.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="2557.50" y="1831.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">assistant</text>
+</g>
+<g>
+<title>195a1a1b | create</title>
+<circle cx="2474.50" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="2474.50" y="1687.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">create</text>
+</g>
+<g>
+<title>195a1a1b | visit</title>
+<circle cx="2557.50" cy="1540.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="2557.50" y="1543.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">visit</text>
+</g>
+<g>
+<title>195a1a1b | evening</title>
+<circle cx="2723.50" cy="1540.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="2723.50" y="1543.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">evening</text>
+</g>
+<g>
+<circle cx="3390.50" cy="1684.00" r="123.00" fill="rgba(154, 132, 163, 0.065)" stroke="rgba(154, 132, 163, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | Can you recommend a show or movie for me to watch tonight?</title>
+<circle cx="3390.50" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.7)" stroke-width="0.9" />
+<text x="3390.50" y="1686.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">32260d93</text>
+</g>
+<g>
+<title>32260d93 | I | have information | local restaurants</title>
+<ellipse cx="3486.50" cy="1684.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | book | description | A fascinating and accessible book that explores the development of human societies, including ancient civilizations.</title>
+<ellipse cx="3450.50" cy="1759.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | recommend a show | preferred_direction | AI and ML, Andrew Ng; show description A thorough history of the Inca Empire, exploring its politics, society, and culture; The Rise and Fall of the Third Chimpanzee by Jared Diamond. Grounding: (assistant) ass - A thorough history of the Inca Empire, exploring its politics, society, and culture; (assistant) I&#x27;m looking to improve my skills in machine learning and artificial intelligence</title>
+<rect x="3354.50" y="1769.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>32260d93 | recommend a show | supported_reason | (assistant) ass - A thorough history of the Inca Empire, exploring its politics, society, and culture; (assistant) I&#x27;m looking to improve my skills in machine learning and artificial intelligence</title>
+<ellipse cx="3304.50" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | you | can try | searching online for Thai restaurants in your area or read reviews on websites like yelp or google maps</title>
+<rect x="3289.50" y="1633.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>32260d93 | book | title | name</title>
+<ellipse cx="3369.50" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | show | description | A thorough history of the Inca Empire, exploring its politics, society, and culture.</title>
+<ellipse cx="3450.50" cy="1609.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | I</title>
+<circle cx="3556.50" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="3556.50" y="1687.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">I</text>
+</g>
+<g>
+<title>32260d93 | you</title>
+<circle cx="3441.50" cy="1842.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="3441.50" y="1845.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">you</text>
+</g>
+<g>
+<title>32260d93 | show</title>
+<circle cx="3256.50" cy="1782.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="3256.50" y="1785.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">show</text>
+</g>
+<g>
+<title>32260d93 | recommend a show</title>
+<circle cx="3256.50" cy="1586.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>32260d93 | book</title>
+<circle cx="3441.50" cy="1526.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="3441.50" y="1529.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">book</text>
+</g>
+<g>
+<circle cx="1890.50" cy="1684.00" r="118.00" fill="rgba(154, 132, 163, 0.065)" stroke="rgba(154, 132, 163, 0.14)" stroke-width="0.9" />
+</g>
+<g>
+<title>07b6f563 | Can you suggest some useful accessories for my phone?</title>
+<circle cx="1890.50" cy="1684.00" r="11.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.7)" stroke-width="0.9" />
+<text x="1890.50" y="1686.97" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="9.0" fill="#475569" text-anchor="middle">07b6f563</text>
+</g>
+<g>
+<title>07b6f563 | my phone | preferred_direction | Replace social media with a better habit; Choose a protector with a high scratch-resistance rating; Opt for a protector with an easy-to-install design. Grounding: Most Important Task (MIT) Identify the most important task you need to accomplish today and tackle it during this time block; (assistant) I&#x27;m looking to improve my daily routine, especially when it comes to social media usage</title>
+<rect x="1971.50" y="1675.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>07b6f563 | Durability | Choose | a protector with a high scratch-resistance rating (e.g., 9H hardness)</title>
+<ellipse cx="1950.50" cy="1759.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>07b6f563 | habit | replace | social media</title>
+<rect x="1854.50" y="1769.00" width="30.00" height="18.00" rx="4" ry="4" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.8" />
+</g>
+<g>
+<title>07b6f563 | protector | choose | high scratch-resistance rating</title>
+<ellipse cx="1804.50" cy="1726.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>07b6f563 | phone | accessory | power bank</title>
+<ellipse cx="1804.50" cy="1642.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>07b6f563 | my phone | supported_reason | Most Important Task (MIT) Identify the most important task you need to accomplish today and tackle it during this time block; (assistant) I&#x27;m looking to improve my daily routine, especially when it comes to social media usage</title>
+<ellipse cx="1869.50" cy="1590.00" rx="15.50" ry="10.50" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+</g>
+<g>
+<title>07b6f563 | habit</title>
+<circle cx="1950.50" cy="1609.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="1950.50" y="1612.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">habit</text>
+</g>
+<g>
+<title>07b6f563 | protector</title>
+<circle cx="2056.50" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="2056.50" y="1687.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">protector</text>
+</g>
+<g>
+<title>07b6f563 | my phone</title>
+<circle cx="1890.50" cy="1850.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="1890.50" y="1853.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">my phone</text>
+</g>
+<g>
+<title>07b6f563 | Durability</title>
+<circle cx="1724.50" cy="1684.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="1724.50" y="1687.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">Durability</text>
+</g>
+<g>
+<title>07b6f563 | phone</title>
+<circle cx="1890.50" cy="1518.00" r="10.00" fill="#ffffff" stroke="rgba(154, 132, 163, 0.58)" stroke-width="0.9" />
+<text x="1890.50" y="1521.30" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10.0" fill="#334155" text-anchor="middle">phone</text>
+</g>
+</svg>

@@ -1,13 +1,30 @@
-"""Utility helpers for configuration and common text operations."""
+"""Utility helpers for configuration, dataset naming, and common text operations."""
 
 from __future__ import annotations
 
 import copy
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 import yaml
+
+
+_DATASET_DISPLAY_NAMES = {
+    "sample20": "LongMemEval Sample-20 Split",
+    "longmemeval_s_sample_20": "LongMemEval Sample-20 Split",
+    "oracle": "LongMemEval Oracle Split",
+    "longmemeval_oracle": "LongMemEval Oracle Split",
+    "ragdebug10": "LongMemEval Diagnostic Split",
+    "longmemeval_ragdebug10_rebuilt": "LongMemEval Diagnostic Split",
+    "diagnostic_heldout20": "LongMemEval Held-Out Matched Split",
+    "longmemeval_eval_subset_matched_to_diagnostic_split": "LongMemEval Held-Out Matched Split",
+    "quick5": "LongMemEval Diagnostic Mini Split",
+    "locomo10": "LoCoMo Evaluation Subset",
+    "locomo_matched20": "LoCoMo Matched-Distribution 20-QA Subset",
+    "locomo20_matched_distribution": "LoCoMo Matched-Distribution 20-QA Subset",
+    "locomo": "LoCoMo Evaluation Set",
+}
 
 
 def project_root() -> Path:
@@ -45,6 +62,54 @@ def sanitize_filename_part(value: str) -> str:
             chars.append("_")
     cleaned = "".join(chars).strip("._")
     return cleaned or "unknown"
+
+
+def dataset_name_aliases(value: str | None) -> Set[str]:
+    """Return normalized aliases for a dataset identifier or path."""
+    raw = str(value or "").strip()
+    if not raw:
+        return set()
+    path = Path(raw)
+    aliases = {
+        raw.lower(),
+        path.name.lower(),
+        path.stem.lower(),
+    }
+    for item in list(aliases):
+        if item.endswith(".json"):
+            aliases.add(item[:-5])
+    return {alias for alias in aliases if alias}
+
+
+def dataset_display_name(value: str | None) -> str:
+    """Return a paper-facing dataset display name while preserving raw filenames internally."""
+    aliases = dataset_name_aliases(value)
+    for alias in aliases:
+        if alias in _DATASET_DISPLAY_NAMES:
+            return _DATASET_DISPLAY_NAMES[alias]
+    joined = " ".join(sorted(aliases))
+    if "ragdebug" in joined and "quick5" in joined:
+        return "LongMemEval Diagnostic Mini Split"
+    if "diagnostic_heldout20" in joined or "matched_to_diagnostic_split" in joined:
+        return "LongMemEval Held-Out Matched Split"
+    if "ragdebug" in joined:
+        return "LongMemEval Diagnostic Split"
+    if "sample20" in joined or "sample_20" in joined:
+        return "LongMemEval Sample-20 Split"
+    if "oracle" in joined and "longmemeval" in joined:
+        return "LongMemEval Oracle Split"
+    if "locomo10" in joined:
+        return "LoCoMo Evaluation Subset"
+    if "locomo_matched20" in joined or "locomo20_matched_distribution" in joined:
+        return "LoCoMo Matched-Distribution 20-QA Subset"
+    if "locomo" in joined:
+        return "LoCoMo Evaluation Set"
+    if "longmemeval" in joined:
+        return "LongMemEval Evaluation Set"
+    raw = str(value or "").strip()
+    if not raw:
+        return "Unknown Dataset"
+    return Path(raw).name or raw
 
 
 def _resolve_config_path(path: str) -> Path:

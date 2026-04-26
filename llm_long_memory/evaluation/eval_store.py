@@ -51,6 +51,8 @@ class EvalStore:
               graph_answer_span_hit_rate REAL,
               graph_support_sentence_hit_rate REAL,
               graph_ingest_accept_rate REAL,
+              avg_answer_token_density REAL,
+              avg_noise_density REAL,
               avg_latency_sec REAL,
               isolated INTEGER
             )
@@ -73,6 +75,8 @@ class EvalStore:
               support_sentence_hit INTEGER,
               graph_answer_span_hit INTEGER,
               graph_support_sentence_hit INTEGER,
+              answer_token_density REAL,
+              noise_density REAL,
               latency_sec REAL,
               retrieved_session_ids TEXT
             )
@@ -100,6 +104,8 @@ class EvalStore:
               graph_answer_span_hit_rate REAL,
               graph_support_sentence_hit_rate REAL,
               graph_ingest_accept_rate REAL,
+              avg_answer_token_density REAL,
+              avg_noise_density REAL,
               avg_latency_sec REAL
             )
             """
@@ -110,6 +116,8 @@ class EvalStore:
               run_id TEXT,
               question_type TEXT,
               type_answer_acc REAL,
+              type_answer_token_density REAL,
+              type_noise_density REAL,
               type_latency_sec REAL,
               PRIMARY KEY(run_id, question_type)
             )
@@ -155,6 +163,10 @@ class EvalStore:
             )
         if "graph_ingest_accept_rate" not in run_names:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN graph_ingest_accept_rate REAL")
+        if "avg_answer_token_density" not in run_names:
+            self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN avg_answer_token_density REAL")
+        if "avg_noise_density" not in run_names:
+            self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN avg_noise_density REAL")
         if "avg_latency_sec" not in run_names:
             self.conn.execute(f"ALTER TABLE {self.run_table} ADD COLUMN avg_latency_sec REAL")
         thesis_run_cols = self.conn.execute(f"PRAGMA table_info({self.thesis_run_table})").fetchall()
@@ -167,18 +179,38 @@ class EvalStore:
             "graph_answer_span_hit_rate",
             "graph_support_sentence_hit_rate",
             "graph_ingest_accept_rate",
+            "avg_answer_token_density",
+            "avg_noise_density",
             "avg_latency_sec",
         }
         if not thesis_run_expected.issubset(thesis_run_names):
-            # Legacy or partially created DB: rebuild is not necessary because CREATE TABLE
-            # already defines the schema for new installs. The additive ALTER path is only
-            # needed for the legacy eval tables above.
-            pass
+            if "avg_answer_token_density" not in thesis_run_names:
+                self.conn.execute(
+                    f"ALTER TABLE {self.thesis_run_table} ADD COLUMN avg_answer_token_density REAL"
+                )
+            if "avg_noise_density" not in thesis_run_names:
+                self.conn.execute(
+                    f"ALTER TABLE {self.thesis_run_table} ADD COLUMN avg_noise_density REAL"
+                )
         thesis_type_cols = self.conn.execute(f"PRAGMA table_info({self.thesis_type_table})").fetchall()
         thesis_type_names = {str(row["name"]) for row in thesis_type_cols}
-        thesis_type_expected = {"run_id", "question_type", "type_answer_acc", "type_latency_sec"}
+        thesis_type_expected = {
+            "run_id",
+            "question_type",
+            "type_answer_acc",
+            "type_answer_token_density",
+            "type_noise_density",
+            "type_latency_sec",
+        }
         if not thesis_type_expected.issubset(thesis_type_names):
-            pass
+            if "type_answer_token_density" not in thesis_type_names:
+                self.conn.execute(
+                    f"ALTER TABLE {self.thesis_type_table} ADD COLUMN type_answer_token_density REAL"
+                )
+            if "type_noise_density" not in thesis_type_names:
+                self.conn.execute(
+                    f"ALTER TABLE {self.thesis_type_table} ADD COLUMN type_noise_density REAL"
+                )
         thesis_mode_cols = self.conn.execute(f"PRAGMA table_info({self.thesis_mode_table})").fetchall()
         thesis_mode_names = {str(row["name"]) for row in thesis_mode_cols}
         thesis_mode_expected = {
@@ -210,6 +242,10 @@ class EvalStore:
             self.conn.execute(
                 f"ALTER TABLE {self.result_table} ADD COLUMN graph_support_sentence_hit INTEGER"
             )
+        if "answer_token_density" not in names:
+            self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN answer_token_density REAL")
+        if "noise_density" not in names:
+            self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN noise_density REAL")
         if "latency_sec" not in names:
             self.conn.execute(f"ALTER TABLE {self.result_table} ADD COLUMN latency_sec REAL")
         self.conn.commit()
@@ -249,9 +285,9 @@ class EvalStore:
              final_answer_acc,
              retrieval_answer_span_hit_rate, retrieval_support_sentence_hit_rate, retrieval_evidence_hit_rate,
              graph_answer_span_hit_rate, graph_support_sentence_hit_rate,
-             graph_ingest_accept_rate, avg_latency_sec,
+             graph_ingest_accept_rate, avg_answer_token_density, avg_noise_density, avg_latency_sec,
              isolated)
-            VALUES(?, ?, datetime('now'), NULL, 0, 0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+            VALUES(?, ?, datetime('now'), NULL, 0, 0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
             """,
             (run_id, dataset_path, int(isolated)),
         )
@@ -273,6 +309,8 @@ class EvalStore:
         support_sentence_hit: bool | None = None,
         graph_answer_span_hit: bool | None = None,
         graph_support_sentence_hit: bool | None = None,
+        answer_token_density: float | None = None,
+        noise_density: float | None = None,
         latency_sec: float | None = None,
         retrieved_session_ids: Sequence[str] | None = None,
         commit: bool = True,
@@ -287,10 +325,10 @@ class EvalStore:
               run_id, question_id, question_type, question,
               expected_answer, prediction, is_match,
               evidence_hit, evidence_recall, answer_span_hit, support_sentence_hit,
-              graph_answer_span_hit, graph_support_sentence_hit, latency_sec,
+              graph_answer_span_hit, graph_support_sentence_hit, answer_token_density, noise_density, latency_sec,
               retrieved_session_ids
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -310,6 +348,8 @@ class EvalStore:
                     if graph_support_sentence_hit is not None
                     else None
                 ),
+                (float(answer_token_density) if answer_token_density is not None else None),
+                (float(noise_density) if noise_density is not None else None),
                 (float(latency_sec) if latency_sec is not None else None),
                 session_ids_json,
             ),
@@ -349,6 +389,8 @@ class EvalStore:
         graph_answer_span_hit_rate: float | None,
         graph_support_sentence_hit_rate: float | None,
         graph_ingest_accept_rate: float | None,
+        avg_answer_token_density: float | None,
+        avg_noise_density: float | None,
         avg_latency_sec: float | None,
         commit: bool = True,
     ) -> None:
@@ -365,9 +407,11 @@ class EvalStore:
               graph_answer_span_hit_rate,
               graph_support_sentence_hit_rate,
               graph_ingest_accept_rate,
+              avg_answer_token_density,
+              avg_noise_density,
               avg_latency_sec
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -377,6 +421,8 @@ class EvalStore:
                 float(graph_answer_span_hit_rate) if graph_answer_span_hit_rate is not None else None,
                 float(graph_support_sentence_hit_rate) if graph_support_sentence_hit_rate is not None else None,
                 float(graph_ingest_accept_rate) if graph_ingest_accept_rate is not None else None,
+                float(avg_answer_token_density) if avg_answer_token_density is not None else None,
+                float(avg_noise_density) if avg_noise_density is not None else None,
                 float(avg_latency_sec) if avg_latency_sec is not None else None,
             ),
         )
@@ -389,6 +435,8 @@ class EvalStore:
         question_type: str,
         *,
         type_answer_acc: float,
+        type_answer_token_density: float | None,
+        type_noise_density: float | None,
         type_latency_sec: float,
         commit: bool = True,
     ) -> None:
@@ -397,13 +445,15 @@ class EvalStore:
         self.conn.execute(
             f"""
             INSERT OR REPLACE INTO {self.thesis_type_table}
-            (run_id, question_type, type_answer_acc, type_latency_sec)
-            VALUES(?, ?, ?, ?)
+            (run_id, question_type, type_answer_acc, type_answer_token_density, type_noise_density, type_latency_sec)
+            VALUES(?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
                 question_type,
                 float(type_answer_acc),
+                float(type_answer_token_density) if type_answer_token_density is not None else None,
+                float(type_noise_density) if type_noise_density is not None else None,
                 float(type_latency_sec),
             ),
         )
@@ -471,6 +521,8 @@ class EvalStore:
         graph_answer_span_hit_rate: float | None = None,
         graph_support_sentence_hit_rate: float | None = None,
         graph_ingest_accept_rate: float | None = None,
+        avg_answer_token_density: float | None = None,
+        avg_noise_density: float | None = None,
         avg_latency_sec: float | None = None,
         commit: bool = True,
     ) -> None:
@@ -490,6 +542,8 @@ class EvalStore:
                 graph_answer_span_hit_rate = ?,
                 graph_support_sentence_hit_rate = ?,
                 graph_ingest_accept_rate = ?,
+                avg_answer_token_density = ?,
+                avg_noise_density = ?,
                 avg_latency_sec = ?
             WHERE run_id = ?
             """,
@@ -512,6 +566,8 @@ class EvalStore:
                     else None
                 ),
                 (float(graph_ingest_accept_rate) if graph_ingest_accept_rate is not None else None),
+                (float(avg_answer_token_density) if avg_answer_token_density is not None else None),
+                (float(avg_noise_density) if avg_noise_density is not None else None),
                 (float(avg_latency_sec) if avg_latency_sec is not None else None),
                 run_id,
             ),

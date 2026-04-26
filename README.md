@@ -1,28 +1,123 @@
 # MemSLM
 
-MemSLM is a local, stage-auditable long-conversation QA system for studying how far a lightweight memory stack can go before larger-model reasoning becomes necessary.
+MemSLM is a local, stage-auditable long-conversation QA system for studying how structured memory processing improves answer quality beyond `model-only` and `naive rag` baselines under local 8B constraints.
 
-Instead of treating memory QA as a single black-box step, MemSLM makes each stage explicit:
+The active mainline pipeline is:
 
-- hybrid retrieval
-- conservative evidence filtering
-- support-unit / claim extraction
-- light-graph organization
-- graph-only toolkit reasoning
-- final answer generation with a local 8B model
+`mid retrieval -> evidence filter -> claims -> light graph -> toolkit -> final 8B answer`
 
-The repository is designed for thesis-grade experimentation, but organized to keep one active runtime path clean and inspectable.
+This repository is organized as a research-grade engineering codebase:
 
-## Why This Repository Exists
+- one active runtime path
+- explicit stage artifacts
+- reproducible evaluation runners
+- stage-wise audit and visualization support
+- exploratory ideas isolated under `future_work/`
 
-Long-context QA systems often fail for different reasons at different layers:
+## Highlights
 
-- retrieval misses answer-bearing evidence
-- noisy evidence overwhelms the useful part
-- structural extraction removes information while trying to clean context
-- final generation over-trusts weak cues
+- Local 8B end-to-end QA with stage-level inspection
+- Four-way evaluation protocol:
+  - `model-only`
+  - `naive rag`
+  - `memslm`
+  - `filter-only ablation`
+- Two thesis splits for current mainline reporting:
+  - `LongMemEval Diagnostic Split`
+  - `LongMemEval Held-Out Matched Split`
+- Stage-wise answerability, latency, and noise-density analysis
+- Combined light-graph visualization across all questions in a split
 
-MemSLM separates those failure modes so they can be measured, visualized, and debugged independently on a local machine.
+## Main Results
+
+All `memslm` runs below use:
+
+- answer model: `qwen3:8b`
+- judge model: `deepseek-r1:8b`
+
+### Four-Way Comparison
+
+#### LongMemEval Diagnostic Split
+
+| Method | Accuracy | Avg Latency (s) | Answer Density | Noise Density |
+| --- | ---: | ---: | ---: | ---: |
+| `model-only` | `0.15` | `17.28` | `0.0795` | `0.9205` |
+| `naive rag` | `0.10` | `17.51` | `0.0795` | `0.9205` |
+| `memslm` | `0.45` | `31.29` | `0.0977` | `0.9023` |
+| `filter-only ablation` | `0.15` | `6.74` | `0.1011` | `0.8989` |
+
+#### LongMemEval Held-Out Matched Split
+
+| Method | Accuracy | Avg Latency (s) | Answer Density | Noise Density |
+| --- | ---: | ---: | ---: | ---: |
+| `model-only` | `0.00` | `21.76` | `0.0256` | `0.9744` |
+| `naive rag` | `0.10` | `20.76` | `0.0404` | `0.9596` |
+| `memslm` | `0.30` | `35.52` | `0.0593` | `0.9407` |
+| `filter-only ablation` | `0.15` | `6.90` | `0.0561` | `0.9439` |
+
+Interpretation:
+
+- `memslm` is the strongest system on both splits
+- `filter-only ablation` is the fastest mainline-compatible ablation
+- the held-out split is materially harder than the diagnostic split
+
+Detailed reports:
+
+- [Diagnostic comparison report](llm_long_memory/data/processed/thesis_reports_debug_analysis/LongMemEval_Diagnostic_Split__model-qwen3_8b__judge-deepseek-r1_8b__memslm-centered_comparison.md)
+- [Held-out comparison report](llm_long_memory/data/processed/thesis_reports_debug_analysis/LongMemEval_Held-Out_Matched_Split__model-qwen3_8b__judge-deepseek-r1_8b__memslm-centered_comparison.md)
+- [Extended results index](docs/RESULTS.md)
+
+## Extension Generalization Checks
+
+These runs are not part of the core two-split, four-way comparison grid above. They are intended as external-validity checks for robustness under changed evaluation conditions.
+
+### Swapped Answer/Judge Roles
+
+Setup:
+
+- answer model: `deepseek-r1:8b`
+- judge model: `qwen3:8b`
+- split: `LongMemEval Held-Out Matched Split`
+
+Result:
+
+- `final_answer_acc = 0.30`
+- `avg_latency_sec = 36.08`
+
+Artifacts:
+
+- [Swapped-role report](llm_long_memory/data/processed/thesis_reports_debug_analysis/run_20260426_103908_dc8d2874__longmemeval_eval_subset_matched_to_diagnostic_split__model-deepseek-r1_8b__judge-qwen3_8b_report.md)
+
+Interpretation:
+
+- the framework still runs coherently when the answer model and judge model are exchanged
+- this check supports robustness of the evaluation setup, but does not outperform the main `qwen3:8b -> deepseek-r1:8b` configuration
+
+### LoCoMo External-Dataset Check
+
+Setup:
+
+- split: `LoCoMo Matched-Distribution 20-QA Subset`
+- answer model: `qwen3:8b`
+- judge model: `deepseek-r1:8b`
+
+Results:
+
+| Method | Accuracy | Avg Latency (s) |
+| --- | ---: | ---: |
+| `model-only` | `0.05` | `21.34` |
+| `memslm` | `0.15` | `42.04` |
+
+Artifacts:
+
+- [LoCoMo model-only report](llm_long_memory/data/processed/thesis_reports_debug_analysis/locomo_model_only_matched20_report.md)
+- [LoCoMo report](llm_long_memory/data/processed/thesis_reports_debug_analysis/run_20260426_113651_62a381bc__locomo20_matched_distribution__model-qwen3_8b__judge-deepseek-r1_8b_report.md)
+
+Interpretation:
+
+- the pipeline transfers across dataset format and domain without code-path replacement
+- `memslm` still improves over `model-only` on the external dataset
+- performance is materially lower than on LongMemEval, so this run should be read as a stress-test for external generalization rather than a headline benchmark
 
 ## System Overview
 
@@ -31,7 +126,7 @@ flowchart LR
     A["Dialogue / Dataset History"] --> B["Mid-Memory (SQLite)"]
     B --> C["Hybrid Retrieval"]
     C --> D["Evidence Filter"]
-    D --> E["Support Units + Claims"]
+    D --> E["Claims / Support Units"]
     E --> F["Light Graph"]
     F --> G["Toolkit (Graph-only)"]
     D --> H["Final Composer"]
@@ -46,69 +141,69 @@ Design principles:
 
 - retrieval is recall-oriented
 - filtering is conservative
-- claims preserve grounded structure rather than over-compressing evidence
-- the light graph is an organizer, not a magic oracle
-- the toolkit consumes graph output only
-- one active runtime path is preferred over multiple hidden legacy branches
+- claims preserve grounded support structure
+- the light graph is an organizer, not an answer oracle
+- toolkit reasoning only consumes graph output
+- evaluation should expose where signal is lost, not just whether the final answer is wrong
 
-More detail: [ARCHITECTURE.md](ARCHITECTURE.md)
+More detail:
 
-## Current Mainline Result
+- [ARCHITECTURE.md](ARCHITECTURE.md)
 
-The current mainline repository keeps a stable `45%` judged accuracy result on the local `ragdebug10` diagnostic split using a local 8B answer model.
+## Core Visualizations
 
-Snapshot:
+### Stage-Wise Answerability
 
-| Setting | Value |
-| --- | --- |
-| Dataset | `longmemeval_ragdebug10_rebuilt.json` |
-| Main answer model | `qwen3:8b` |
-| Judge model | `deepseek-r1:8b` |
-| Judged final accuracy | `45.0%` |
-| Exact match | `25.0%` |
-| Average latency | `33.65s` |
-| Retrieval answer-span hit rate | `40.0%` |
-| Light-graph answer-span hit rate | `40.0%` |
+#### Diagnostic Split
 
-Reference run:
-- `run_20260425_150142_207e3577`
+![Diagnostic stage-wise answerability by type](docs/assets/diagnostic_stage_answerability_by_type.svg)
 
-Detailed tables and notes:
-- [docs/RESULTS.md](docs/RESULTS.md)
+#### Held-Out Matched Split
 
-## Example Figures
+![Held-out stage-wise answerability by type](docs/assets/heldout_stage_answerability_by_type.svg)
 
-### Stage Answerability by Question Type
+These figures are the most useful stage-wise diagnostics in the current thesis workflow because they show where answer-bearing signal survives and where it collapses.
 
-![Stage answerability by type](docs/assets/ragdebug_stage_answerability_by_type.svg)
+### Light-Graph Overview
 
-### Combined Light-Graph Visualization
+#### Diagnostic Split
 
-![Combined light graph overview](docs/assets/light_graph_overview.svg)
+![Diagnostic light graph overview](docs/assets/diagnostic_light_graph_overview.svg)
+
+#### Held-Out Matched Split
+
+![Held-out light graph overview](docs/assets/heldout_light_graph_overview.svg)
+
+The light graph is strongest as:
+
+- an intermediate structural representation
+- a debugging surface
+- a compact summary of support relations across questions
+
+It should not be interpreted as a standalone answer engine.
 
 ## Repository Layout
 
 ```text
 llm_long_memory/
-  baselines/      Frozen baseline protocols
-  config/         Runtime and evaluation config
-  evaluation/     Eval loops, metrics, SQLite persistence
-  experiments/    Main experiment runners and report exporters
+  config/         Runtime and evaluation configuration
+  evaluation/     Eval loops, metrics, reporting, SQLite persistence
+  experiments/    Main experiment runners and exporters
   future_work/    Isolated exploratory prototypes
   llm/            Local LLM wrappers
-  memory/         Active runtime path
+  memory/         Active mainline runtime path
   scripts/        Audit and utility entrypoints
   tests/          Unit and integration-style tests
   utils/          Shared helpers
 docs/
-  assets/         Tracked figures used in repository docs
+  assets/         Stable figures referenced by repository documentation
 ```
 
 Important boundary:
 
-- `llm_long_memory/memory/` is the active mainline runtime
+- `llm_long_memory/memory/` is the active runtime
 - `llm_long_memory/experiments/` is the active evaluation/reporting surface
-- `llm_long_memory/future_work/` contains research prototypes that are intentionally not part of the main runtime
+- `llm_long_memory/future_work/` is intentionally isolated from the mainline
 
 ## Installation
 
@@ -126,86 +221,121 @@ Mainline experiments assume local Ollama-compatible models such as:
 
 - `qwen3:8b`
 - `deepseek-r1:8b`
+- `nomic-embed-text`
 
-Configure the runtime in:
-- [`llm_long_memory/config/config.yaml`](llm_long_memory/config/config.yaml)
+Runtime configuration:
 
-## Quick Start
+- [config.yaml](llm_long_memory/config/config.yaml)
 
-### Interactive runtime
+## Running the Main Experiments
+
+### MemSLM
 
 ```bash
-python -m llm_long_memory.main \
+python3 -m llm_long_memory.experiments.run_thesis_eval \
   --config llm_long_memory/config/config.yaml \
+  --split ragdebug10 \
+  --model qwen3:8b \
+  --judge \
+  --judge-model deepseek-r1:8b
+```
+
+### Model-Only
+
+```bash
+python3 -m llm_long_memory.experiments.run_model_only_eval \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10 \
   --model qwen3:8b
 ```
 
-### Source audit without final answer generation
+### Naive RAG
 
 ```bash
-python -m llm_long_memory.scripts.run_answer_source_audit \
+python3 -m llm_long_memory.experiments.run_naive_rag_eval \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10 \
+  --model qwen3:8b
+```
+
+### Filter-Only Ablation
+
+```bash
+python3 -m llm_long_memory.experiments.run_ablation_eval \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10 \
+  --model qwen3:8b
+```
+
+### Consolidated Comparison
+
+```bash
+python3 -m llm_long_memory.experiments.run_thesis_compare \
+  --config llm_long_memory/config/config.yaml \
+  --split ragdebug10 \
+  --judge \
+  --judge-model deepseek-r1:8b \
+  --model-only-run-id <run_id> \
+  --naive-rag-run-id <run_id> \
+  --memslm-run-id <run_id> \
+  --ablation-run-id <run_id>
+```
+
+### Source Audit and Light-Graph Export
+
+```bash
+PYTHONPATH=. python3 llm_long_memory/scripts/run_answer_source_audit.py \
+  --config llm_long_memory/config/config.yaml \
   --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json \
+  --output-dir llm_long_memory/data/processed/thesis_reports_debug_analysis \
+  --output-prefix answer_source_audit_ragdebug10_memslm \
   --enable-evidence-filter \
   --enable-evidence-claims \
   --enable-evidence-light-graph
+
+python3 -m llm_long_memory.experiments.export_graph \
+  --audit-json <audit_json_path> \
+  --output-dir llm_long_memory/data/graphs_thesis_debug_analysis \
+  --artifact-prefix ragdebug10_memslm_light_graph
 ```
 
-### Main MemSLM evaluation
+More experiment entry points:
 
-```bash
-python -m llm_long_memory.experiments.run_thesis_eval \
-  --config llm_long_memory/config/config.yaml \
-  --dataset llm_long_memory/data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json \
-  --model qwen3:8b \
-  --judge-model deepseek-r1:8b \
-  --judge
-```
-
-### Baselines
-
-```bash
-python -m llm_long_memory.experiments.run_model_only_eval --config llm_long_memory/config/config.yaml
-python -m llm_long_memory.experiments.run_naive_rag_eval --config llm_long_memory/config/config.yaml
-```
-
-## Experiment and Reporting Entry Points
-
-Main entry points:
-
-- `python -m llm_long_memory.experiments.run_thesis_eval`
-- `python -m llm_long_memory.experiments.run_model_only_eval`
-- `python -m llm_long_memory.experiments.run_naive_rag_eval`
-- `python -m llm_long_memory.experiments.run_ablation_eval`
-- `python -m llm_long_memory.experiments.run_thesis_compare`
-- `python -m llm_long_memory.experiments.export_eval_report`
-- `python -m llm_long_memory.experiments.render_thesis_visuals`
-- `python -m llm_long_memory.experiments.export_graph`
-
-Experiment-specific notes:
 - [llm_long_memory/experiments/README.md](llm_long_memory/experiments/README.md)
 
-## What Is In Scope
+## Thesis Asset Checklist
+
+For paper-ready tables, figures, captions, and source paths:
+
+- [docs/THESIS_ASSET_CHECKLIST.md](docs/THESIS_ASSET_CHECKLIST.md)
+
+## Ongoing Generalization Checks
+
+Two additional experiments are intentionally kept outside the current two-split main comparison:
+
+- swapping the answer model and judge model roles between `qwen3:8b` and `deepseek-r1:8b`
+- evaluating the framework on `LoCoMo`
+
+These are intended as generalization checks rather than part of the main thesis comparison grid.
+
+## Scope and Non-Goals
 
 MemSLM should be read as:
 
 - a local-memory research platform
 - a stage-auditable retrieval-and-structure system
-- a codebase optimized for reproducibility and diagnosis under local 8B constraints
+- a thesis-grade codebase focused on reproducibility and diagnosis
 
 It should not be read as:
 
-- a finished production assistant
-- a single black-box agent
+- a production assistant
+- a fully self-improving learning system
 - a proof that graph structure always dominates filtered retrieval
 
 ## Future Work
 
-Exploratory ideas that are not part of the current mainline are kept under:
+Exploratory modules and negative-result directions are preserved under:
 
 - [llm_long_memory/future_work/README.md](llm_long_memory/future_work/README.md)
 
-Current example:
-
-- predictive graph cache prototype
-
-These modules are preserved for research continuity, but intentionally isolated until they demonstrate clear accuracy or latency value.
+This keeps the mainline stable while preserving research continuity.

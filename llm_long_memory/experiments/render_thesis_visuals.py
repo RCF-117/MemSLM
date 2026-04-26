@@ -35,7 +35,7 @@ MODE_LABELS = {
     "model-only": "Model-Only",
     "naive rag": "Naive RAG",
     "memslm": "MemSLM",
-    "ablation": "Ablation",
+    "ablation": "Filter-Only Ablation",
 }
 PALETTE = [
     "#4C6272",
@@ -205,8 +205,10 @@ def _aggregate_audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         type_buckets[qtype].append(row)
 
     answerability_rows: List[Dict[str, Any]] = []
+    noise_rows: List[Dict[str, Any]] = []
     latency_rows: List[Dict[str, Any]] = []
     overall_answerability: Dict[str, Any] = {"question_type": "overall", "n": len(rows)}
+    overall_noise: Dict[str, Any] = {"question_type": "overall", "n": len(rows)}
     overall_latency: Dict[str, Any] = {"question_type": "overall", "n": len(rows)}
 
     def _stage_rate(bucket: Sequence[Dict[str, Any]], stage: str) -> float:
@@ -227,8 +229,21 @@ def _aggregate_audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         ]
         return sum(vals) / float(len(vals)) if vals else 0.0
 
+    def _stage_noise(bucket: Sequence[Dict[str, Any]], stage: str) -> float:
+        if not bucket:
+            return 0.0
+        vals = [
+            _safe_float(
+                dict(dict(row.get("stage_metrics", {}) or {}).get(stage, {}) or {}).get("noise_density", None),
+                0.0,
+            )
+            for row in bucket
+        ]
+        return sum(vals) / float(len(vals)) if vals else 0.0
+
     for stage in stage_names:
         overall_answerability[stage] = _stage_rate(rows, stage)
+        overall_noise[stage] = _stage_noise(rows, stage)
     for stage in [s for s in ["rag", "filter", "claims", "light_graph", "toolkit", "composer", "total"] if any(s in dict(r.get("stage_latency_sec", {}) or {}) for r in rows)]:
         overall_latency[stage] = _stage_latency(rows, stage)
 
@@ -239,6 +254,11 @@ def _aggregate_audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             arow[stage] = _stage_rate(bucket, stage)
         answerability_rows.append(arow)
 
+        nrow: Dict[str, Any] = {"question_type": qtype, "n": len(bucket)}
+        for stage in stage_names:
+            nrow[stage] = _stage_noise(bucket, stage)
+        noise_rows.append(nrow)
+
         lrow: Dict[str, Any] = {"question_type": qtype, "n": len(bucket)}
         for stage in [s for s in ["rag", "filter", "claims", "light_graph", "toolkit", "composer", "total"] if any(s in dict(r.get("stage_latency_sec", {}) or {}) for r in rows)]:
             lrow[stage] = _stage_latency(bucket, stage)
@@ -248,6 +268,8 @@ def _aggregate_audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "stage_names": stage_names,
         "answerability_rows": answerability_rows,
         "answerability_overall": overall_answerability,
+        "noise_rows": noise_rows,
+        "noise_overall": overall_noise,
         "latency_rows": latency_rows,
         "latency_overall": overall_latency,
     }
@@ -263,18 +285,24 @@ def render_audit_visuals(*, audit_json: str | Path, output_dir: str | Path, pref
     agg = _aggregate_audit_rows(rows)
 
     answerability_rows = list(agg["answerability_rows"])
+    noise_rows = list(agg["noise_rows"])
     latency_rows = list(agg["latency_rows"])
     stage_names = list(agg["stage_names"])
 
     answer_csv = out_dir / f"{base}__stage_answerability_by_type.csv"
     answer_md = out_dir / f"{base}__stage_answerability_by_type.md"
+    noise_csv = out_dir / f"{base}__stage_noise_density_by_type.csv"
+    noise_md = out_dir / f"{base}__stage_noise_density_by_type.md"
     latency_csv = out_dir / f"{base}__stage_latency_by_type.csv"
     latency_md = out_dir / f"{base}__stage_latency_by_type.md"
     answer_fields = ["question_type", "n"] + stage_names
+    noise_fields = ["question_type", "n"] + stage_names
     latency_fields = ["question_type", "n"] + [k for k in ["rag", "filter", "claims", "light_graph", "toolkit", "composer", "total"] if latency_rows and k in latency_rows[0]]
 
     _write_csv(answer_csv, answerability_rows + [agg["answerability_overall"]], answer_fields)
     _write_md_table(answer_md, "Stage Answerability By Type", answerability_rows + [agg["answerability_overall"]], answer_fields)
+    _write_csv(noise_csv, noise_rows + [agg["noise_overall"]], noise_fields)
+    _write_md_table(noise_md, "Stage Noise Density By Type", noise_rows + [agg["noise_overall"]], noise_fields)
     _write_csv(latency_csv, latency_rows + [agg["latency_overall"]], latency_fields)
     _write_md_table(latency_md, "Stage Latency By Type", latency_rows + [agg["latency_overall"]], latency_fields)
 
@@ -289,6 +317,20 @@ def render_audit_visuals(*, audit_json: str | Path, output_dir: str | Path, pref
         title="Stage-Wise Answerability by Type",
         ylabel="Coverage@rec50",
         output_path=answer_svg,
+        ylim=(0.0, 1.02),
+    )
+
+    noise_series = {
+        row["question_type"]: [float(row.get(stage, 0.0) or 0.0) for stage in stage_names]
+        for row in noise_rows
+    }
+    noise_svg = out_dir / f"{base}__stage_noise_density_by_type.svg"
+    _plot_multi_line(
+        x_labels=[STAGE_LABELS.get(x, x) for x in stage_names],
+        series=noise_series,
+        title="Stage-Wise Noise Density by Type",
+        ylabel="Noise Density",
+        output_path=noise_svg,
         ylim=(0.0, 1.02),
     )
 
@@ -323,15 +365,28 @@ def render_audit_visuals(*, audit_json: str | Path, output_dir: str | Path, pref
         ylabel="Seconds",
         output_path=overall_latency_svg,
     )
+    overall_noise_svg = out_dir / f"{base}__stage_noise_density_overall.svg"
+    _plot_bar(
+        labels=[STAGE_LABELS.get(x, x) for x in stage_names],
+        values=[float(agg["noise_overall"].get(stage, 0.0) or 0.0) for stage in stage_names],
+        title="Overall Stage Noise Density",
+        ylabel="Noise Density",
+        output_path=overall_noise_svg,
+        ylim=(0.0, 1.02),
+    )
 
     return {
         "answerability_csv": str(answer_csv),
         "answerability_md": str(answer_md),
+        "noise_csv": str(noise_csv),
+        "noise_md": str(noise_md),
         "latency_csv": str(latency_csv),
         "latency_md": str(latency_md),
         "answerability_svg": str(answer_svg),
+        "noise_svg": str(noise_svg),
         "latency_svg": str(latency_svg),
         "overall_answerability_svg": str(overall_answer_svg),
+        "overall_noise_svg": str(overall_noise_svg),
         "overall_latency_svg": str(overall_latency_svg),
     }
 
@@ -360,6 +415,8 @@ def render_comparison_visuals(*, comparison_json: str | Path, output_dir: str | 
         "run_id",
         "final_answer_acc",
         "avg_latency_sec",
+        "avg_answer_token_density",
+        "avg_noise_density",
         "retrieval_answer_span_hit_rate",
         "retrieval_support_sentence_hit_rate",
         "graph_answer_span_hit_rate",

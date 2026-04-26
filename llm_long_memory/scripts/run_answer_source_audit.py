@@ -16,6 +16,10 @@ from typing import Any, Dict, List
 
 from llm_long_memory.llm.ollama_client import LLM
 from llm_long_memory.memory.memory_manager import MemoryManager
+from llm_long_memory.evaluation.metrics_runtime import (
+    compute_answer_token_density_from_texts,
+    compute_noise_density_from_texts,
+)
 from llm_long_memory.utils.helpers import load_config, resolve_project_path
 
 
@@ -378,7 +382,7 @@ def _summarize_rows(rows: List[Dict[str, object]]) -> Dict[str, object]:
     }
 
 
-def _stage_best_metrics(texts: List[str], gold: str) -> Dict[str, float]:
+def _stage_best_metrics(texts: List[str], gold: str, eval_cfg: Dict[str, object]) -> Dict[str, float]:
     gold_tokens = set(_audit_tokens(gold))
     best_f1 = 0.0
     best_rec = 0.0
@@ -399,6 +403,8 @@ def _stage_best_metrics(texts: List[str], gold: str) -> Dict[str, float]:
         "best_rec": best_rec,
         "coverage_f1_pos": 1 if best_f1 > 0.0 else 0,
         "coverage_rec50": 1 if best_rec >= 0.5 else 0,
+        "answer_token_density": compute_answer_token_density_from_texts(gold, texts, eval_cfg),
+        "noise_density": compute_noise_density_from_texts(gold, texts, eval_cfg),
     }
 
 
@@ -473,10 +479,13 @@ def _stage_texts_from_row(row: Dict[str, object]) -> Dict[str, List[str]]:
     return out
 
 
-def _row_stage_metrics(row: Dict[str, object]) -> Dict[str, Dict[str, float]]:
+def _row_stage_metrics(
+    row: Dict[str, object],
+    eval_cfg: Dict[str, object],
+) -> Dict[str, Dict[str, float]]:
     texts = _stage_texts_from_row(row)
     gold = _as_text(row.get("gold", ""))
-    return {stage: _stage_best_metrics(items, gold) for stage, items in texts.items()}
+    return {stage: _stage_best_metrics(items, gold, eval_cfg) for stage, items in texts.items()}
 
 
 def _summarize_stage_metrics(rows: List[Dict[str, object]]) -> Dict[str, object]:
@@ -490,17 +499,23 @@ def _summarize_stage_metrics(rows: List[Dict[str, object]]) -> Dict[str, object]
         for stage in stage_names:
             sum_f1 = 0.0
             sum_rec = 0.0
+            sum_answer_density = 0.0
+            sum_noise_density = 0.0
             cov_f1 = 0
             cov_rec50 = 0
             for row in bucket:
                 metrics = dict(dict(row.get("stage_metrics", {}) or {}).get(stage, {}) or {})
                 sum_f1 += float(metrics.get("best_f1", 0.0))
                 sum_rec += float(metrics.get("best_rec", 0.0))
+                sum_answer_density += float(metrics.get("answer_token_density", 0.0))
+                sum_noise_density += float(metrics.get("noise_density", 0.0))
                 cov_f1 += int(metrics.get("coverage_f1_pos", 0))
                 cov_rec50 += int(metrics.get("coverage_rec50", 0))
             out[stage] = {
                 "avg_best_f1": sum_f1 / float(total),
                 "avg_best_rec": sum_rec / float(total),
+                "avg_answer_token_density": sum_answer_density / float(total),
+                "avg_noise_density": sum_noise_density / float(total),
                 "coverage_f1_pos": cov_f1,
                 "coverage_rec50": cov_rec50,
             }
@@ -729,7 +744,7 @@ def main() -> None:
         row["stage_latency_sec"] = stage_latency_sec
         row.update(_score_row_quality(row))
         row["audit_metrics"] = _row_audit_metrics(row)
-        row["stage_metrics"] = _row_stage_metrics(row)
+        row["stage_metrics"] = _row_stage_metrics(row, cfg["evaluation"])
         rows.append(row)
 
         claim_count = 0
@@ -803,6 +818,8 @@ def main() -> None:
         lines.append(
             f"- {stage}: avg_best_f1={float(metrics['avg_best_f1']):.4f}, "
             f"avg_best_rec={float(metrics['avg_best_rec']):.4f}, "
+            f"avg_answer_token_density={float(metrics['avg_answer_token_density']):.4f}, "
+            f"avg_noise_density={float(metrics['avg_noise_density']):.4f}, "
             f"coverage_f1_pos={int(metrics['coverage_f1_pos'])}, "
             f"coverage_rec50={int(metrics['coverage_rec50'])}"
         )
@@ -836,6 +853,8 @@ def main() -> None:
             lines.append(
                 f"  - {stage}: avg_best_f1={float(metrics['avg_best_f1']):.4f}, "
                 f"avg_best_rec={float(metrics['avg_best_rec']):.4f}, "
+                f"avg_answer_token_density={float(metrics['avg_answer_token_density']):.4f}, "
+                f"avg_noise_density={float(metrics['avg_noise_density']):.4f}, "
                 f"coverage_f1_pos={int(metrics['coverage_f1_pos'])}, "
                 f"coverage_rec50={int(metrics['coverage_rec50'])}"
             )

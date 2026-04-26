@@ -16,7 +16,12 @@ from llm_long_memory.experiments.report_audit_utils import (
     load_latest_source_audit_summary,
 )
 from llm_long_memory.experiments.local_llm_judge import LocalLLMJudge
-from llm_long_memory.utils.helpers import load_config, resolve_project_path, sanitize_filename_part
+from llm_long_memory.utils.helpers import (
+    dataset_display_name,
+    load_config,
+    resolve_project_path,
+    sanitize_filename_part,
+)
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> Dict[str, Any]:
@@ -62,7 +67,7 @@ def _group_metrics(rows: Sequence[sqlite3.Row], *, judge_enabled: bool = False) 
         judge_matched = sum(1 for row in bucket if int(row["judge_is_correct"] or 0) == 1) if judge_enabled else None
 
         def avg(col: str) -> float | None:
-            vals = [_safe_float(row[col]) for row in bucket if _safe_float(row[col]) is not None]
+            vals = [_safe_float(row.get(col)) for row in bucket if _safe_float(row.get(col)) is not None]
             if not vals:
                 return None
             return sum(vals) / float(len(vals))
@@ -79,6 +84,8 @@ def _group_metrics(rows: Sequence[sqlite3.Row], *, judge_enabled: bool = False) 
                 "support_sentence_hit_rate": avg("support_sentence_hit"),
                 "graph_answer_span_hit_rate": avg("graph_answer_span_hit"),
                 "graph_support_sentence_hit_rate": avg("graph_support_sentence_hit"),
+                "type_answer_token_density": avg("answer_token_density"),
+                "type_noise_density": avg("noise_density"),
                 "type_latency_sec": avg("latency_sec"),
             }
         )
@@ -154,13 +161,15 @@ def export_report(
             if dataset_name and str(dataset_name).strip()
             else Path(str(summary.get("dataset_path", ""))).name
         )
+        resolved_dataset_display_name = dataset_display_name(resolved_dataset_name)
         resolved_model_name = str(model_name).strip() if model_name and str(model_name).strip() else ""
         resolved_judge_model = str(judge_model).strip() if judge_model and str(judge_model).strip() else ""
         summary["dataset_path"] = resolved_dataset_name
+        summary["dataset_display_name"] = resolved_dataset_display_name
         summary.update(
             {
                 "run_id": resolved_run_id,
-                "dataset_name": resolved_dataset_name,
+                "dataset_name": resolved_dataset_display_name,
                 "model_name": resolved_model_name,
                 "judge_model": resolved_judge_model,
                 "total_results": total,
@@ -180,6 +189,8 @@ def export_report(
                     resolved_run_id,
                     str(row["question_type"]),
                     type_answer_acc=float(row.get("type_answer_acc") or 0.0),
+                    type_answer_token_density=_safe_float(row.get("type_answer_token_density")),
+                    type_noise_density=_safe_float(row.get("type_noise_density")),
                     type_latency_sec=float(row.get("type_latency_sec") or 0.0),
                     commit=False,
                 )
@@ -191,6 +202,8 @@ def export_report(
             graph_answer_span_hit_rate=_safe_float(summary.get("graph_answer_span_hit_rate")),
             graph_support_sentence_hit_rate=_safe_float(summary.get("graph_support_sentence_hit_rate")),
             graph_ingest_accept_rate=_safe_float(summary.get("graph_ingest_accept_rate")),
+            avg_answer_token_density=_safe_float(summary.get("avg_answer_token_density")),
+            avg_noise_density=_safe_float(summary.get("avg_noise_density")),
             avg_latency_sec=_safe_float(summary.get("avg_latency_sec")),
             commit=False,
         )
@@ -208,7 +221,7 @@ def export_report(
 
         out_dir = resolve_project_path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        source_audit_summary = load_latest_source_audit_summary(out_dir, resolved_dataset_name)
+        source_audit_summary = load_latest_source_audit_summary(out_dir, resolved_dataset_display_name)
         payload = {
             "run": summary,
             "question_type_metrics": grouped,
@@ -243,7 +256,7 @@ def export_report(
         md_lines = [
             f"# Eval Report: {resolved_run_id}",
             "",
-            f"- dataset: `{resolved_dataset_name}`",
+            f"- dataset: `{resolved_dataset_display_name}`",
             f"- eval_db: `{Path(str(db_file)).name}`",
             f"- model: `{resolved_model_name or 'unknown'}`",
             f"- judge_model: `{resolved_judge_model or 'unknown'}`",
@@ -254,6 +267,8 @@ def export_report(
             f"- graph_answer_span_hit_rate: `{_safe_float(summary.get('graph_answer_span_hit_rate')) or 0.0:.4f}`",
             f"- graph_support_sentence_hit_rate: `{_safe_float(summary.get('graph_support_sentence_hit_rate')) or 0.0:.4f}`",
             f"- graph_ingest_accept_rate: `{_safe_float(summary.get('graph_ingest_accept_rate')) or 0.0:.4f}`",
+            f"- avg_answer_token_density: `{_safe_float(summary.get('avg_answer_token_density')) or 0.0:.4f}`",
+            f"- avg_noise_density: `{_safe_float(summary.get('avg_noise_density')) or 0.0:.4f}`",
             f"- avg_latency_sec: `{_safe_float(summary.get('avg_latency_sec')) or 0.0:.4f}`",
         ]
         if source_audit_summary:
@@ -279,6 +294,24 @@ def export_report(
                         type_answer_acc=float(type_answer_acc or 0.0),
                     )
                 )
+        md_lines.extend(
+            [
+                "",
+                "## Type Prompt Density",
+                "",
+                "| question_type | total | type_answer_token_density | type_noise_density |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for row in grouped:
+            md_lines.append(
+                "| {question_type} | {total} | {type_answer_token_density:.4f} | {type_noise_density:.4f} |".format(
+                    question_type=row["question_type"],
+                    total=row["total"],
+                    type_answer_token_density=float(row.get("type_answer_token_density") or 0.0),
+                    type_noise_density=float(row.get("type_noise_density") or 0.0),
+                )
+            )
         md_lines.extend(
             [
                 "",

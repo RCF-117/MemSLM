@@ -11,12 +11,13 @@ Reference run:
 Source report:
 
 - `llm_long_memory/data/processed/thesis_reports_debug_analysis/run_20260425_150142_207e3577__longmemeval_ragdebug10_rebuilt__model-qwen3_8b__judge-deepseek-r1_8b_report.json`
+- raw dataset file: `llm_long_memory/data/raw/LongMemEval/longmemeval_ragdebug10_rebuilt.json`
 
 Configuration summary:
 
 | Field | Value |
 | --- | --- |
-| Dataset | `longmemeval_ragdebug10_rebuilt.json` |
+| Dataset | `LongMemEval Diagnostic Split` |
 | Main answer model | `qwen3:8b` |
 | Judge model | `deepseek-r1:8b` |
 | Total questions | `20` |
@@ -64,3 +65,35 @@ Interpretation:
 
 - These numbers describe the current mainline code path, not exploratory `future_work` prototypes.
 - The repository intentionally keeps only one active runtime chain and isolates experimental directions outside the mainline.
+
+## Extension Generalization Checks
+
+### Swapped Answer/Judge Roles
+
+- split: `LongMemEval Held-Out Matched Split`
+- answer model: `deepseek-r1:8b`
+- judge model: `qwen3:8b`
+- `final_answer_acc = 0.30`
+- `avg_latency_sec = 36.08`
+
+Source report:
+
+- `llm_long_memory/data/processed/thesis_reports_debug_analysis/run_20260426_103908_dc8d2874__longmemeval_eval_subset_matched_to_diagnostic_split__model-deepseek-r1_8b__judge-qwen3_8b_report.json`
+
+### LoCoMo External-Dataset Check
+
+Split:
+
+- `LoCoMo Matched-Distribution 20-QA Subset`
+
+Results:
+
+| Method | Accuracy | Avg Latency (s) |
+| --- | ---: | ---: |
+| `model-only` | `0.05` | `21.34` |
+| `memslm` | `0.15` | `42.04` |
+
+Source reports:
+
+- `llm_long_memory/data/processed/thesis_reports_debug_analysis/locomo_model_only_matched20_report.json`
+- `llm_long_memory/data/processed/thesis_reports_debug_analysis/run_20260426_113651_62a381bc__locomo20_matched_distribution__model-qwen3_8b__judge-deepseek-r1_8b_report.json`
