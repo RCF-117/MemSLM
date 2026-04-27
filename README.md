@@ -2,6 +2,8 @@
 
 MemSLM is a local, stage-auditable long-conversation QA system for studying how structured memory processing improves answer quality beyond `model-only` and `naive rag` baselines under local 8B constraints.
 
+Under local 8B constraints, the current mainline improves judged answer accuracy from `15% -> 45%` on the `LongMemEval Diagnostic Split` and from `0% -> 30%` on the `LongMemEval Held-Out Matched Split`.
+
 The active mainline pipeline is:
 
 `mid retrieval -> evidence filter -> claims -> light graph -> toolkit -> final 8B answer`
@@ -28,6 +30,24 @@ This repository is organized as a research-grade engineering codebase:
   - `LongMemEval Held-Out Matched Split`
 - Stage-wise answerability, latency, and noise-density analysis
 - Combined light-graph visualization across all questions in a split
+
+## System Overview
+
+![MemSLM system overview](docs/assets/system_overview.png)
+
+Design principles:
+
+- retrieval is recall-oriented
+- filtering is conservative
+- claims preserve grounded support structure
+- the light graph is an organizer, not an answer oracle
+- toolkit reasoning only consumes graph output
+- evaluation should expose where signal is lost, not just whether the final answer is wrong
+
+More detail:
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md)
 
 ## Main Results
 
@@ -66,31 +86,7 @@ Detailed reports:
 
 - [Diagnostic comparison report](llm_long_memory/data/processed/thesis_reports_debug_analysis/LongMemEval_Diagnostic_Split__model-qwen3_8b__judge-deepseek-r1_8b__memslm-centered_comparison.md)
 - [Held-out comparison report](llm_long_memory/data/processed/thesis_reports_debug_analysis/LongMemEval_Held-Out_Matched_Split__model-qwen3_8b__judge-deepseek-r1_8b__memslm-centered_comparison.md)
-- [Extended results index](docs/RESULTS.md)
-
-### Per-Type Accuracy Snapshot
-
-#### LongMemEval Diagnostic Split
-
-| Question Type | model-only | naive rag | memslm | filter-only ablation |
-| --- | ---: | ---: | ---: | ---: |
-| `knowledge-update` | `0.0000` | `0.0000` | `0.7500` | `0.7500` |
-| `multi-session` | `0.0000` | `0.0000` | `0.0000` | `0.0000` |
-| `single-session-assistant` | `0.3333` | `0.3333` | `0.3333` | `0.0000` |
-| `single-session-preference` | `0.0000` | `0.0000` | `0.3333` | `0.0000` |
-| `single-session-user` | `0.6667` | `0.6667` | `1.0000` | `1.0000` |
-| `temporal-reasoning` | `0.0000` | `0.0000` | `0.6667` | `0.6667` |
-
-#### LongMemEval Held-Out Matched Split
-
-| Question Type | model-only | naive rag | memslm | filter-only ablation |
-| --- | ---: | ---: | ---: | ---: |
-| `knowledge-update` | `0.0000` | `0.2500` | `0.2500` | `0.2500` |
-| `multi-session` | `0.0000` | `0.0000` | `0.5000` | `0.2500` |
-| `single-session-assistant` | `0.0000` | `0.6667` | `0.6667` | `0.6667` |
-| `single-session-preference` | `0.0000` | `0.0000` | `0.3333` | `0.3333` |
-| `single-session-user` | `0.0000` | `0.3333` | `0.6667` | `0.6667` |
-| `temporal-reasoning` | `0.0000` | `0.0000` | `0.0000` | `0.0000` |
+- [Extended results index, including per-type tables](docs/RESULTS.md)
 
 ## Extension Generalization Checks
 
@@ -143,24 +139,6 @@ Interpretation:
 - the pipeline transfers across dataset format and domain without code-path replacement
 - `memslm` still improves over `model-only` on the external dataset
 - performance is materially lower than on LongMemEval, so this run should be read as a stress-test for external generalization rather than a headline benchmark
-
-## System Overview
-
-![MemSLM system overview](docs/assets/system_overview.png)
-
-Design principles:
-
-- retrieval is recall-oriented
-- filtering is conservative
-- claims preserve grounded support structure
-- the light graph is an organizer, not an answer oracle
-- toolkit reasoning only consumes graph output
-- evaluation should expose where signal is lost, not just whether the final answer is wrong
-
-More detail:
-
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md)
 
 ## Core Visualizations
 

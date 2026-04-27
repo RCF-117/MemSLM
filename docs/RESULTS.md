@@ -41,6 +41,30 @@ Configuration summary:
 | `single-session-user` | `100.0%` |
 | `temporal-reasoning` | `33.3%` |
 
+## Four-Way Per-Type Accuracy
+
+### LongMemEval Diagnostic Split
+
+| Question Type | model-only | naive rag | memslm | filter-only ablation |
+| --- | ---: | ---: | ---: | ---: |
+| `knowledge-update` | `0.0000` | `0.0000` | `0.7500` | `0.7500` |
+| `multi-session` | `0.0000` | `0.0000` | `0.0000` | `0.0000` |
+| `single-session-assistant` | `0.3333` | `0.3333` | `0.3333` | `0.0000` |
+| `single-session-preference` | `0.0000` | `0.0000` | `0.3333` | `0.0000` |
+| `single-session-user` | `0.6667` | `0.6667` | `1.0000` | `1.0000` |
+| `temporal-reasoning` | `0.0000` | `0.0000` | `0.6667` | `0.6667` |
+
+### LongMemEval Held-Out Matched Split
+
+| Question Type | model-only | naive rag | memslm | filter-only ablation |
+| --- | ---: | ---: | ---: | ---: |
+| `knowledge-update` | `0.0000` | `0.2500` | `0.2500` | `0.2500` |
+| `multi-session` | `0.0000` | `0.0000` | `0.5000` | `0.2500` |
+| `single-session-assistant` | `0.0000` | `0.6667` | `0.6667` | `0.6667` |
+| `single-session-preference` | `0.0000` | `0.0000` | `0.3333` | `0.3333` |
+| `single-session-user` | `0.0000` | `0.3333` | `0.6667` | `0.6667` |
+| `temporal-reasoning` | `0.0000` | `0.0000` | `0.0000` | `0.0000` |
+
 ## Stage-Wise Answerability Figure
 
 ![Stage answerability by type](assets/ragdebug_stage_answerability_by_type.svg)
