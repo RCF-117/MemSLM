@@ -146,21 +146,7 @@ Interpretation:
 
 ## System Overview
 
-```mermaid
-flowchart LR
-    A["Dialogue / Dataset History"] --> B["Mid-Memory (SQLite)"]
-    B --> C["Hybrid Retrieval"]
-    C --> D["Evidence Filter"]
-    D --> E["Claims / Support Units"]
-    E --> F["Light Graph"]
-    F --> G["Toolkit (Graph-only)"]
-    D --> H["Final Composer"]
-    E --> H
-    F --> H
-    G --> H
-    H --> I["8B Final Answer"]
-    I --> J["SQLite Eval + Reports"]
-```
+![MemSLM system overview](docs/assets/system_overview.png)
 
 Design principles:
 
