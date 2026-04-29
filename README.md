@@ -142,15 +142,24 @@ Interpretation:
 
 ## Core Visualizations
 
+### Per-Type Accuracy Heatmaps
+
+<p align="center">
+  <img src="docs/assets/diagnostic_type_accuracy_heatmap.svg" alt="Diagnostic split per-type accuracy heatmap" width="49%" />
+  <img src="docs/assets/heldout_type_accuracy_heatmap.svg" alt="Held-out matched split per-type accuracy heatmap" width="49%" />
+</p>
+
+These heatmaps give the quickest type-level comparison across the four evaluation settings:
+
+- `memslm` is strongest on `knowledge-update` and `single-session-user` in the diagnostic split
+- the held-out split remains harder overall, but `memslm` still improves on `multi-session`, `single-session-preference`, and `single-session-user`
+
 ### Stage-Wise Analysis
 
-#### Diagnostic Split
-
-![Diagnostic stage-wise answerability by type](docs/assets/diagnostic_stage_answerability_by_type.svg)
-
-#### Diagnostic Split Latency by Type
-
-![Diagnostic stage-wise latency by type](docs/assets/diagnostic_stage_latency_by_type.svg)
+<p align="center">
+  <img src="docs/assets/diagnostic_stage_answerability_by_type.svg" alt="Diagnostic stage-wise answerability by type" width="49%" />
+  <img src="docs/assets/diagnostic_stage_latency_by_type.svg" alt="Diagnostic stage-wise latency by type" width="49%" />
+</p>
 
 These figures are the most useful stage-wise diagnostics in the current thesis workflow because they show both:
 
@@ -159,13 +168,9 @@ These figures are the most useful stage-wise diagnostics in the current thesis w
 
 ### Light-Graph Overview
 
-#### Diagnostic Split
-
-![Diagnostic light graph overview](docs/assets/diagnostic_light_graph_overview.svg)
-
-#### Held-Out Matched Split
-
-![Held-out light graph overview](docs/assets/heldout_light_graph_overview.svg)
+<p align="center">
+  <img src="docs/assets/diagnostic_light_graph_overview.svg" alt="Diagnostic light graph overview" width="72%" />
+</p>
 
 The light graph is strongest as:
 
