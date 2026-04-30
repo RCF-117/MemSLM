@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Sequence, Tuple
 
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS
 from llm_long_memory.memory.query_intent import extract_query_intent
 from llm_long_memory.memory.temporal_query_utils import parse_choice_targets
 
@@ -44,52 +45,37 @@ class GraphReasoningToolkit:
             "for",
             "with",
         }
-        self._content_stopwords = {
-            "what",
-            "which",
-            "who",
-            "when",
-            "where",
-            "how",
-            "did",
-            "do",
-            "does",
-            "is",
-            "are",
-            "was",
-            "were",
-            "have",
-            "has",
-            "had",
-            "i",
-            "we",
-            "you",
-            "my",
-            "our",
-            "your",
-            "the",
-            "a",
-            "an",
-            "of",
-            "to",
-            "for",
-            "in",
-            "on",
-            "with",
-            "after",
-            "before",
-            "between",
-            "and",
-            "or",
-            "me",
-            "it",
-            "that",
-            "this",
-            "there",
-            "be",
-            "been",
-            "being",
-        }
+        self._content_stopwords = set(BASIC_STOPWORDS).union(
+            {
+                "what",
+                "which",
+                "who",
+                "when",
+                "where",
+                "how",
+                "does",
+                "was",
+                "were",
+                "have",
+                "has",
+                "had",
+                "we",
+                "our",
+                "your",
+                "after",
+                "before",
+                "between",
+                "and",
+                "or",
+                "it",
+                "that",
+                "this",
+                "there",
+                "be",
+                "been",
+                "being",
+            }
+        )
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -113,7 +99,9 @@ class GraphReasoningToolkit:
         return raw
 
     def _content_tokens(self, text: str, *, extra_stopwords: Sequence[str] = ()) -> List[str]:
-        stopwords = set(self._content_stopwords).union({str(x).strip().lower() for x in extra_stopwords})
+        stopwords = set(self._content_stopwords).union(
+            {str(x).strip().lower() for x in extra_stopwords}
+        )
         out: List[str] = []
         for token in self._tokenize(text):
             norm = self._singular(token)
@@ -135,12 +123,31 @@ class GraphReasoningToolkit:
         if flags.get("asks_how_many") and (
             flags.get("asks_when")
             or "how long" in lowered
-            or any(unit in lowered for unit in ("week", "weeks", "month", "months", "day", "days", "year", "years", "hour", "hours", "minute", "minutes"))
+            or any(
+                unit in lowered
+                for unit in (
+                    "week",
+                    "weeks",
+                    "month",
+                    "months",
+                    "day",
+                    "days",
+                    "year",
+                    "years",
+                    "hour",
+                    "hours",
+                    "minute",
+                    "minutes",
+                )
+            )
         ):
             return "temporal_count"
         if flags.get("asks_how_many"):
             return "count"
-        if flags.get("asks_compare") and len(parse_choice_targets(query, max_options=4, default_target_k=2) or []) >= 2:
+        if (
+            flags.get("asks_compare")
+            and len(parse_choice_targets(query, max_options=4, default_target_k=2) or []) >= 2
+        ):
             return "temporal_compare"
         if flags.get("asks_current") or flags.get("asks_where"):
             return "update"
@@ -208,10 +215,30 @@ class GraphReasoningToolkit:
             except ValueError:
                 pass
         months = {
-            "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
-            "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-            "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
-            "nov": 11, "november": 11, "dec": 12, "december": 12,
+            "jan": 1,
+            "january": 1,
+            "feb": 2,
+            "february": 2,
+            "mar": 3,
+            "march": 3,
+            "apr": 4,
+            "april": 4,
+            "may": 5,
+            "jun": 6,
+            "june": 6,
+            "jul": 7,
+            "july": 7,
+            "aug": 8,
+            "august": 8,
+            "sep": 9,
+            "sept": 9,
+            "september": 9,
+            "oct": 10,
+            "october": 10,
+            "nov": 11,
+            "november": 11,
+            "dec": 12,
+            "december": 12,
         }
         for match in re.finditer(
             r"\b("
@@ -309,7 +336,9 @@ class GraphReasoningToolkit:
         score += 0.35 * float(item.get("confidence", 0.0))
         overlap = self._claim_overlap(item, query_tokens)
         score += 1.10 * overlap
-        dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(self._claim_text(item))
+        dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(
+            self._claim_text(item)
+        )
         predicate = self._normalize(str(item.get("predicate", ""))).lower()
         claim_type = self._normalize(str(item.get("claim_type", ""))).lower()
 
@@ -331,7 +360,9 @@ class GraphReasoningToolkit:
                 score += 0.30
 
         if option_tokens:
-            best_option_overlap = max((self._claim_overlap(item, toks) for toks in option_tokens), default=0.0)
+            best_option_overlap = max(
+                (self._claim_overlap(item, toks) for toks in option_tokens), default=0.0
+            )
             score += 0.90 * best_option_overlap
         return score
 
@@ -408,7 +439,9 @@ class GraphReasoningToolkit:
                 selected_edges.append(dict(edge))
 
         return {
-            "claims": sorted(selected, key=lambda item: float(item.get("_projection_score", 0.0)), reverse=True),
+            "claims": sorted(
+                selected, key=lambda item: float(item.get("_projection_score", 0.0)), reverse=True
+            ),
             "edges": selected_edges,
             "query_tokens": query_tokens,
             "object_heads": object_heads,
@@ -459,10 +492,14 @@ class GraphReasoningToolkit:
             return False, "missing_candidate"
         claims = list(subgraph.get("claims", []))
         if intent == "count":
-            resolution_mode = self._normalize(str(structured_result.get("resolution_mode", ""))).lower()
+            resolution_mode = self._normalize(
+                str(structured_result.get("resolution_mode", ""))
+            ).lower()
             if resolution_mode == "latest_supported_state":
                 latest = self._normalize(str(structured_result.get("latest_count", "")))
-                latest_status = self._normalize(str(structured_result.get("latest_status", ""))).lower()
+                latest_status = self._normalize(
+                    str(structured_result.get("latest_status", ""))
+                ).lower()
                 latest_date = self._normalize(str(structured_result.get("latest_date", "")))
                 previous = self._normalize(str(structured_result.get("previous_count", "")))
                 if latest == candidate and (latest_status in {"current", "latest"} or latest_date):
@@ -470,8 +507,16 @@ class GraphReasoningToolkit:
                         return True, "count_verified_by_latest_supported_state"
                     if len([x for x in used_claim_ids if str(x).strip()]) >= 1:
                         return True, "count_verified_by_latest_supported_state"
-            explicit = [self._normalize(str(x)) for x in list(structured_result.get("explicit_count_candidates", [])) if self._normalize(str(x))]
-            enumerated = [self._normalize(str(x)) for x in list(structured_result.get("enumerated_items", [])) if self._normalize(str(x))]
+            explicit = [
+                self._normalize(str(x))
+                for x in list(structured_result.get("explicit_count_candidates", []))
+                if self._normalize(str(x))
+            ]
+            enumerated = [
+                self._normalize(str(x))
+                for x in list(structured_result.get("enumerated_items", []))
+                if self._normalize(str(x))
+            ]
             if len(explicit) != 1 or explicit[0] != candidate:
                 return False, "count_requires_unique_explicit_signal"
             supporting_count_claims = 0
@@ -480,7 +525,9 @@ class GraphReasoningToolkit:
                 text = self._claim_text(dict(claim))
                 numeric = self._extract_numeric_candidates(text)
                 value = self._normalize(str(claim.get("value", "")))
-                if predicate in {"count", "number", "total"} and (candidate in numeric or value == candidate):
+                if predicate in {"count", "number", "total"} and (
+                    candidate in numeric or value == candidate
+                ):
                     supporting_count_claims += 1
             if enumerated:
                 try:
@@ -494,13 +541,21 @@ class GraphReasoningToolkit:
         if intent == "temporal_count":
             anchor_a = self._normalize(str(structured_result.get("anchor_a_date", "")))
             anchor_b = self._normalize(str(structured_result.get("anchor_b_date", "")))
-            if anchor_a and anchor_b and anchor_a != anchor_b and len([x for x in used_claim_ids if str(x).strip()]) >= 2:
+            if (
+                anchor_a
+                and anchor_b
+                and anchor_a != anchor_b
+                and len([x for x in used_claim_ids if str(x).strip()]) >= 2
+            ):
                 return True, "temporal_count_dual_anchor_verified"
             return False, "temporal_count_missing_dual_anchor_verification"
         if intent == "temporal_compare":
             mode = self._normalize(str(structured_result.get("resolution_mode", ""))).lower()
             if mode == "graph_edge":
-                return (len([x for x in used_claim_ids if str(x).strip()]) >= 2, "temporal_compare_graph_edge_verified")
+                return (
+                    len([x for x in used_claim_ids if str(x).strip()]) >= 2,
+                    "temporal_compare_graph_edge_verified",
+                )
             if mode == "date_compare":
                 left = self._normalize(str(structured_result.get("option_a_best_anchor", "")))
                 right = self._normalize(str(structured_result.get("option_b_best_anchor", "")))
@@ -508,16 +563,28 @@ class GraphReasoningToolkit:
                     return True, "temporal_compare_dual_dates_verified"
             return False, "temporal_compare_not_verified"
         if intent == "update":
-            resolution_mode = self._normalize(str(structured_result.get("resolution_mode", ""))).lower()
+            resolution_mode = self._normalize(
+                str(structured_result.get("resolution_mode", ""))
+            ).lower()
             state_key = self._normalize(str(structured_result.get("state_key", ""))).lower()
             trusted_state_keys = {"location", "status", "state", "count", "ratio", "time", "amount"}
             if resolution_mode == "update_edge" and state_key in trusted_state_keys:
                 return True, "update_edge_verified"
             if resolution_mode == "numeric_state_compare":
-                previous_numeric = self._normalize(str(structured_result.get("previous_numeric", "")))
+                previous_numeric = self._normalize(
+                    str(structured_result.get("previous_numeric", ""))
+                )
                 current_numeric = self._normalize(str(structured_result.get("current_numeric", "")))
-                relation = self._normalize(str(structured_result.get("numeric_relation", ""))).lower()
-                if previous_numeric and current_numeric and previous_numeric != current_numeric and relation in {"higher", "lower"} and state_key:
+                relation = self._normalize(
+                    str(structured_result.get("numeric_relation", ""))
+                ).lower()
+                if (
+                    previous_numeric
+                    and current_numeric
+                    and previous_numeric != current_numeric
+                    and relation in {"higher", "lower"}
+                    and state_key
+                ):
                     return True, "update_numeric_compare_verified"
             return False, "update_requires_trusted_update_edge"
         return False, "intent_not_verifiable"
@@ -534,7 +601,9 @@ class GraphReasoningToolkit:
         subgraph: Dict[str, object],
         abstain_reason: str = "",
     ) -> Dict[str, object]:
-        clean_lines = [self._normalize(str(line)) for line in rationale_lines if self._normalize(str(line))]
+        clean_lines = [
+            self._normalize(str(line)) for line in rationale_lines if self._normalize(str(line))
+        ]
         clean_candidate = self._normalize(answer_candidate)
         clean_used_claim_ids = [str(x).strip() for x in used_claim_ids if str(x).strip()]
         verified, verification_reason = self._verify_payload(
@@ -552,7 +621,9 @@ class GraphReasoningToolkit:
             "verified": bool(verified and clean_candidate),
             "verified_candidate": clean_candidate if verified and clean_candidate else "",
             "verification_reason": self._normalize(verification_reason),
-            "verified_used_claim_ids": list(clean_used_claim_ids if verified and clean_candidate else []),
+            "verified_used_claim_ids": list(
+                clean_used_claim_ids if verified and clean_candidate else []
+            ),
             "confidence": float(confidence),
             "used_claim_ids": clean_used_claim_ids,
             "rationale_lines": clean_lines[:6],
@@ -585,7 +656,9 @@ class GraphReasoningToolkit:
         return 0
 
     def _claim_best_date(self, item: Dict[str, object]) -> datetime | None:
-        dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(self._claim_text(item))
+        dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(
+            self._claim_text(item)
+        )
         if not dates:
             return None
         return sorted(dates)[-1]
@@ -606,7 +679,9 @@ class GraphReasoningToolkit:
             if predicate not in {"count", "number", "total", "item", "member"}:
                 return None
 
-        numeric_candidates = self._extract_numeric_candidates(value) or self._extract_numeric_candidates(text)
+        numeric_candidates = self._extract_numeric_candidates(
+            value
+        ) or self._extract_numeric_candidates(text)
         if not numeric_candidates:
             return None
 
@@ -694,7 +769,15 @@ class GraphReasoningToolkit:
         value_tokens = {self._singular(tok) for tok in self._tokenize(value_norm)}
         subject_tokens = {self._singular(tok) for tok in self._tokenize(subject)}
         predicate_norm = self._normalize(predicate).lower()
-        enumerative_predicates = {"item", "member", "entity", "object", "entry", "component", "name"}
+        enumerative_predicates = {
+            "item",
+            "member",
+            "entity",
+            "object",
+            "entry",
+            "component",
+            "name",
+        }
         if predicate_norm in {"count", "number", "total"}:
             return False
         if object_heads:
@@ -715,7 +798,9 @@ class GraphReasoningToolkit:
         claims = list(subgraph.get("claims", []))
         object_heads = list(subgraph.get("object_heads", []))
         if not claims:
-            return self._abstain_payload(intent="count", reason="insufficient_subgraph", subgraph=subgraph)
+            return self._abstain_payload(
+                intent="count", reason="insufficient_subgraph", subgraph=subgraph
+            )
 
         explicit_counts: List[str] = []
         enumerated_items: List[str] = []
@@ -763,7 +848,9 @@ class GraphReasoningToolkit:
         latest_signal: Dict[str, object] | None = None
         previous_signal: Dict[str, object] | None = None
 
-        observation_signals = [item for item in count_signals if str(item.get("kind", "")) == "count_observation"]
+        observation_signals = [
+            item for item in count_signals if str(item.get("kind", "")) == "count_observation"
+        ]
         if observation_signals:
             observation_signals.sort(
                 key=lambda item: (
@@ -782,18 +869,26 @@ class GraphReasoningToolkit:
                 item
                 for item in observation_signals[1:]
                 if str(item.get("candidate", "")) != str(latest_signal.get("candidate", ""))
-                and int(item.get("status_rank", 0) or 0) >= int(latest_signal.get("status_rank", 0) or 0)
+                and int(item.get("status_rank", 0) or 0)
+                >= int(latest_signal.get("status_rank", 0) or 0)
                 and (
                     (latest_signal.get("date") is None and item.get("date") is None)
                     or (
                         latest_signal.get("date") is not None
                         and item.get("date") is not None
-                        and abs(((latest_signal.get("date") or datetime.min) - (item.get("date") or datetime.min)).days) <= 1
+                        and abs(
+                            (
+                                (latest_signal.get("date") or datetime.min)
+                                - (item.get("date") or datetime.min)
+                            ).days
+                        )
+                        <= 1
                     )
                 )
             ]
             if not conflicting_latest and (
-                int(latest_signal.get("status_rank", 0) or 0) >= 1 or latest_signal.get("date") is not None
+                int(latest_signal.get("status_rank", 0) or 0) >= 1
+                or latest_signal.get("date") is not None
             ):
                 final_count = str(latest_signal.get("candidate", ""))
                 confidence = 0.80 if int(latest_signal.get("status_rank", 0) or 0) >= 2 else 0.74
@@ -825,9 +920,11 @@ class GraphReasoningToolkit:
             "resolution_mode": resolution_mode,
             "latest_count": str((latest_signal or {}).get("candidate", "")),
             "latest_status": str((latest_signal or {}).get("status", "")),
-            "latest_date": ((latest_signal or {}).get("date") or datetime.min).strftime("%Y-%m-%d")
-            if (latest_signal or {}).get("date") is not None
-            else "",
+            "latest_date": (
+                ((latest_signal or {}).get("date") or datetime.min).strftime("%Y-%m-%d")
+                if (latest_signal or {}).get("date") is not None
+                else ""
+            ),
             "previous_count": str((previous_signal or {}).get("candidate", "")),
         }
         if not final_count:
@@ -878,7 +975,9 @@ class GraphReasoningToolkit:
             for dt in dates:
                 anchors.append((dt, text, claim_id))
         if len(anchors) < 2:
-            return self._abstain_payload(intent="temporal_count", reason="missing_dual_anchors", subgraph=subgraph)
+            return self._abstain_payload(
+                intent="temporal_count", reason="missing_dual_anchors", subgraph=subgraph
+            )
         anchors.sort(key=lambda item: item[0])
         start_dt, start_text, _ = anchors[0]
         end_dt, end_text, _ = anchors[-1]
@@ -917,7 +1016,9 @@ class GraphReasoningToolkit:
         edges = list(subgraph.get("edges", []))
         options = list(subgraph.get("options", []))
         if len(options) < 2:
-            return self._abstain_payload(intent="temporal_compare", reason="missing_choice_targets", subgraph=subgraph)
+            return self._abstain_payload(
+                intent="temporal_compare", reason="missing_choice_targets", subgraph=subgraph
+            )
 
         def _display_option(option: str) -> str:
             for item in claims:
@@ -966,8 +1067,12 @@ class GraphReasoningToolkit:
                     intent="temporal_compare",
                     answer_candidate=answer,
                     confidence=0.86,
-                    used_claim_ids=[str(item.get("claim_id", "")).strip() for item in left_pool + right_pool],
-                    rationale_lines=[f"graph_edge={_display_option(options[0])} {edge_type} {_display_option(options[1])}"],
+                    used_claim_ids=[
+                        str(item.get("claim_id", "")).strip() for item in left_pool + right_pool
+                    ],
+                    rationale_lines=[
+                        f"graph_edge={_display_option(options[0])} {edge_type} {_display_option(options[1])}"
+                    ],
                     structured_result={
                         "option_a": _display_option(options[0]),
                         "option_b": _display_option(options[1]),
@@ -984,8 +1089,12 @@ class GraphReasoningToolkit:
                     intent="temporal_compare",
                     answer_candidate=answer,
                     confidence=0.86,
-                    used_claim_ids=[str(item.get("claim_id", "")).strip() for item in left_pool + right_pool],
-                    rationale_lines=[f"graph_edge={_display_option(options[1])} {edge_type} {_display_option(options[0])}"],
+                    used_claim_ids=[
+                        str(item.get("claim_id", "")).strip() for item in left_pool + right_pool
+                    ],
+                    rationale_lines=[
+                        f"graph_edge={_display_option(options[1])} {edge_type} {_display_option(options[0])}"
+                    ],
                     structured_result={
                         "option_a": _display_option(options[0]),
                         "option_b": _display_option(options[1]),
@@ -998,14 +1107,18 @@ class GraphReasoningToolkit:
         def _best_date(pool: Sequence[Dict[str, object]]) -> datetime | None:
             out: List[datetime] = []
             for item in pool:
-                dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(self._claim_text(dict(item)))
+                dates = self._parse_date(str(item.get("time_anchor", ""))) or self._parse_date(
+                    self._claim_text(dict(item))
+                )
                 out.extend(dates)
             return sorted(out)[0] if out else None
 
         left_date = _best_date(left_pool)
         right_date = _best_date(right_pool)
         if left_date is None or right_date is None:
-            return self._abstain_payload(intent="temporal_compare", reason="missing_comparison_dates", subgraph=subgraph)
+            return self._abstain_payload(
+                intent="temporal_compare", reason="missing_comparison_dates", subgraph=subgraph
+            )
 
         answer = _display_option(options[0] if left_date <= right_date else options[1])
         if "later" in query.lower() or "after" in query.lower():
@@ -1014,7 +1127,9 @@ class GraphReasoningToolkit:
             intent="temporal_compare",
             answer_candidate=answer,
             confidence=0.78,
-            used_claim_ids=[str(item.get("claim_id", "")).strip() for item in left_pool + right_pool],
+            used_claim_ids=[
+                str(item.get("claim_id", "")).strip() for item in left_pool + right_pool
+            ],
             rationale_lines=[
                 f"temporal_points={_display_option(options[0])}:{left_date.strftime('%Y-%m-%d')} | "
                 f"{_display_option(options[1])}:{right_date.strftime('%Y-%m-%d')}"
@@ -1037,12 +1152,18 @@ class GraphReasoningToolkit:
         subgraph: Dict[str, object],
     ) -> Dict[str, object]:
         claims = list(subgraph.get("claims", []))
-        edges = [edge for edge in list(subgraph.get("edges", [])) if str(edge.get("type", "")).strip() == "updates"]
+        edges = [
+            edge
+            for edge in list(subgraph.get("edges", []))
+            if str(edge.get("type", "")).strip() == "updates"
+        ]
         items_by_node = {str(item.get("node_id", "")).strip(): item for item in claims}
         if edges:
             ranked = sorted(
                 edges,
-                key=lambda edge: float(items_by_node.get(str(edge.get("target", "")), {}).get("_projection_score", 0.0)),
+                key=lambda edge: float(
+                    items_by_node.get(str(edge.get("target", "")), {}).get("_projection_score", 0.0)
+                ),
                 reverse=True,
             )
             best = ranked[0]
@@ -1052,7 +1173,9 @@ class GraphReasoningToolkit:
             if final_value:
                 structured = {
                     "subject": self._normalize(str(new_item.get("subject", ""))),
-                    "state_key": self._normalize(str(best.get("state_key", "")) or str(new_item.get("predicate", ""))),
+                    "state_key": self._normalize(
+                        str(best.get("state_key", "")) or str(new_item.get("predicate", ""))
+                    ),
                     "old_value": self._normalize(str(old_item.get("value", ""))),
                     "new_value": final_value,
                     "final_value": final_value,
@@ -1061,8 +1184,13 @@ class GraphReasoningToolkit:
                     intent="update",
                     answer_candidate=final_value,
                     confidence=0.84,
-                    used_claim_ids=[str(old_item.get("claim_id", "")).strip(), str(new_item.get("claim_id", "")).strip()],
-                    rationale_lines=[f"state_update={self._claim_text(old_item)} -> {self._claim_text(new_item)}"],
+                    used_claim_ids=[
+                        str(old_item.get("claim_id", "")).strip(),
+                        str(new_item.get("claim_id", "")).strip(),
+                    ],
+                    rationale_lines=[
+                        f"state_update={self._claim_text(old_item)} -> {self._claim_text(new_item)}"
+                    ],
                     structured_result={**structured, "resolution_mode": "update_edge"},
                     subgraph=subgraph,
                 )
@@ -1151,14 +1279,18 @@ class GraphReasoningToolkit:
 
         ranked_claims = [
             item
-            for item in sorted(claims, key=lambda x: float(x.get("_projection_score", 0.0)), reverse=True)
+            for item in sorted(
+                claims, key=lambda x: float(x.get("_projection_score", 0.0)), reverse=True
+            )
             if self._normalize(str(item.get("value", "")))
             and self._normalize(str(item.get("claim_type", ""))).lower() == "state_snapshot"
             and self._normalize(str(item.get("predicate", ""))).lower()
             not in {"preferred_direction", "supported_reason"}
         ]
         if not ranked_claims:
-            return self._abstain_payload(intent="update", reason="missing_state_snapshot", subgraph=subgraph)
+            return self._abstain_payload(
+                intent="update", reason="missing_state_snapshot", subgraph=subgraph
+            )
         best = ranked_claims[0]
         top_value = self._normalize(str(best.get("value", "")))
         if len(ranked_claims) > 1:
@@ -1219,7 +1351,9 @@ class GraphReasoningToolkit:
             elif len(support_items) < 2 and float(claim.get("_projection_score", 0.0)) >= 0.65:
                 support_items.append(value)
         if not direction and not reason:
-            return self._abstain_payload(intent="preference", reason="missing_preference_summary", subgraph=subgraph)
+            return self._abstain_payload(
+                intent="preference", reason="missing_preference_summary", subgraph=subgraph
+            )
         rationale: List[str] = []
         if direction:
             rationale.append("preference_direction=" + direction)
@@ -1286,6 +1420,10 @@ class GraphReasoningToolkit:
             payload["summary_lines"] = []
             payload["summary_text"] = ""
         else:
-            payload["summary_lines"] = [self._normalize(str(line)) for line in list(payload.get("summary_lines", [])) if self._normalize(str(line))][:6]
+            payload["summary_lines"] = [
+                self._normalize(str(line))
+                for line in list(payload.get("summary_lines", []))
+                if self._normalize(str(line))
+            ][:6]
             payload["summary_text"] = "\n".join(payload["summary_lines"]).strip()
         return payload

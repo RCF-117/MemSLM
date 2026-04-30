@@ -7,99 +7,65 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS, NAMED_TOKEN_STOPWORDS
+
 
 class EvidenceLightGraph:
     """Build a compact question-scoped graph from extracted claims."""
 
     _CONTENT_TOKEN_RE = re.compile(r"[a-z0-9]+")
     _NAMED_TOKEN_RE = re.compile(r"\b[A-Z][A-Za-z0-9'/-]+\b")
-    _CONTENT_STOPWORDS = {
-        "a",
-        "an",
-        "and",
-        "any",
-        "are",
-        "as",
-        "at",
-        "be",
-        "been",
-        "by",
-        "can",
-        "could",
-        "did",
-        "do",
-        "does",
-        "for",
-        "from",
-        "get",
-        "had",
-        "has",
-        "have",
-        "how",
-        "i",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "its",
-        "me",
-        "my",
-        "of",
-        "on",
-        "or",
-        "our",
-        "should",
-        "some",
-        "than",
-        "that",
-        "the",
-        "their",
-        "them",
-        "these",
-        "this",
-        "to",
-        "use",
-        "using",
-        "was",
-        "were",
-        "what",
-        "when",
-        "where",
-        "which",
-        "who",
-        "with",
-        "would",
-        "you",
-        "your",
-    }
-    _NAMED_TOKEN_STOPWORDS = {
-        "A",
-        "An",
-        "And",
-        "Any",
-        "Can",
-        "Could",
-        "Do",
-        "Does",
-        "How",
-        "I",
-        "If",
-        "In",
-        "My",
-        "Of",
-        "Or",
-        "The",
-        "This",
-        "What",
-        "When",
-        "Where",
-        "Which",
-        "Who",
-        "Would",
-        "You",
-        "Your",
-    }
+    _CONTENT_STOPWORDS = set(BASIC_STOPWORDS).union(
+        {
+            "and",
+            "any",
+            "as",
+            "at",
+            "be",
+            "been",
+            "by",
+            "can",
+            "could",
+            "does",
+            "from",
+            "get",
+            "had",
+            "has",
+            "have",
+            "how",
+            "if",
+            "into",
+            "it",
+            "its",
+            "or",
+            "our",
+            "should",
+            "some",
+            "than",
+            "that",
+            "the",
+            "their",
+            "them",
+            "these",
+            "this",
+            "use",
+            "using",
+            "was",
+            "were",
+            "what",
+            "when",
+            "where",
+            "which",
+            "who",
+            "would",
+            "your",
+        }
+    )
+    _NAMED_TOKEN_STOPWORDS = set(NAMED_TOKEN_STOPWORDS).union(
+        {
+            "How",
+        }
+    )
     _PREFERENCE_QUERY_RE = re.compile(
         r"\b("
         r"recommend|suggest(?:ion|ions)?|advice|tips?|"
@@ -109,7 +75,16 @@ class EvidenceLightGraph:
         r")\b"
     )
     _PREFERENCE_PREDICATES = {"preferred_direction", "supported_reason"}
-    _GENERIC_SUBJECTS = {"resource", "resources", "recipe", "recipes", "option", "options", "activity", "activities"}
+    _GENERIC_SUBJECTS = {
+        "resource",
+        "resources",
+        "recipe",
+        "recipes",
+        "option",
+        "options",
+        "activity",
+        "activities",
+    }
 
     def __init__(self, cfg: Optional[Dict[str, Any]] = None) -> None:
         cfg = dict(cfg or {})
@@ -216,7 +191,12 @@ class EvidenceLightGraph:
             state_key == "preference" or predicate_key in self._PREFERENCE_PREDICATES
         ):
             score += 0.18
-        elif answer_type in {"update", "knowledge-update"} and state_key in {"location", "time", "status", "schedule"}:
+        elif answer_type in {"update", "knowledge-update"} and state_key in {
+            "location",
+            "time",
+            "status",
+            "schedule",
+        }:
             score += 0.12
         elif answer_type in {"temporal", "temporal_comparison"} and claim.get("time_anchor"):
             score += 0.10
@@ -258,20 +238,36 @@ class EvidenceLightGraph:
             if state_key == "preference" or predicate_key in self._PREFERENCE_PREDICATES:
                 summaries.append((weight, claim_dict))
                 continue
-            if subject_key in self._GENERIC_SUBJECTS and value_key in self._GENERIC_SUBJECTS and weight < 0.30:
+            if (
+                subject_key in self._GENERIC_SUBJECTS
+                and value_key in self._GENERIC_SUBJECTS
+                and weight < 0.30
+            ):
                 continue
             kept.append((weight, claim_dict))
 
-        kept.sort(key=lambda item: (item[0], float(item[1].get("confidence", 0.0) or 0.0)), reverse=True)
+        kept.sort(
+            key=lambda item: (item[0], float(item[1].get("confidence", 0.0) or 0.0)), reverse=True
+        )
         summaries.sort(
-            key=lambda item: (item[0], float(item[1].get("confidence", 0.0) or 0.0), len(str(item[1].get("value", "")))),
+            key=lambda item: (
+                item[0],
+                float(item[1].get("confidence", 0.0) or 0.0),
+                len(str(item[1].get("value", ""))),
+            ),
             reverse=True,
         )
         selected: List[Dict[str, Any]] = []
         seen = set()
         for _weight, claim in summaries + kept[:4]:
             claim_key = str(claim.get("claim_id", "")) or self._text_key(
-                "|".join([str(claim.get("subject", "")), str(claim.get("predicate", "")), str(claim.get("value", ""))])
+                "|".join(
+                    [
+                        str(claim.get("subject", "")),
+                        str(claim.get("predicate", "")),
+                        str(claim.get("value", "")),
+                    ]
+                )
             )
             if claim_key in seen:
                 continue
@@ -289,7 +285,9 @@ class EvidenceLightGraph:
             except ValueError:
                 continue
         lower = text.lower()
-        m = re.match(r"^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{1,2})$", lower)
+        m = re.match(
+            r"^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{1,2})$", lower
+        )
         if m:
             try:
                 return datetime.strptime(f"{text}, 2000", "%b %d, %Y")
@@ -319,7 +317,9 @@ class EvidenceLightGraph:
             node_ids.add(node_id)
             nodes.append(node)
 
-        def add_edge(src: str, dst: str, edge_type: str, meta: Optional[Dict[str, Any]] = None) -> None:
+        def add_edge(
+            src: str, dst: str, edge_type: str, meta: Optional[Dict[str, Any]] = None
+        ) -> None:
             if not src or not dst or src == dst:
                 return
             payload = dict(meta or {})
@@ -383,7 +383,9 @@ class EvidenceLightGraph:
             elif claim_type == "event_record":
                 node_type = "event"
             claim_label = f"{subject} | {claim.get('predicate', '')} | {claim.get('value', '')}"
-            claim_id = self._stable_id("claim", claim_label + "|" + str(claim.get("time_anchor", "")))
+            claim_id = self._stable_id(
+                "claim", claim_label + "|" + str(claim.get("time_anchor", ""))
+            )
             claim_nodes[str(claim.get("claim_id", claim_id))] = claim_id
             add_node(
                 {
@@ -393,7 +395,12 @@ class EvidenceLightGraph:
                     "meta": dict(claim),
                 }
             )
-            add_edge(entity_id, claim_id, "mentions", {"evidence_ids": list(claim.get("evidence_ids", []))})
+            add_edge(
+                entity_id,
+                claim_id,
+                "mentions",
+                {"evidence_ids": list(claim.get("evidence_ids", []))},
+            )
             support_weight = self._query_support_weight(
                 claim=claim,
                 query_tokens=query_tokens,
@@ -487,7 +494,9 @@ class EvidenceLightGraph:
 
         graph = dict(light_graph or {})
         nodes = [dict(item) for item in list(graph.get("nodes", []))[: max(1, int(max_nodes))]]
-        node_by_id = {str(item.get("id", "")): item for item in nodes if str(item.get("id", "")).strip()}
+        node_by_id = {
+            str(item.get("id", "")): item for item in nodes if str(item.get("id", "")).strip()
+        }
         visible_node_ids = set(node_by_id.keys())
         edges: List[Dict[str, Any]] = []
         for edge in list(graph.get("edges", [])):
@@ -550,9 +559,7 @@ class EvidenceLightGraph:
             )
             src_label = self._normalize_space(str(node_by_id.get(src, {}).get("label", src)))[:48]
             dst_label = self._normalize_space(str(node_by_id.get(dst, {}).get("label", dst)))[:48]
-            mermaid_lines.append(
-                f'    "{src_label}" -->|"{edge_type}"| "{dst_label}"'
-            )
+            mermaid_lines.append(f'    "{src_label}" -->|"{edge_type}"| "{dst_label}"')
 
         return {
             "query": str(graph.get("query", "")),

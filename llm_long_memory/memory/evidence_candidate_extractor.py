@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS
+
 
 class EvidenceCandidateExtractor:
     """Encapsulate evidence sentence ranking and candidate span extraction."""
@@ -37,14 +39,18 @@ class EvidenceCandidateExtractor:
 
         intent_cfg = dict(self.grounding_cfg["intent_extraction"])
         self.intent_extraction_enabled = bool(intent_cfg["enabled"])
-        self.intent_time_keywords = {str(x).strip().lower() for x in list(intent_cfg["time_keywords"])}
+        self.intent_time_keywords = {
+            str(x).strip().lower() for x in list(intent_cfg["time_keywords"])
+        }
         self.intent_number_keywords = {
             str(x).strip().lower() for x in list(intent_cfg["number_keywords"])
         }
         self.intent_location_keywords = {
             str(x).strip().lower() for x in list(intent_cfg["location_keywords"])
         }
-        self.intent_name_keywords = {str(x).strip().lower() for x in list(intent_cfg["name_keywords"])}
+        self.intent_name_keywords = {
+            str(x).strip().lower() for x in list(intent_cfg["name_keywords"])
+        }
         self.intent_time_patterns = [
             re.compile(str(x), flags=re.IGNORECASE) for x in list(intent_cfg["time_regexes"])
         ]
@@ -58,48 +64,37 @@ class EvidenceCandidateExtractor:
         self.cand_reject_tokens = {
             str(x).strip().lower() for x in list(scoring_cfg["reject_tokens"])
         }
-        self.answer_stopwords = {
-            "a",
-            "an",
-            "the",
-            "and",
-            "or",
-            "to",
-            "of",
-            "in",
-            "on",
-            "for",
-            "with",
-            "at",
-            "by",
-            "from",
-            "into",
-            "about",
-            "what",
-            "which",
-            "who",
-            "where",
-            "when",
-            "why",
-            "how",
-            "did",
-            "do",
-            "does",
-            "is",
-            "are",
-            "was",
-            "were",
-            "have",
-            "has",
-            "had",
-            "i",
-            "me",
-            "my",
-            "we",
-            "our",
-            "you",
-            "your",
-        }
+        self.answer_stopwords = set(BASIC_STOPWORDS).union(
+            {
+                "and",
+                "or",
+                "at",
+                "by",
+                "from",
+                "into",
+                "about",
+                "what",
+                "which",
+                "who",
+                "where",
+                "when",
+                "why",
+                "how",
+                "did",
+                "do",
+                "does",
+                "is",
+                "are",
+                "was",
+                "were",
+                "have",
+                "has",
+                "had",
+                "we",
+                "our",
+                "your",
+            }
+        )
         self.number_words = {
             "zero",
             "one",
@@ -205,9 +200,7 @@ class EvidenceCandidateExtractor:
                         candidates.append(c)
         elif intent in {"name", "location"}:
             max_extra = max(0, self.intent_capitalized_phrase_max_tokens - 1)
-            pattern = re.compile(
-                r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0," + str(max_extra) + r"}\b"
-            )
+            pattern = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0," + str(max_extra) + r"}\b")
             for m in pattern.findall(sentence):
                 c = self.normalize_space(str(m).strip(".,;:!?"))
                 if c:
@@ -268,11 +261,7 @@ class EvidenceCandidateExtractor:
         return False
 
     def _query_content_tokens(self, query: str) -> set[str]:
-        return {
-            tok
-            for tok in self.tokenize(query)
-            if tok and tok not in self.answer_stopwords
-        }
+        return {tok for tok in self.tokenize(query) if tok and tok not in self.answer_stopwords}
 
     def _is_clause_like_candidate(self, value: str) -> bool:
         text = self.normalize_space(value)
@@ -309,7 +298,9 @@ class EvidenceCandidateExtractor:
             for pattern in self.intent_time_patterns:
                 if pattern.search(text):
                     return True
-            return bool(set(tokens).intersection({"today", "yesterday", "tomorrow", "current", "latest"}))
+            return bool(
+                set(tokens).intersection({"today", "yesterday", "tomorrow", "current", "latest"})
+            )
         if intent == "location":
             if low.startswith(("in ", "at ", "on ")):
                 return True
@@ -456,7 +447,9 @@ class EvidenceCandidateExtractor:
                     token_count = len(self.tokenize(value))
                     length_bonus = min(0.15, float(max(0, token_count - 1)) * 0.03)
                     answer_shape = self._answer_shape_score(query, value, intent)
-                    origin_bonus = 0.18 if origin == "intent" else 0.12 if origin == "copula" else 0.0
+                    origin_bonus = (
+                        0.18 if origin == "intent" else 0.12 if origin == "copula" else 0.0
+                    )
                     ranked = (0.60 * overlap_score) + length_bonus + answer_shape + origin_bonus
                     scored_spans.append((ranked, value, overlap_score, origin, answer_shape))
             dedup_scored: List[tuple[float, str, float, str, float]] = []
@@ -499,7 +492,9 @@ class EvidenceCandidateExtractor:
                 else:
                     prev["score"] = max(float(prev["score"]), total_score)
                     prev["support"] = support
-                    prev["answer_shape"] = max(float(prev.get("answer_shape", 0.0) or 0.0), answer_shape)
+                    prev["answer_shape"] = max(
+                        float(prev.get("answer_shape", 0.0) or 0.0), answer_shape
+                    )
                     if origin in {"intent", "copula"}:
                         prev["origin"] = origin
         ranked = sorted(

@@ -17,6 +17,7 @@ from llm_long_memory.memory.final_answer_router import FinalAnswerRouter
 from llm_long_memory.memory.evidence_graph_extractor import EvidenceGraphExtractor
 from llm_long_memory.memory.evidence_light_graph import EvidenceLightGraph
 from llm_long_memory.memory.graph_reasoning_toolkit import GraphReasoningToolkit
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS
 from llm_long_memory.memory.memory_manager_chat_runtime import MemoryManagerChatRuntime
 from llm_long_memory.memory.specialist_layer import SpecialistLayer
 from llm_long_memory.memory.memory_manager_utils import (
@@ -160,15 +161,18 @@ class MemoryManager:
         )
         self.graph_refiner_enabled = bool(answer_grounding_cfg.get("graph_refiner_enabled", False))
         self.graph_toolkit = None
-        self.retrieval_execution_mode = str(
-            self.config["retrieval"].get("execution_mode", "memslm")
-        ).strip().lower() or "memslm"
-        self.model_only_enabled = bool(
-            self.config["retrieval"].get("model_only_enabled", False)
-        ) or self.retrieval_execution_mode == "model_only"
-        self.classic_rag_enabled = bool(
-            self.config["retrieval"].get("classic_rag_enabled", False)
-        ) or self.retrieval_execution_mode == "naive_rag"
+        self.retrieval_execution_mode = (
+            str(self.config["retrieval"].get("execution_mode", "memslm")).strip().lower()
+            or "memslm"
+        )
+        self.model_only_enabled = (
+            bool(self.config["retrieval"].get("model_only_enabled", False))
+            or self.retrieval_execution_mode == "model_only"
+        )
+        self.classic_rag_enabled = (
+            bool(self.config["retrieval"].get("classic_rag_enabled", False))
+            or self.retrieval_execution_mode == "naive_rag"
+        )
         self.filter_only_enabled = self.retrieval_execution_mode == "filter_only"
         specialist_cfg = dict(answer_grounding_cfg.get("specialist_layer", {}))
         specialist_enabled = bool(specialist_cfg.get("enabled", False))
@@ -185,12 +189,8 @@ class MemoryManager:
         self.temporal_anchor_extra_queries_per_option = int(
             temporal_anchor_cfg.get("extra_queries_per_option", 1)
         )
-        self.temporal_anchor_top_n_per_query = int(
-            temporal_anchor_cfg.get("top_n_per_query", 10)
-        )
-        self.temporal_anchor_additive_limit = int(
-            temporal_anchor_cfg.get("additive_limit", 8)
-        )
+        self.temporal_anchor_top_n_per_query = int(temporal_anchor_cfg.get("top_n_per_query", 10))
+        self.temporal_anchor_additive_limit = int(temporal_anchor_cfg.get("additive_limit", 8))
         self.temporal_anchor_cue_keywords = [
             str(x).strip().lower()
             for x in list(temporal_anchor_cfg.get("cue_keywords", []))
@@ -217,24 +217,16 @@ class MemoryManager:
         self.query_focus_max_queries = int(query_focus_cfg.get("max_queries", 4))
         self.query_focus_top_n_per_query = int(query_focus_cfg.get("top_n_per_query", 12))
         self.query_focus_additive_limit = int(query_focus_cfg.get("additive_limit", 12))
-        self.query_focus_max_output_tokens = int(
-            query_focus_cfg.get("max_output_tokens", 120)
-        )
-        self.query_focus_force_json_output = bool(
-            query_focus_cfg.get("force_json_output", True)
-        )
+        self.query_focus_max_output_tokens = int(query_focus_cfg.get("max_output_tokens", 120))
+        self.query_focus_force_json_output = bool(query_focus_cfg.get("force_json_output", True))
         self.query_focus_think = bool(query_focus_cfg.get("think", False))
         query_plan_cfg = dict(self.config["retrieval"].get("query_plan", {}))
         self.query_plan_enabled = bool(query_plan_cfg.get("enabled", True))
         self.query_plan_max_sub_queries = int(query_plan_cfg.get("max_sub_queries", 4))
         self.query_plan_slot_weight = float(query_plan_cfg.get("slot_coverage_weight", 0.35))
-        self.query_plan_llm_assist_enabled = bool(
-            query_plan_cfg.get("llm_assist_enabled", True)
-        )
+        self.query_plan_llm_assist_enabled = bool(query_plan_cfg.get("llm_assist_enabled", True))
         self.query_plan_llm_phrase_max = int(query_plan_cfg.get("llm_phrase_max", 3))
-        self.query_plan_llm_phrase_min_tokens = int(
-            query_plan_cfg.get("llm_phrase_min_tokens", 2)
-        )
+        self.query_plan_llm_phrase_min_tokens = int(query_plan_cfg.get("llm_phrase_min_tokens", 2))
         gap_cfg = dict(self.config["retrieval"].get("gap_detector", {}))
         self.gap_detector_enabled = bool(gap_cfg.get("enabled", True))
         self.gap_detector_max_rounds = int(gap_cfg.get("max_rounds", 2))
@@ -542,40 +534,25 @@ class MemoryManager:
                 plan["target_object"] = merged_focus[0]
 
         base_query = re.sub(r"\s+", " ", str(query or "")).strip()
-        keyword_stop = {
-            "i",
-            "me",
-            "my",
-            "we",
-            "our",
-            "you",
-            "your",
-            "they",
-            "their",
-            "the",
-            "a",
-            "an",
-            "of",
-            "to",
-            "for",
-            "with",
-            "in",
-            "on",
-            "at",
-            "do",
-            "did",
-            "does",
-            "is",
-            "are",
-            "was",
-            "were",
-            "what",
-            "which",
-            "who",
-            "when",
-            "where",
-            "how",
-        }
+        keyword_stop = set(BASIC_STOPWORDS).union(
+            {
+                "we",
+                "our",
+                "your",
+                "they",
+                "their",
+                "at",
+                "does",
+                "was",
+                "were",
+                "what",
+                "which",
+                "who",
+                "when",
+                "where",
+                "how",
+            }
+        )
         keyword_tokens: List[str] = []
         for phrase in merged_focus[:4]:
             toks = re.findall(r"[a-z0-9]+", phrase.lower())
@@ -689,7 +666,9 @@ class MemoryManager:
         else:
             reranked_chunks = []
 
-        if self.temporal_anchor_enabled and hasattr(self.mid_memory, "search_chunks_global_with_limit"):
+        if self.temporal_anchor_enabled and hasattr(
+            self.mid_memory, "search_chunks_global_with_limit"
+        ):
             anchor_queries = self._build_temporal_anchor_queries(query)
             if anchor_queries:
                 anchor_chunks: List[Dict[str, object]] = []
@@ -762,9 +741,8 @@ class MemoryManager:
         if sentence_enabled and hasattr(self.mid_memory, "search_sentences_global"):
             sentence_results = self.mid_memory.search_sentences_global(query)
             planned_queries = self._build_query_focus_queries(query)
-            if (
-                len(planned_queries) > 1
-                and hasattr(self.mid_memory, "search_sentences_global_with_limit")
+            if len(planned_queries) > 1 and hasattr(
+                self.mid_memory, "search_sentences_global_with_limit"
             ):
                 for sq in planned_queries[1:]:
                     sentence_results.extend(
@@ -826,9 +804,8 @@ class MemoryManager:
                             extra_chunks=gap_chunks,
                             additive_limit=max(1, int(self.gap_detector_additive_limit)),
                         )
-                    if (
-                        sentence_enabled
-                        and hasattr(self.mid_memory, "search_sentences_global_with_limit")
+                    if sentence_enabled and hasattr(
+                        self.mid_memory, "search_sentences_global_with_limit"
                     ):
                         gap_sentences: List[Dict[str, object]] = []
                         for gq in gap_queries:
@@ -1047,7 +1024,9 @@ class MemoryManager:
     def build_evidence_graph_bundle(
         self,
         query: str,
-        precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]] = None,
+        precomputed_context: Optional[
+            Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]
+        ] = None,
         evidence_sentences: Optional[List[Dict[str, object]]] = None,
         evidence_pack: Optional[Dict[str, object]] = None,
         enable_filter: Optional[bool] = None,
@@ -1124,7 +1103,13 @@ class MemoryManager:
             stage_started = time.perf_counter()
             extraction = self.evidence_graph_extractor.extract_claims(filtered_pack)
             stage_latency_sec["claims"] = time.perf_counter() - stage_started
-        graph: Dict[str, object] = {"query": str(query or ""), "answer_type": str(plan.get("answer_type", "")), "nodes": [], "edges": [], "stats": {"node_count": 0, "edge_count": 0, "entity_count": 0, "claim_count": 0}}
+        graph: Dict[str, object] = {
+            "query": str(query or ""),
+            "answer_type": str(plan.get("answer_type", "")),
+            "nodes": [],
+            "edges": [],
+            "stats": {"node_count": 0, "edge_count": 0, "entity_count": 0, "claim_count": 0},
+        }
         if use_light_graph and filtered_pack:
             stage_started = time.perf_counter()
             graph = self.evidence_light_graph.build_graph(
@@ -1183,8 +1168,7 @@ class MemoryManager:
         if clear_short:
             self.short_memory.clear()
         logger.info(
-            "MemoryManager.archive_short_to_mid: "
-            f"moved={moved}, clear_short={clear_short}."
+            "MemoryManager.archive_short_to_mid: " f"moved={moved}, clear_short={clear_short}."
         )
         return moved
 
@@ -1199,7 +1183,9 @@ class MemoryManager:
         self,
         input_text: str,
         retrieval_query: Optional[str] = None,
-        precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]] = None,
+        precomputed_context: Optional[
+            Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]
+        ] = None,
     ) -> str:
         """Handle one user message with retrieval, LLM call, and memory updates."""
         chat_started = time.perf_counter()
@@ -1251,9 +1237,7 @@ class MemoryManager:
             precomputed_context=precomputed_context,
         )
 
-    def _set_prompt_trace_sections(
-        self, generation_context: List[Dict[str, str]] | str
-    ) -> None:
+    def _set_prompt_trace_sections(self, generation_context: List[Dict[str, str]] | str) -> None:
         if isinstance(generation_context, str):
             text = str(generation_context).strip()
             self.last_prompt_trace_sections = [{"section": "prompt", "text": text}] if text else []

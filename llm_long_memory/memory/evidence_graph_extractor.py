@@ -8,6 +8,7 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from llm_long_memory.llm.ollama_client import ollama_generate_with_retry
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS, NAMED_TOKEN_STOPWORDS
 from llm_long_memory.memory.model_output_json_utils import (
     extract_first_json_block,
     safe_json_loads_relaxed,
@@ -19,100 +20,78 @@ class EvidenceGraphExtractor:
 
     _CONTENT_TOKEN_RE = re.compile(r"[a-z0-9]+")
     _NAMED_TOKEN_RE = re.compile(r"\b[A-Z][A-Za-z0-9'/-]+\b")
-    _CONTENT_STOPWORDS = {
-        "a",
-        "an",
-        "and",
-        "any",
-        "about",
-        "are",
-        "as",
-        "at",
-        "be",
-        "been",
-        "but",
-        "by",
-        "can",
-        "could",
-        "did",
-        "do",
-        "for",
-        "from",
-        "get",
-        "good",
-        "have",
-        "help",
-        "how",
-        "i",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "its",
-        "learn",
-        "me",
-        "more",
-        "my",
-        "of",
-        "on",
-        "or",
-        "our",
-        "should",
-        "some",
-        "stay",
-        "suggest",
-        "suggestions",
-        "than",
-        "that",
-        "the",
-        "their",
-        "them",
-        "these",
-        "this",
-        "to",
-        "use",
-        "using",
-        "video",
-        "ways",
-        "what",
-        "where",
-        "with",
-        "work",
-        "working",
-        "would",
-        "you",
-        "your",
-    }
-    _NAMED_TOKEN_STOPWORDS = {
-        "A",
-        "An",
-        "And",
-        "Any",
-        "Can",
-        "Could",
-        "Do",
-        "Does",
-        "For",
-        "I",
-        "I'd",
-        "I've",
-        "If",
-        "In",
-        "My",
-        "Of",
-        "Or",
-        "The",
-        "This",
-        "What",
-        "When",
-        "Where",
-        "Which",
-        "Who",
-        "Would",
-        "You",
-        "Your",
-    }
+    _CONTENT_STOPWORDS = set(BASIC_STOPWORDS).union(
+        {
+            "an",
+            "and",
+            "any",
+            "about",
+            "are",
+            "as",
+            "at",
+            "be",
+            "been",
+            "but",
+            "by",
+            "can",
+            "could",
+            "did",
+            "do",
+            "for",
+            "from",
+            "get",
+            "good",
+            "have",
+            "help",
+            "how",
+            "i",
+            "if",
+            "in",
+            "into",
+            "is",
+            "it",
+            "its",
+            "learn",
+            "me",
+            "more",
+            "my",
+            "of",
+            "on",
+            "or",
+            "our",
+            "should",
+            "some",
+            "stay",
+            "suggest",
+            "suggestions",
+            "than",
+            "that",
+            "the",
+            "their",
+            "them",
+            "these",
+            "this",
+            "to",
+            "use",
+            "using",
+            "video",
+            "ways",
+            "what",
+            "where",
+            "with",
+            "work",
+            "working",
+            "would",
+            "your",
+        }
+    )
+    _NAMED_TOKEN_STOPWORDS = set(NAMED_TOKEN_STOPWORDS).union(
+        {
+            "For",
+            "I'd",
+            "I've",
+        }
+    )
     _PREFERENCE_QUERY_RE = re.compile(
         r"\b("
         r"recommend|suggest(?:ion|ions)?|advice|tips?|"
@@ -258,9 +237,13 @@ class EvidenceGraphExtractor:
             return ""
         if re.search(r"\b(how many|number of|count)\b", low):
             return "count"
-        if re.search(r"\b(before|after|first|second|earlier|later|how long|weeks? after|days? after)\b", low):
+        if re.search(
+            r"\b(before|after|first|second|earlier|later|how long|weeks? after|days? after)\b", low
+        ):
             return "temporal" if " or " not in low else "temporal_comparison"
-        if re.search(r"\b(currently|now|updated|change(?:d)?|switched|moved|where is|where are)\b", low):
+        if re.search(
+            r"\b(currently|now|updated|change(?:d)?|switched|moved|where is|where are)\b", low
+        ):
             return "update"
         if cls._PREFERENCE_QUERY_RE.search(low):
             return "preference"
@@ -290,7 +273,9 @@ class EvidenceGraphExtractor:
     @staticmethod
     def _infer_status_from_text(*parts: str) -> str:
         text = " ".join(str(p or "") for p in parts).lower()
-        if re.search(r"\b(will|plan(?:ning)? to|planned to|going to|hope to|hoping to|intend to)\b", text):
+        if re.search(
+            r"\b(will|plan(?:ning)? to|planned to|going to|hope to|hoping to|intend to)\b", text
+        ):
             return "planned"
         if re.search(r"\b(currently|current|now|latest|recently|today)\b", text):
             return "current"
@@ -301,22 +286,34 @@ class EvidenceGraphExtractor:
     @staticmethod
     def _infer_claim_type_from_text(*parts: str) -> str:
         text = " ".join(str(p or "") for p in parts).lower()
-        if re.search(r"\b(moved|located|hanging|kept|stored|set to|switched to|changed to|currently in|currently on)\b", text):
+        if re.search(
+            r"\b(moved|located|hanging|kept|stored|set to|switched to|changed to|currently in|currently on)\b",
+            text,
+        ):
             return "state_snapshot"
-        if re.search(r"\b(met|graduated|completed|accepted|serviced|booked|scheduled|set|won|tried|led)\b", text):
+        if re.search(
+            r"\b(met|graduated|completed|accepted|serviced|booked|scheduled|set|won|tried|led)\b",
+            text,
+        ):
             return "event_record"
         return "fact_statement"
 
     @staticmethod
     def _infer_state_key(*parts: str) -> str:
         text = " ".join(str(p or "") for p in parts).lower()
-        if re.search(r"\b(where|located|location|hanging|hung|above|below|in my|in the|on my|on the|moved to)\b", text):
+        if re.search(
+            r"\b(where|located|location|hanging|hung|above|below|in my|in the|on my|on the|moved to)\b",
+            text,
+        ):
             return "location"
         if re.search(r"\b(personal best|time|date|when)\b", text):
             return "time"
         if re.search(r"\b(degree|major|certification|certificate)\b", text):
             return "credential"
-        if re.search(r"\b(schedule|shift|rotation|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b", text):
+        if re.search(
+            r"\b(schedule|shift|rotation|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
+            text,
+        ):
             return "schedule"
         if re.search(r"\b(prefer|preference|like|want|interested in)\b", text):
             return "preference"
@@ -528,7 +525,7 @@ class EvidenceGraphExtractor:
                     "status": "current|past|planned|unknown",
                     "confidence": 0.0,
                     "evidence_ids": ["ev_001"],
-                    "verbatim_span": "exact supporting phrase from one evidence line"
+                    "verbatim_span": "exact supporting phrase from one evidence line",
                 }
             ],
             "claims": [
@@ -546,9 +543,9 @@ class EvidenceGraphExtractor:
                     "unit": "string",
                     "confidence": 0.0,
                     "evidence_ids": ["ev_001"],
-                    "verbatim_span": "exact supporting phrase from one evidence line"
+                    "verbatim_span": "exact supporting phrase from one evidence line",
                 }
-            ]
+            ],
         }
         prompt_lines = [
             "You are extracting question-scoped memory claims from retrieved evidence.",
@@ -638,7 +635,9 @@ class EvidenceGraphExtractor:
             status = self._infer_status_from_text(predicate, value, time_anchor, verbatim_span)
         claim_type = self._valid_claim_type(raw_claim.get("claim_type", ""))
         if claim_type == "fact_statement":
-            claim_type = self._infer_claim_type_from_text(predicate, value, time_anchor, verbatim_span)
+            claim_type = self._infer_claim_type_from_text(
+                predicate, value, time_anchor, verbatim_span
+            )
         if not state_key:
             state_key = self._infer_state_key(predicate, value, verbatim_span)
         return {
@@ -684,7 +683,9 @@ class EvidenceGraphExtractor:
         state_key = self._normalize_space(str(raw_unit.get("state_key", "")))
         status = self._valid_status(raw_unit.get("status", ""))
         if status == "unknown":
-            status = self._infer_status_from_text(text, verbatim_span, predicate_hint, value_hint, time_anchor)
+            status = self._infer_status_from_text(
+                text, verbatim_span, predicate_hint, value_hint, time_anchor
+            )
         if not state_key:
             state_key = self._infer_state_key(text, verbatim_span, predicate_hint, value_hint)
         confidence = raw_unit.get("confidence", 0.0)
@@ -861,7 +862,9 @@ class EvidenceGraphExtractor:
         if answer_type != "count" or not support_units:
             return None
         target_object = self._normalize_space(str(filtered_pack.get("target_object", "")))
-        subject = target_object or self._normalize_space(str(support_units[0].get("subject_hint", "")))
+        subject = target_object or self._normalize_space(
+            str(support_units[0].get("subject_hint", ""))
+        )
         if not subject:
             return None
 
@@ -929,7 +932,8 @@ class EvidenceGraphExtractor:
             "confidence": round(float((source_unit or {}).get("confidence", 0.0) or 0.0), 4),
             "evidence_ids": evidence_ids or list((source_unit or {}).get("evidence_ids", [])),
             "verbatim_span": self._normalize_space(
-                str((source_unit or {}).get("verbatim_span", "")) or str((source_unit or {}).get("text", ""))
+                str((source_unit or {}).get("verbatim_span", ""))
+                or str((source_unit or {}).get("text", ""))
             ),
         }
 
@@ -990,7 +994,11 @@ class EvidenceGraphExtractor:
         if self._META_ADVICE_RE.search(clean.lower()):
             return ""
         clean = clean.replace("**", " ").replace("*", " ")
-        segments = [self._normalize_space(seg) for seg in re.split(r"[:;]\s+|(?<=[.!?])\s+", clean) if self._normalize_space(seg)]
+        segments = [
+            self._normalize_space(seg)
+            for seg in re.split(r"[:;]\s+|(?<=[.!?])\s+", clean)
+            if self._normalize_space(seg)
+        ]
         for seg in segments:
             content = self._extract_content_tokens(seg)
             if len(content) >= 4:
@@ -1093,7 +1101,13 @@ class EvidenceGraphExtractor:
         score = float(sum(1 for token in query_tokens if token in blob))
         predicate = self._normalize_space(str(claim.get("predicate", ""))).lower()
         state_key = self._normalize_space(str(claim.get("state_key", ""))).lower()
-        if predicate in {"preferred_direction", "supported_reason", "recommend", "recommendation", "suggestion"}:
+        if predicate in {
+            "preferred_direction",
+            "supported_reason",
+            "recommend",
+            "recommendation",
+            "suggestion",
+        }:
             score += 1.0
         if state_key == "preference":
             score += 0.75
@@ -1128,7 +1142,9 @@ class EvidenceGraphExtractor:
                 text=" ".join([phrase, source_text]),
             )
             predicate = self._normalize_space(str(unit.get("predicate_hint", ""))).lower()
-            if predicate in self._META_PREDICATES and (not phrase or self._is_generic_preference_phrase(phrase)):
+            if predicate in self._META_PREDICATES and (
+                not phrase or self._is_generic_preference_phrase(phrase)
+            ):
                 continue
             if alignment < 0.0 and score < 2.5:
                 continue
@@ -1155,12 +1171,24 @@ class EvidenceGraphExtractor:
             source_text = self._normalize_space(
                 str(claim.get("verbatim_span", ""))
                 or " ".join(
-                    str(x) for x in [claim.get("subject", ""), claim.get("predicate", ""), claim.get("value", "")] if str(x).strip()
+                    str(x)
+                    for x in [
+                        claim.get("subject", ""),
+                        claim.get("predicate", ""),
+                        claim.get("value", ""),
+                    ]
+                    if str(x).strip()
                 )
             )
             phrase = self._trim_clause(
                 " ".join(
-                    str(x) for x in [claim.get("subject", ""), claim.get("predicate", ""), claim.get("value", "")] if str(x).strip()
+                    str(x)
+                    for x in [
+                        claim.get("subject", ""),
+                        claim.get("predicate", ""),
+                        claim.get("value", ""),
+                    ]
+                    if str(x).strip()
                 ),
                 max_words=18,
             )
@@ -1176,7 +1204,12 @@ class EvidenceGraphExtractor:
                 continue
             if alignment < 0.0 and score < 2.5:
                 continue
-            if self._is_generic_preference_phrase(self._normalize_space(str(claim.get("value", "")))) and score < 2.0:
+            if (
+                self._is_generic_preference_phrase(
+                    self._normalize_space(str(claim.get("value", "")))
+                )
+                and score < 2.0
+            ):
                 continue
             kept.append(claim)
         return kept
@@ -1206,7 +1239,11 @@ class EvidenceGraphExtractor:
                 str(unit.get("verbatim_span", "")) or str(unit.get("text", ""))
             )
             phrase = self._preference_unit_phrase(unit)
-            if phrase and not self._is_generic_preference_phrase(phrase) and not self._is_meta_advice_text(source_text):
+            if (
+                phrase
+                and not self._is_generic_preference_phrase(phrase)
+                and not self._is_meta_advice_text(source_text)
+            ):
                 score = self._preference_unit_score(filtered_pack=filtered_pack, unit=unit)
                 alignment = self._named_alignment_score(
                     query_named_tokens=query_named_tokens,
@@ -1225,9 +1262,7 @@ class EvidenceGraphExtractor:
                         )
                     )
                     seen_direction.add(key)
-            reason = self._preference_reason_phrase(
-                source_text
-            )
+            reason = self._preference_reason_phrase(source_text)
             if reason:
                 score = self._preference_unit_score(filtered_pack=filtered_pack, unit=unit)
                 alignment = self._named_alignment_score(
@@ -1261,7 +1296,11 @@ class EvidenceGraphExtractor:
                 text=" ".join([phrase, source_text]),
             )
             score += alignment
-            evidence_ids = [str(item.get("evidence_id", "")).strip()] if str(item.get("evidence_id", "")).strip() else []
+            evidence_ids = (
+                [str(item.get("evidence_id", "")).strip()]
+                if str(item.get("evidence_id", "")).strip()
+                else []
+            )
             key = self._text_key(phrase)
             if key and key not in seen_reason and score >= 0.0:
                 reason_candidates.append((score, alignment, phrase, evidence_ids, source_text))
@@ -1331,9 +1370,8 @@ class EvidenceGraphExtractor:
                     "numeric_value": "",
                     "unit": "",
                     "confidence": 0.0,
-                    "evidence_ids": direction_evidence_ids + [
-                        x for x in reason_evidence_ids if x not in direction_evidence_ids
-                    ],
+                    "evidence_ids": direction_evidence_ids
+                    + [x for x in reason_evidence_ids if x not in direction_evidence_ids],
                     "verbatim_span": " | ".join(direction_spans + reason_spans[:1]),
                 }
             )
@@ -1372,7 +1410,12 @@ class EvidenceGraphExtractor:
                 "support_units": [],
                 "claims": [],
                 "raw_batches": [],
-                "stats": {"selected_evidence": len(selected), "batches": 0, "support_units": 0, "claims": 0},
+                "stats": {
+                    "selected_evidence": len(selected),
+                    "batches": 0,
+                    "support_units": 0,
+                    "claims": 0,
+                },
             }
         if not selected:
             return {
@@ -1384,7 +1427,11 @@ class EvidenceGraphExtractor:
                 "stats": {"selected_evidence": 0, "batches": 0, "support_units": 0, "claims": 0},
             }
 
-        valid_ids = [str(x.get("evidence_id", "")).strip() for x in selected if str(x.get("evidence_id", "")).strip()]
+        valid_ids = [
+            str(x.get("evidence_id", "")).strip()
+            for x in selected
+            if str(x.get("evidence_id", "")).strip()
+        ]
         effective_answer_type = self._effective_answer_type(filtered_pack)
         allow_compare_role = effective_answer_type == "temporal_comparison"
         batches = self._build_batches(selected=selected, filtered_pack=filtered_pack)

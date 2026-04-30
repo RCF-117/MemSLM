@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Set
 
-from llm_long_memory.memory.temporal_query_utils import extract_choice_candidates, parse_choice_targets
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS
+from llm_long_memory.memory.temporal_query_utils import (
+    extract_choice_candidates,
+    parse_choice_targets,
+)
 
 
 def dedup_chunks_keep_best(chunks: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -57,8 +61,10 @@ def build_temporal_anchor_queries(
         max_options=max(2, temporal_anchor_max_options),
         default_target_k=temporal_anchor_max_options,
     )
-    options = parsed if parsed is not None else extract_choice_candidates(
-        query, max_options=max(2, temporal_anchor_max_options)
+    options = (
+        parsed
+        if parsed is not None
+        else extract_choice_candidates(query, max_options=max(2, temporal_anchor_max_options))
     )
     out: List[str] = []
     seen: Set[str] = set()
@@ -306,62 +312,50 @@ def _extract_state_keys(query: str, limit: int = 4) -> List[str]:
 def _extract_plan_keywords(query: str, limit: int = 6) -> List[str]:
     q = str(query or "")
     toks = _tokenize(q)
-    stop = {
-        "what",
-        "which",
-        "who",
-        "where",
-        "when",
-        "why",
-        "how",
-        "many",
-        "much",
-        "did",
-        "do",
-        "does",
-        "is",
-        "are",
-        "was",
-        "were",
-        "have",
-        "has",
-        "had",
-        "i",
-        "me",
-        "my",
-        "we",
-        "our",
-        "you",
-        "your",
-        "they",
-        "their",
-        "he",
-        "she",
-        "it",
-        "its",
-        "a",
-        "an",
-        "the",
-        "and",
-        "or",
-        "to",
-        "of",
-        "in",
-        "on",
-        "for",
-        "with",
-        "from",
-        "at",
-        "this",
-        "that",
-        "these",
-        "those",
-        "any",
-        "can",
-        "could",
-        "would",
-        "should",
-    }
+    stop = set(BASIC_STOPWORDS).union(
+        {
+            "what",
+            "which",
+            "who",
+            "where",
+            "when",
+            "why",
+            "how",
+            "many",
+            "much",
+            "does",
+            "was",
+            "were",
+            "have",
+            "has",
+            "had",
+            "we",
+            "our",
+            "your",
+            "they",
+            "their",
+            "he",
+            "she",
+            "it",
+            "its",
+            "a",
+            "an",
+            "the",
+            "and",
+            "or",
+            "from",
+            "at",
+            "this",
+            "that",
+            "these",
+            "those",
+            "any",
+            "can",
+            "could",
+            "would",
+            "should",
+        }
+    )
     out: List[str] = []
     seen: Set[str] = set()
     for t in toks:
@@ -605,9 +599,7 @@ def _compose_sub_queries(
         out.append(focus_pair)
 
     if answer_type == "temporal_comparison" and len(focus_phrases) >= 2:
-        cmp_q = _normalize_space(
-            f"{focus_phrases[0]} {focus_phrases[1]} first before after"
-        )
+        cmp_q = _normalize_space(f"{focus_phrases[0]} {focus_phrases[1]} first before after")
         if len(_tokenize(cmp_q)) >= 2:
             out.append(cmp_q)
     elif answer_type == "update" and focus_phrases:
@@ -859,44 +851,29 @@ def build_gap_queries(
     out: List[str] = []
     base = _normalize_space(query)
     focus_phrases = [str(x).strip() for x in list(plan.get("focus_phrases", []))]
-    stop = {
-        "what",
-        "which",
-        "who",
-        "where",
-        "when",
-        "why",
-        "how",
-        "did",
-        "do",
-        "does",
-        "is",
-        "are",
-        "was",
-        "were",
-        "have",
-        "has",
-        "had",
-        "i",
-        "me",
-        "my",
-        "we",
-        "our",
-        "you",
-        "your",
-        "they",
-        "their",
-        "the",
-        "a",
-        "an",
-        "of",
-        "to",
-        "for",
-        "with",
-        "in",
-        "on",
-        "at",
-    }
+    stop = set(BASIC_STOPWORDS).union(
+        {
+            "what",
+            "which",
+            "who",
+            "where",
+            "when",
+            "why",
+            "how",
+            "does",
+            "was",
+            "were",
+            "have",
+            "has",
+            "had",
+            "we",
+            "our",
+            "your",
+            "they",
+            "their",
+            "at",
+        }
+    )
 
     def _compact_query(text: str, limit: int = 10) -> str:
         toks: List[str] = []

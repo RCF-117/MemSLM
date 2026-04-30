@@ -344,6 +344,12 @@ It should not be read as:
 - a fully self-improving learning system
 - a proof that graph structure always dominates filtered retrieval
 
+Implementation note: the current system is a research prototype. Some
+heuristic lexical resources are still maintained independently across modules
+to support rapid experiments and local tuning. A future engineering direction is
+to abstract a unified lexical-resource layer for stop words, intent labels, and
+the question-type schema, reducing maintenance cost.
+
 ## Future Work
 
 Exploratory modules and negative-result directions are preserved under:

@@ -6,6 +6,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS, UPDATE_CUES
 from llm_long_memory.utils.logger import logger
 
 
@@ -84,7 +85,9 @@ class MemoryManagerChatRuntime:
         confidence = float(tool_payload.get("confidence", 0.0) or 0.0)
         if confidence < float(getattr(self.m, "toolkit_direct_min_confidence", 0.65)):
             return "", ""
-        verification_reason = self._normalize_space(str(tool_payload.get("verification_reason", ""))).lower()
+        verification_reason = self._normalize_space(
+            str(tool_payload.get("verification_reason", ""))
+        ).lower()
         if intent == "update" and verification_reason not in {
             "update_edge_verified",
             "update_numeric_compare_verified",
@@ -96,7 +99,10 @@ class MemoryManagerChatRuntime:
             "count_verified_by_latest_supported_state",
         }:
             return "", ""
-        if intent == "temporal_count" and verification_reason != "temporal_count_dual_anchor_verified":
+        if (
+            intent == "temporal_count"
+            and verification_reason != "temporal_count_dual_anchor_verified"
+        ):
             return "", ""
         if intent == "temporal_compare" and verification_reason not in {
             "temporal_compare_graph_edge_verified",
@@ -104,7 +110,8 @@ class MemoryManagerChatRuntime:
         }:
             return "", ""
         candidate = self._normalize_space(
-            str(tool_payload.get("verified_candidate", "")) or str(tool_payload.get("answer_candidate", ""))
+            str(tool_payload.get("verified_candidate", ""))
+            or str(tool_payload.get("answer_candidate", ""))
         )
         if not candidate:
             return "", ""
@@ -163,50 +170,35 @@ class MemoryManagerChatRuntime:
             "month",
             "year",
         }
-        generic_stopwords = {
-            "who",
-            "what",
-            "which",
-            "where",
-            "when",
-            "why",
-            "how",
-            "did",
-            "do",
-            "does",
-            "is",
-            "are",
-            "was",
-            "were",
-            "have",
-            "has",
-            "had",
-            "i",
-            "we",
-            "you",
-            "they",
-            "he",
-            "she",
-            "it",
-            "a",
-            "an",
-            "the",
-            "and",
-            "or",
-            "to",
-            "of",
-            "in",
-            "on",
-            "for",
-            "with",
-            "my",
-            "our",
-            "your",
-            "their",
-            "me",
-            "us",
-            "them",
-        }
+        generic_stopwords = set(BASIC_STOPWORDS).union(
+            {
+                "who",
+                "what",
+                "which",
+                "where",
+                "when",
+                "why",
+                "how",
+                "does",
+                "was",
+                "were",
+                "have",
+                "has",
+                "had",
+                "we",
+                "they",
+                "he",
+                "she",
+                "it",
+                "and",
+                "or",
+                "our",
+                "your",
+                "their",
+                "us",
+                "them",
+            }
+        )
 
         def _contains_phrase(text_low: str, phrase: str) -> bool:
             p = str(phrase).strip().lower()
@@ -272,13 +264,18 @@ class MemoryManagerChatRuntime:
                     if opt_tokens and stoks:
                         score += len(opt_tokens.intersection(stoks)) / float(len(opt_tokens))
                     if query_tokens and stoks:
-                        score += 0.5 * (len(query_tokens.intersection(stoks)) / float(len(query_tokens)))
+                        score += 0.5 * (
+                            len(query_tokens.intersection(stoks)) / float(len(query_tokens))
+                        )
                     if stoks.intersection(temporal_keywords):
                         score += 0.6
                     if sig_terms and stoks.intersection(sig_terms):
                         score += 0.8
                     # prevent location/profile-only noise from dominating temporal compare
-                    if any(x in stoks for x in {"live", "hometown", "town", "city", "culture", "history"}):
+                    if any(
+                        x in stoks
+                        for x in {"live", "hometown", "town", "city", "culture", "history"}
+                    ):
                         score -= 0.2
                     compact = sent if len(sent) <= 260 else (sent[:260].rstrip(" ,.;:!?") + "...")
                     out.append((score, compact))
@@ -385,7 +382,9 @@ class MemoryManagerChatRuntime:
                 picked = _pick(limit=5)
             lines.extend([f"- {x}" for x in picked[:6]])
         elif answer_type == "temporal_comparison":
-            options = [str(x).strip() for x in list(plan.get("compare_options", [])) if str(x).strip()]
+            options = [
+                str(x).strip() for x in list(plan.get("compare_options", [])) if str(x).strip()
+            ]
             if len(options) < 2:
                 focus_list = [
                     str(x).strip() for x in list(plan.get("focus_phrases", [])) if str(x).strip()
@@ -517,7 +516,9 @@ class MemoryManagerChatRuntime:
                 lines.extend([f"- {x}" for x in pool_a[:3]])
                 lines.append(f"option_b: {b}")
                 lines.extend([f"- {x}" for x in pool_b[:3]])
-                lines.append("- compare_rule: prioritize evidence matching query action/time cues and choose the earlier timeline.")
+                lines.append(
+                    "- compare_rule: prioritize evidence matching query action/time cues and choose the earlier timeline."
+                )
             else:
                 lines.extend([f"- {x}" for x in _pick(limit=6)])
         elif answer_type == "temporal":
@@ -532,7 +533,9 @@ class MemoryManagerChatRuntime:
                 picked = _pick(limit=4)
             lines.extend([f"- {x}" for x in picked[:6]])
         elif answer_type == "update":
-            state_keys = [str(x).strip() for x in list(plan.get("state_keys", [])) if str(x).strip()]
+            state_keys = [
+                str(x).strip() for x in list(plan.get("state_keys", [])) if str(x).strip()
+            ]
             anchors = state_keys[:2]
             if not anchors:
                 target = str(plan.get("target_object", "")).strip()
@@ -545,7 +548,9 @@ class MemoryManagerChatRuntime:
                         if str(x).strip()
                     ][:1]
             if not anchors:
-                anchors = [str(x).strip() for x in list(plan.get("entities", [])) if str(x).strip()][:2]
+                anchors = [
+                    str(x).strip() for x in list(plan.get("entities", [])) if str(x).strip()
+                ][:2]
 
             def _matches_anchor(text: str, anchor: str) -> bool:
                 low = text.lower()
@@ -558,17 +563,7 @@ class MemoryManagerChatRuntime:
                 overlap = len(anchor_tokens.intersection(text_tokens)) / float(len(anchor_tokens))
                 return overlap >= 0.5
 
-            update_cues = {
-                "now",
-                "currently",
-                "recently",
-                "latest",
-                "moved",
-                "switched",
-                "changed",
-                "updated",
-                "set",
-            }
+            update_cues = set(UPDATE_CUES)
             ranked_update: List[tuple[tuple[str, float], str]] = []
             seen_update: set[str] = set()
             for item in top:
@@ -604,7 +599,9 @@ class MemoryManagerChatRuntime:
                 picked = [self._normalize_space(str(x.get("text", ""))) for x in recent[:4]]
             lines.extend([f"- {x}" for x in picked[:6] if x])
         elif answer_type == "preference":
-            picked = _pick(limit=6, must=["prefer", "favorite", "recommend", "suggest", "like", "enjoy"])
+            picked = _pick(
+                limit=6, must=["prefer", "favorite", "recommend", "suggest", "like", "enjoy"]
+            )
             if not picked:
                 picked = _pick(limit=5)
             lines.extend([f"- {x}" for x in picked[:6]])
@@ -613,7 +610,11 @@ class MemoryManagerChatRuntime:
 
         if not lines:
             insufficient = True
-            lines = [f"- {self._normalize_space(str(x.get('text', '')))}" for x in top[:4] if str(x.get("text", "")).strip()]
+            lines = [
+                f"- {self._normalize_space(str(x.get('text', '')))}"
+                for x in top[:4]
+                if str(x.get("text", "")).strip()
+            ]
 
         return {
             "answer_type": answer_type,
@@ -681,7 +682,9 @@ class MemoryManagerChatRuntime:
 
         if not chunks:
             filtered = dict(bundle.get("filtered_pack", {}) or {})
-            selected = list(filtered.get("core_evidence", [])) + list(filtered.get("supporting_evidence", []))
+            selected = list(filtered.get("core_evidence", [])) + list(
+                filtered.get("supporting_evidence", [])
+            )
             for item in selected[: max(1, int(max_evidence))]:
                 text = self._normalize_space(str(item.get("text", "")))
                 if not text:
@@ -692,7 +695,9 @@ class MemoryManagerChatRuntime:
                 seen.add(key)
                 chunks.append({"text": text, "section": "graph_evidence"})
 
-        conflict_items = list(dict(bundle.get("filtered_pack", {}) or {}).get("conflict_evidence", []))
+        conflict_items = list(
+            dict(bundle.get("filtered_pack", {}) or {}).get("conflict_evidence", [])
+        )
         for item in conflict_items[:2]:
             text = self._normalize_space(str(item.get("text", "")))
             if not text:
@@ -707,9 +712,7 @@ class MemoryManagerChatRuntime:
     def prepare_answer_inputs(
         self,
         query: str,
-        precomputed_context: Optional[
-            Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]
-        ],
+        precomputed_context: Optional[Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]],
     ) -> Tuple[
         str,
         List[Dict[str, object]],
@@ -735,7 +738,9 @@ class MemoryManagerChatRuntime:
             self._last_specialist_payload = {}
             stage_latency_sec["rag"] = time.perf_counter() - rag_started
         elif self.m.retrieval_execution_mode == "filter_only":
-            raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(query, chunks)
+            raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(
+                query, chunks
+            )
             self._last_evidence_pack = self._build_evidence_pack(
                 query=query,
                 evidence_sentences=raw_evidence_sentences,
@@ -764,7 +769,9 @@ class MemoryManagerChatRuntime:
                 evidence_sentences = list(raw_evidence_sentences[:8])
             self._last_specialist_payload = {}
         else:
-            raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(query, chunks)
+            raw_evidence_sentences = self.m.answer_grounding.collect_evidence_sentences(
+                query, chunks
+            )
             self._last_evidence_pack = self._build_evidence_pack(
                 query=query,
                 evidence_sentences=raw_evidence_sentences,
@@ -1073,9 +1080,7 @@ class MemoryManagerChatRuntime:
         response = self.m.llm.chat(prompt_messages)
         self.m.last_stage_latency_sec["final_generation"] = time.perf_counter() - stage_started
         if execution_mode in {"model_only", "naive_rag", "filter_only"}:
-            ai_response = self.m.answer_grounding.normalize_final_answer(
-                response, query
-            )
+            ai_response = self.m.answer_grounding.normalize_final_answer(response, query)
             if not ai_response.strip():
                 ai_response = "Not found in retrieved context."
             return ai_response, f"{execution_mode}_direct", ""
@@ -1100,30 +1105,28 @@ class MemoryManagerChatRuntime:
         not_found_reason = str(fallback_result.get("not_found_reason", ""))
 
         normalized_ai_response = ai_response.strip().lower()
-        should_retry_second_pass = (
-            bool(getattr(self.m, "final_answer_second_pass_enabled", False))
-            and (
-                fallback_path.startswith("retry_due_to_")
+        should_retry_second_pass = bool(
+            getattr(self.m, "final_answer_second_pass_enabled", False)
+        ) and (
+            fallback_path.startswith("retry_due_to_")
             or (
                 self.m.answer_grounding.second_pass_llm_enabled
                 and evidence_sentences
                 and normalized_ai_response == "not found in retrieved context."
                 and fallback_path in {"fallback_to_not_found", "llm_not_found_accepted"}
             )
-            )
         )
 
         if should_retry_second_pass:
             model_name = str(getattr(self.m.llm, "model_name", "unknown"))
-            logger.info(
-                "MemoryManager.chat: invoking second-pass LLM "
-                f"(model={model_name})."
-            )
-            expanded_source_prompt, expanded_support_sources = self._build_expanded_generation_prompt(
-                input_text=input_text,
-                retrieved_context_text="",
-                evidence_sentences=evidence_sentences,
-                chunks=[],
+            logger.info("MemoryManager.chat: invoking second-pass LLM " f"(model={model_name}).")
+            expanded_source_prompt, expanded_support_sources = (
+                self._build_expanded_generation_prompt(
+                    input_text=input_text,
+                    retrieved_context_text="",
+                    evidence_sentences=evidence_sentences,
+                    chunks=[],
+                )
             )
             if expanded_source_prompt:
                 self._last_expanded_prompt_text = expanded_source_prompt

@@ -24,6 +24,7 @@ from llm_long_memory.evaluation.metrics_runtime import (
     update_group_stats,
 )
 from llm_long_memory.llm.ollama_client import LLM
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS
 from llm_long_memory.utils.helpers import resolve_project_path, sanitize_filename_part
 from llm_long_memory.utils.logger import logger
 
@@ -128,36 +129,23 @@ def build_session_passages(instance: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _tokenize(text: str) -> List[str]:
-    stopwords = {
-        "the",
-        "a",
-        "an",
-        "to",
-        "of",
-        "and",
-        "or",
-        "in",
-        "on",
-        "for",
-        "with",
-        "my",
-        "is",
-        "was",
-        "are",
-        "were",
-        "be",
-        "been",
-        "i",
-        "me",
-        "you",
-        "it",
-        "that",
-        "this",
-        "do",
-        "does",
-        "did",
-    }
-    return [tok for tok in re.findall(r"[a-z0-9]+", str(text).lower()) if tok and tok not in stopwords]
+    stopwords = set(BASIC_STOPWORDS).union(
+        {
+            "and",
+            "or",
+            "was",
+            "were",
+            "be",
+            "been",
+            "it",
+            "that",
+            "this",
+            "does",
+        }
+    )
+    return [
+        tok for tok in re.findall(r"[a-z0-9]+", str(text).lower()) if tok and tok not in stopwords
+    ]
 
 
 def _score_passage(query_tokens: Sequence[str], passage_text: str) -> float:
@@ -189,8 +177,14 @@ def build_model_only_prompt(instance: Dict[str, Any]) -> EvalPromptResult:
         "[Question]\n"
         f"{question}"
     )
-    prompt_chunks = [{"section": "conversation_history", "text": text} for text in (p["text"] for p in passages)]
-    retrieved_ids = [str(p.get("session_id", "")).strip() for p in passages if str(p.get("session_id", "")).strip()]
+    prompt_chunks = [
+        {"section": "conversation_history", "text": text} for text in (p["text"] for p in passages)
+    ]
+    retrieved_ids = [
+        str(p.get("session_id", "")).strip()
+        for p in passages
+        if str(p.get("session_id", "")).strip()
+    ]
     return prompt, prompt_chunks, retrieved_ids
 
 
@@ -220,8 +214,16 @@ def build_naive_rag_prompt(instance: Dict[str, Any], *, top_k: int) -> EvalPromp
         "[Question]\n"
         f"{question}"
     )
-    prompt_chunks = [{"section": "retrieved_context", "text": str(chunk.get("text", "")).strip()} for chunk in selected if str(chunk.get("text", "")).strip()]
-    retrieved_ids = [str(chunk.get("session_id", "")).strip() for chunk in selected if str(chunk.get("session_id", "")).strip()]
+    prompt_chunks = [
+        {"section": "retrieved_context", "text": str(chunk.get("text", "")).strip()}
+        for chunk in selected
+        if str(chunk.get("text", "")).strip()
+    ]
+    retrieved_ids = [
+        str(chunk.get("session_id", "")).strip()
+        for chunk in selected
+        if str(chunk.get("session_id", "")).strip()
+    ]
     return prompt, prompt_chunks, retrieved_ids
 
 
@@ -293,7 +295,9 @@ def run_direct_mode_eval(
             expected = str(instance.get("answer", "")).strip()
 
             if qid and qid in processed_question_ids:
-                logger.info(f"[{mode_name}] instance {seen}: question_id={qid} already processed, skipped.")
+                logger.info(
+                    f"[{mode_name}] instance {seen}: question_id={qid} already processed, skipped."
+                )
                 continue
             if not question:
                 logger.warn(f"[{mode_name}] instance {seen}: empty question, skipped.")

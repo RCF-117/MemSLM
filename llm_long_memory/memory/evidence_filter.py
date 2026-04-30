@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Sequence, Set
 
+from llm_long_memory.memory.lexical_resources import BASIC_STOPWORDS, UPDATE_CUES
+
 
 _TIME_PATTERNS = [
     re.compile(r"\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b", flags=re.IGNORECASE),
@@ -22,20 +24,13 @@ _NUMBER_PATTERNS = [
         flags=re.IGNORECASE,
     ),
 ]
-_UPDATE_CUES = {
-    "now",
-    "currently",
-    "recently",
-    "latest",
-    "moved",
-    "switched",
-    "changed",
-    "updated",
-    "set",
-    "completed",
-    "finished",
-    "became",
-}
+_UPDATE_CUES = set(UPDATE_CUES).union(
+    {
+        "completed",
+        "finished",
+        "became",
+    }
+)
 _COMPARATIVE_CUES = {
     "first",
     "before",
@@ -68,66 +63,51 @@ _NOISE_PATTERNS = [
     re.compile(r"\bdo not have access\b", flags=re.IGNORECASE),
     re.compile(r"\b(?:tips?|how to|guide|tutorial|best practices?)\b", flags=re.IGNORECASE),
 ]
-_CONTENT_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "am",
-    "as",
-    "at",
-    "be",
-    "been",
-    "being",
-    "by",
-    "did",
-    "do",
-    "does",
-    "for",
-    "from",
-    "had",
-    "has",
-    "have",
-    "how",
-    "i",
-    "if",
-    "in",
-    "into",
-    "is",
-    "it",
-    "its",
-    "me",
-    "my",
-    "of",
-    "on",
-    "or",
-    "our",
-    "should",
-    "so",
-    "that",
-    "the",
-    "their",
-    "them",
-    "there",
-    "these",
-    "they",
-    "this",
-    "those",
-    "to",
-    "up",
-    "us",
-    "was",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "who",
-    "with",
-    "would",
-    "you",
-    "your",
-}
+_CONTENT_STOPWORDS = set(BASIC_STOPWORDS).union(
+    {
+        "and",
+        "am",
+        "as",
+        "at",
+        "be",
+        "been",
+        "being",
+        "by",
+        "does",
+        "from",
+        "had",
+        "has",
+        "have",
+        "how",
+        "if",
+        "into",
+        "it",
+        "its",
+        "or",
+        "our",
+        "should",
+        "so",
+        "that",
+        "their",
+        "them",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "up",
+        "us",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "would",
+        "your",
+    }
+)
 
 
 class EvidenceFilter:
@@ -149,12 +129,8 @@ class EvidenceFilter:
             "evidence_pack": max(1, int(cfg.get("filter_core_pack_cap", 3))),
             "plan_combined_evidence": max(1, int(cfg.get("filter_core_plan_cap", 3))),
         }
-        self.prompt_text_max_chars = max(
-            80, int(cfg.get("filter_prompt_text_max_chars", 280))
-        )
-        self.prompt_text_max_sentences = max(
-            1, int(cfg.get("filter_prompt_text_max_sentences", 2))
-        )
+        self.prompt_text_max_chars = max(80, int(cfg.get("filter_prompt_text_max_chars", 280)))
+        self.prompt_text_max_sentences = max(1, int(cfg.get("filter_prompt_text_max_sentences", 2)))
         self.prompt_text_max_structured_units = max(
             1, int(cfg.get("filter_prompt_text_max_structured_units", 3))
         )
@@ -190,7 +166,9 @@ class EvidenceFilter:
 
     def _split_structured_units(self, text: str) -> List[str]:
         raw = str(text or "")
-        normalized_lines = [self._normalize_space(x) for x in raw.splitlines() if self._normalize_space(x)]
+        normalized_lines = [
+            self._normalize_space(x) for x in raw.splitlines() if self._normalize_space(x)
+        ]
         pieces: List[str] = []
 
         if len(normalized_lines) >= 2:
@@ -354,39 +332,43 @@ class EvidenceFilter:
 
     def _guidance(self, query_plan: Dict[str, Any]) -> Dict[str, Any]:
         focus_phrases = [
-            str(x).strip()
-            for x in list(query_plan.get("focus_phrases", []))
-            if str(x).strip()
+            str(x).strip() for x in list(query_plan.get("focus_phrases", [])) if str(x).strip()
         ][:8]
-        entities = [
-            str(x).strip() for x in list(query_plan.get("entities", [])) if str(x).strip()
-        ][:8]
+        entities = [str(x).strip() for x in list(query_plan.get("entities", [])) if str(x).strip()][
+            :8
+        ]
         compare_options = [
-            str(x).strip()
-            for x in list(query_plan.get("compare_options", []))
-            if str(x).strip()
+            str(x).strip() for x in list(query_plan.get("compare_options", [])) if str(x).strip()
         ][:4]
         state_keys = [
             str(x).strip() for x in list(query_plan.get("state_keys", [])) if str(x).strip()
         ][:4]
         subject_focus_phrases: List[str] = []
         action_focus_phrases: List[str] = []
-        target_tokens = set(self._content_tokens(" ".join([str(query_plan.get("target_object", "")).strip()])))
+        target_tokens = set(
+            self._content_tokens(" ".join([str(query_plan.get("target_object", "")).strip()]))
+        )
         for phrase in focus_phrases:
             phrase_tokens = set(self._content_tokens(phrase))
-            if target_tokens and phrase_tokens and (
-                phrase_tokens.issubset(target_tokens) or target_tokens.issubset(phrase_tokens)
+            if (
+                target_tokens
+                and phrase_tokens
+                and (phrase_tokens.issubset(target_tokens) or target_tokens.issubset(phrase_tokens))
             ):
                 subject_focus_phrases.append(phrase)
             else:
                 action_focus_phrases.append(phrase)
         content_tokens: List[str] = []
         seen_content: Set[str] = set()
-        for text in focus_phrases + entities + compare_options + state_keys + [
-            str(x).strip()
-            for x in list(query_plan.get("sub_queries", []))
-            if str(x).strip()
-        ][:4]:
+        for text in (
+            focus_phrases
+            + entities
+            + compare_options
+            + state_keys
+            + [str(x).strip() for x in list(query_plan.get("sub_queries", [])) if str(x).strip()][
+                :4
+            ]
+        ):
             for tok in self._content_tokens(text):
                 if tok in seen_content:
                     continue
@@ -398,7 +380,11 @@ class EvidenceFilter:
                 break
         subject_tokens: List[str] = []
         seen_subject: Set[str] = set()
-        for text in ([str(query_plan.get("target_object", "")).strip()] + subject_focus_phrases + entities[:2]):
+        for text in (
+            [str(query_plan.get("target_object", "")).strip()]
+            + subject_focus_phrases
+            + entities[:2]
+        ):
             for tok in self._content_tokens(text):
                 if tok in seen_subject:
                     continue
@@ -434,9 +420,7 @@ class EvidenceFilter:
             "action_tokens": action_tokens[:12],
             "target_object": str(query_plan.get("target_object", "")).strip(),
             "sub_queries": [
-                str(x).strip()
-                for x in list(query_plan.get("sub_queries", []))
-                if str(x).strip()
+                str(x).strip() for x in list(query_plan.get("sub_queries", [])) if str(x).strip()
             ][:4],
         }
 
@@ -521,8 +505,16 @@ class EvidenceFilter:
         entities = list(guidance.get("entities", []))
         compare_options = list(guidance.get("compare_options", []))
         state_keys = list(guidance.get("state_keys", []))
-        content_tokens = set(str(x).strip().lower() for x in list(guidance.get("content_tokens", [])) if str(x).strip())
-        action_tokens = set(str(x).strip().lower() for x in list(guidance.get("action_tokens", [])) if str(x).strip())
+        content_tokens = set(
+            str(x).strip().lower()
+            for x in list(guidance.get("content_tokens", []))
+            if str(x).strip()
+        )
+        action_tokens = set(
+            str(x).strip().lower()
+            for x in list(guidance.get("action_tokens", []))
+            if str(x).strip()
+        )
         target_object = str(guidance.get("target_object", "")).strip()
         answer_type = str(guidance.get("answer_type", "")).strip().lower()
         low = text.lower()
@@ -644,9 +636,18 @@ class EvidenceFilter:
             "temporal",
             "temporal_comparison",
         }
-        if needs_action_alignment and action_tokens and action_overlap < 0.20 and not matched_action_focus:
+        if (
+            needs_action_alignment
+            and action_tokens
+            and action_overlap < 0.20
+            and not matched_action_focus
+        ):
             strong_subject_alignment = bool(
-                target_match or matched_subject_focus or matched_entities or matched_state or matched_compare
+                target_match
+                or matched_subject_focus
+                or matched_entities
+                or matched_state
+                or matched_compare
             )
             if not (
                 first_person_fact
@@ -738,11 +739,17 @@ class EvidenceFilter:
             structured_units = self._split_structured_units(str(raw_item.get("text", "")))
             if structured_units:
                 sentences = structured_units
-            elif channel == "plan_combined_evidence" or len(text) > self.split_long_chars or "\n" in text:
+            elif (
+                channel == "plan_combined_evidence"
+                or len(text) > self.split_long_chars
+                or "\n" in text
+            ):
                 sentences = self._split_sentences(text) or [text]
             backup_group = f"{channel}:{int(raw_item.get('chunk_id', 0) or 0)}:{raw_rank}"
             add_window_backup = len(sentences) > 1 and (
-                self._looks_structured(text) or len(sentences) >= 3 or "\n" in str(raw_item.get("text", ""))
+                self._looks_structured(text)
+                or len(sentences) >= 3
+                or "\n" in str(raw_item.get("text", ""))
             )
 
             if add_window_backup:
@@ -810,7 +817,9 @@ class EvidenceFilter:
                     "window_backup": False,
                     "backup_group": backup_group,
                 }
-                item.update(self._sentence_signals(query=query, text=sent, item=item, guidance=guidance))
+                item.update(
+                    self._sentence_signals(query=query, text=sent, item=item, guidance=guidance)
+                )
                 prepared.append(item)
 
         prepared.sort(
@@ -867,7 +876,10 @@ class EvidenceFilter:
         if answer_type == "update":
             return {"subject": max(0, 1 - counts["subject"]), "value": max(0, 2 - counts["value"])}
         if answer_type == "preference":
-            return {"subject": max(0, 1 - counts["subject"]), "reason": max(0, 1 - counts["reason"])}
+            return {
+                "subject": max(0, 1 - counts["subject"]),
+                "reason": max(0, 1 - counts["reason"]),
+            }
         return {"subject": max(0, 1 - counts["subject"])}
 
     def _coverage_match(self, item: Dict[str, Any], need: Dict[str, int]) -> bool:
@@ -896,7 +908,9 @@ class EvidenceFilter:
             or bool(item.get("structured_format", False))
         )
 
-    def _select_core(self, items: Sequence[Dict[str, Any]], answer_type: str) -> List[Dict[str, Any]]:
+    def _select_core(
+        self, items: Sequence[Dict[str, Any]], answer_type: str
+    ) -> List[Dict[str, Any]]:
         selected: List[Dict[str, Any]] = []
         seen_slots: Set[str] = set()
         channel_use: Dict[str, int] = {}
@@ -972,7 +986,10 @@ class EvidenceFilter:
 
         backup_added = 0
         for item in items:
-            if len(out) >= self.max_supporting or len(selected_core) + len(out) >= self.max_selected:
+            if (
+                len(out) >= self.max_supporting
+                or len(selected_core) + len(out) >= self.max_selected
+            ):
                 break
             if backup_added >= self.max_backup:
                 break
@@ -1052,9 +1069,7 @@ class EvidenceFilter:
             total_time = sum(1 for x in core + supporting if list(x.get("time_anchors", [])))
             insufficient = insufficient or total_time < 2
         elif answer_type == "count":
-            total_value = sum(
-                1 for x in core + supporting if list(x.get("numeric_values", []))
-            )
+            total_value = sum(1 for x in core + supporting if list(x.get("numeric_values", [])))
             insufficient = insufficient or total_value < 1
         elif answer_type == "update":
             total_values = {
